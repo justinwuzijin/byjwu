@@ -1,0 +1,17 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.cutmcp-cache/
+out/
+build/
+dist/
+*.egg-info/
+
+# local toolchain (system python here is 3.9; project needs 3.11+)
+.venv/
+.bootstrap/
+.pythons/
+demo/
+
+# secrets
+.env

@@ -1,3 +1,151 @@
+# jevid
+
+Two tools share this repo.
+
+| | |
+|---|---|
+| **Cut Conductor** | Final Cut export in, proposal markers (and, only when you ask, a new cut) out. |
+| **cutmcp** | Raw interview footage in, an EDL out. Documented below. |
+
+Cut Conductor is the editorial co-pilot. It does not replace cutmcp.
+
+# Cut Conductor
+
+Decision infrastructure for a Final Cut Pro editor. Export a project as FCPXML, optionally with a transcript, and get back analysis from named passes, typed Jev decisions, a ranked change list, and a **new** FCPXML. The default is a shadow run: proposal markers only. Nothing in v1 rewrites the file you exported, and nothing talks to Final Cut itself.
+
+```text
+FCPXML (+ SRT/VTT) → passes → Jev decisions → markers + report
+                                              ↘ apply, only with --accept
+                                                 or --min-confidence and --pass
+```
+
+## How an editor uses it
+
+1. In Final Cut, select the project and choose **File → Export XML…**. Leave the original library alone.
+2. Optionally export an SRT or WebVTT whose times match the sequence (not the source clip).
+3. From the repo root, dry-run. No API key:
+
+```bash
+pip install -e ".[dev]"
+python scripts/dry_run.py
+```
+
+That runs the checked-in interview fixture and writes `out/sample-dry-run/`. On your own export:
+
+```bash
+python -m conductor analyze cut.fcpxml \
+  --transcript cut.srt \
+  --brief "A tight interview. Keep the guest's story, lose dead air." \
+  --out-dir out/cut
+```
+
+4. Read `cut.conductor.md`. Import `cut.conductor.fcpxml` into a **duplicate event** if you want the markers in Final Cut. Importing creates a new project; it does not patch the one you exported.
+5. When a call is actually a cut you want, apply it to yet another file:
+
+```bash
+# The one high-confidence mechanical cut (a long silence, in the sample).
+python -m conductor apply cut.fcpxml --transcript cut.srt \
+  --brief "A tight interview. Keep the guest's story, lose dead air." \
+  --min-confidence 0.8 --pass mechanical --out-dir out/cut
+
+# Or a specific review call you have decided to take.
+python -m conductor apply cut.fcpxml --transcript cut.srt \
+  --brief "..." --accept c0003 --out-dir out/cut
+```
+
+`cut.conductor.applied.fcpxml` is the cut. `cut.fcpxml` is untouched. Creative calls (dialogue, pacing) are not applied by the confidence switch; a person names them with `--accept`.
+
+## Passes
+
+Passes run alone (`--pass mechanical`) or in the default sequence `mechanical`, then `dialogue`, then `pacing`.
+
+| pass | looks for | who may apply it |
+|---|---|---|
+| `mechanical` | silence gaps of at least **1.25s**, clips shorter than **0.45s** (under **0.20s** is a flash frame) | high-confidence tighten/remove can be applied with `--min-confidence` |
+| `dialogue` | a whole filler cue (**0.25–3s**) or a pause of at least **0.80s** between cues | review, unless you `--accept` the id |
+| `pacing` | a clip of at least **20s** with under **0.40** words/second. With no transcript, only a hold/slate/b-roll name, or a clip of at least **45s** | review, unless you `--accept` the id |
+| `story`, `audio`, `broll` | not implemented | extension point: `conductor.passes.register_pass` |
+
+Filler is the same whole-cue list cutmcp uses (`um`, `you know`, `i mean`, …). `like`, `yeah`, and `okay` are not filler. The numbers live at the top of `conductor/candidates.py`.
+
+A `tighten` on a whole clip keeps the first `hold_seconds` (default 4) and lifts the tail. A `remove`, a filler, or a hole lifts that range and ripples the spine. Transitions on the spine are refused rather than left at a stale offset.
+
+## Confidence gates
+
+Jev's answer is a raw action plus a confidence and a risk. The gate, not the prompt, decides what happens next.
+
+| | default | result |
+|---|---|---|
+| auto | confidence ≥ **0.80** and risk ≤ **0.35**, and the pass is mechanical | eligible for `--min-confidence` |
+| review | confidence ≥ **0.55**, or any creative pass | to-do marker. `--accept` can still cut a raw tighten/remove |
+| escalate | confidence below **0.55**, or Jev said escalate | to-do marker, no unattended cut |
+
+Thresholds can be overridden in a taste file under `gates`. The mock judge is calibrated to the heuristics so a dry-run is readable: a 2.5s gap comes back `remove` at 0.86 and clears the auto gate; a filler comes back `tighten` at 0.84 and stays in review because dialogue is creative. That mock is not evidence that live Jev is calibrated. `eval/calibrate.py` is the harness for the other tool in this repo; treat live thresholds as unproven until you have the same kind of check on your own marks.
+
+## Taste
+
+`--taste fixtures/taste.json` loads prefs and a log. The same object is part of the Jev state. Defaults are a no-op for the mock. `target_pace: loose` makes the mock treat a long silence as a review-level tighten. `cold_open_bias: keep` makes the mock keep a candidate that sits on the first spine clip.
+
+```bash
+python -m conductor feedback \
+  --taste fixtures/taste.json \
+  --out out/taste.json \
+  --event reject --id c0004 --action tighten --pass dialogue \
+  --note "keep the breath"
+```
+
+The input taste file is not modified. Schema and the log format are in `fixtures/taste.json` and `conductor/taste.py`. No model is trained from the log. A later room appends accept/reject events; the next decide call sees the counts and the last 20.
+
+## What the run writes
+
+| file | what it is |
+|---|---|
+| `*.conductor.fcpxml` | the export plus proposal markers. Edits unchanged. |
+| `*.conductor.applied.fcpxml` | only after `apply`. Accepted ranges removed, the rest rippled. |
+| `*.conductor.json` | the room payload: candidates, gates, receipts, cuts |
+| `*.conductor.md` | the ranked list |
+| `*.conductor.html` | the same list, one file, no scripts (`--html`) |
+| `*.taste.json` | prefs, gates, and the log after this run |
+
+FCPXML markers have no color attribute. Color is the `color=` field of the note (`red` remove, `blue` tighten, `orange` review, `purple` escalate). Review and escalate markers are to-dos (`completed="0"`). A marker's `start` is in the clip's source time, same as the clip's `start`.
+
+## Environment
+
+Copy `.env.example`. Dry-run needs nothing. `--live` calls Jev's Decisions API:
+
+| variable | host | model |
+|---|---|---|
+| `OPENROUTER_API_KEY` | `POST https://openrouter.ai/api/alpha/decisions` | `typesafe/jev-1.13` |
+| `TYPESAFE_API_KEY` | `POST https://api.typesafe.ai/v1/systemone` | `jev-1.13.0` |
+
+OpenRouter wins when both are set. `CONDUCTOR_JEV_PROVIDER=typesafe` forces the other. `CONDUCTOR_DRY_RUN=1` forces the mock even with `--live`. The TypeSafe host rejects the OpenRouter slug `jev-1.13`; the client sends `jev-1.13.0` there. Both return the same answer shape: a choice with confidence, and a noul with no separate confidence (the probability is the answer).
+
+Jev does not write marker text. The note is assembled in code from the action, the confidence, and the candidate.
+
+## Safety
+
+- Default command is `analyze`. It does not cut.
+- `apply` errors unless you pass `--accept` or both `--min-confidence` and `--pass`.
+- The confidence path only cuts `auto` dispositions. Creative passes stay review/escalate.
+- Output paths that resolve to the source file are refused.
+- The source bytes are checked at the end of the run.
+- There is no Final Cut plugin and no live timeline control.
+
+## Grok bot room, later
+
+v1 is the library and the CLI those bots will call. Roles, the state payload, and the accept loop are in [`docs/room-protocol.md`](docs/room-protocol.md). A Conductor bot shells out to `python -m conductor analyze` (or imports `conductor.analyze`). It does not get a sixth action, and it does not apply a cut the gate did not allow unless a person accepted that id.
+
+## Tests
+
+```bash
+python -m pytest
+python scripts/dry_run.py
+```
+
+No API key. The conductor tests cover the parser, marker write-back, the mock Decisions client, the gates, and apply. The cutmcp tests are unchanged.
+
+---
+
 # cutmcp
 
 An MCP server that turns raw interview footage into a cut timeline.

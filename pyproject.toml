@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "cutmcp"
 version = "0.1.0"
-description = "MCP server that turns raw interview footage into a cut timeline"
+description = "cutmcp interview cutter and Cut Conductor, an FCPXML editorial co-pilot"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -20,9 +20,10 @@ dev = ["pytest>=8", "pytest-asyncio>=0.23"]
 
 [project.scripts]
 cutmcp = "cutmcp.server:main"
+cut-conductor = "conductor.cli:main"
 
 [tool.setuptools.packages.find]
-include = ["cutmcp*"]
+include = ["cutmcp*", "conductor*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

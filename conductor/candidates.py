@@ -85,6 +85,7 @@ class Candidate:
     def to_state(self) -> dict:
         return {
             "id": self.id,
+            "fingerprint": decision_fingerprint(self),
             "kind": self.kind,
             "label": self.label,
             "sequence": self.sequence,
@@ -123,6 +124,18 @@ def generate(
     found.extend(_holes(sequence, spine, cues))
     found.sort(key=lambda item: (item.timeline_start, item.timeline_end, item.kind))
     return found
+
+
+def decision_fingerprint(candidate: Candidate) -> str:
+    """Stable id for one region across rounds. Candidate ids are not stable.
+
+    A later round renumbers ``c0001``. The fingerprint is the pass, the kind,
+    the clip name, the duration, and whether the region is a whole clip.
+    """
+    return (
+        f"{candidate.pass_name}|{candidate.kind}|{candidate.clip_name}|"
+        f"{seconds(candidate.duration)}|{candidate.span}"
+    )
 
 
 def assign_ids(candidates: list[Candidate]) -> list[Candidate]:

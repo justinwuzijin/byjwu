@@ -60,16 +60,32 @@ class Taste:
     prefs: dict
     gates: Gates
     log: list[dict] = field(default_factory=list)
+    carry: dict = field(default_factory=dict)
     path: Path | None = None
 
     def to_state(self) -> dict:
         """The slice of taste that goes into a Jev request."""
+        applied: list[str] = []
+        for event in self.log:
+            fingerprint = event.get("fingerprint")
+            if event.get("event") == "accept" and isinstance(fingerprint, str):
+                if fingerprint not in applied:
+                    applied.append(fingerprint)
+        decisions = self.carry.get("decisions") or []
+        if not isinstance(decisions, list):
+            decisions = []
+        open_items = self.carry.get("open") or []
+        if not isinstance(open_items, list):
+            open_items = []
         return {
             "prefs": dict(self.prefs),
             "feedback": {
                 "accepts": sum(1 for event in self.log if event.get("event") == "accept"),
                 "rejects": sum(1 for event in self.log if event.get("event") == "reject"),
                 "recent": [dict(event) for event in self.log[-20:]],
+                "applied": applied,
+                "open": [str(item) for item in open_items],
+                "decisions": [dict(item) for item in decisions[-40:] if isinstance(item, dict)],
             },
         }
 
@@ -79,18 +95,51 @@ class Taste:
     def append(self, event: dict) -> None:
         self.log.append(dict(event))
 
+    def remember(self, changes: list[dict], *, round_n: int, applied_ids: set[str]) -> None:
+        """Record this round so the next decide call sees what was already judged.
+
+        Applied cuts are also on the accept log (with ``fingerprint``). Open
+        review and escalate rows are listed again so a later round does not
+        treat them as new.
+        """
+        decisions = self.carry.setdefault("decisions", [])
+        if not isinstance(decisions, list):
+            decisions = []
+            self.carry["decisions"] = decisions
+        open_items: list[str] = []
+        for row in changes:
+            fingerprint = row.get("fingerprint")
+            if not isinstance(fingerprint, str) or not fingerprint:
+                continue
+            applied = row.get("candidate_id") in applied_ids
+            decisions.append(
+                {
+                    "round": round_n,
+                    "candidate_id": row.get("candidate_id"),
+                    "fingerprint": fingerprint,
+                    "action": row.get("action"),
+                    "disposition": row.get("disposition"),
+                    "pass": row.get("pass"),
+                    "applied": applied,
+                }
+            )
+            if not applied and row.get("section") in {"review", "escalate"}:
+                open_items.append(fingerprint)
+        self.carry["open"] = open_items
+
     def dump(self) -> dict:
         return {
             "version": 1,
             "prefs": self.prefs,
             "gates": self.gates.to_dict(),
             "log": self.log,
+            "carry": self.carry,
         }
 
 
 def load_taste(path: str | Path | None) -> Taste:
     if path is None:
-        return Taste(dict(DEFAULT_PREFS), Gates(), [], None)
+        return Taste(dict(DEFAULT_PREFS), Gates(), [], {}, None)
     file = Path(path)
     if not file.is_file():
         raise ConductorError(f"no such taste file: {file}")
@@ -115,7 +164,10 @@ def load_taste(path: str | Path | None) -> Taste:
             raise ConductorError(
                 f"taste log event must be accept or reject, got {event.get('event')!r}"
             )
-    return Taste(prefs, gates, [dict(item) for item in log], file)
+    carry = data.get("carry") or {}
+    if not isinstance(carry, dict):
+        raise ConductorError("taste carry must be an object")
+    return Taste(prefs, gates, [dict(item) for item in log], dict(carry), file)
 
 
 def feedback_event(

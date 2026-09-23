@@ -83,6 +83,42 @@ def test_mock_silence_and_taste_nudges():
     assert kept.answers["c0009_action"].value == "keep"
 
 
+def test_an_applied_fingerprint_is_kept():
+    fingerprint = "mechanical|silence_gap|Gap|2.5|clip"
+    state = {
+        "taste": {
+            "prefs": {"target_pace": "measured", "cold_open_bias": "neutral"},
+            "feedback": {"applied": [fingerprint]},
+        },
+        "candidates": [
+            {
+                "id": "c0007",
+                "kind": "silence_gap",
+                "fingerprint": fingerprint,
+                "duration_seconds": 2.5,
+                "signals": {"explicit_gap": True},
+            }
+        ],
+    }
+    questions = {
+        "c0007_action": {
+            "type": "choice",
+            "instructions": "pick",
+            "criteria": {
+                "keep": "k",
+                "tighten": "t",
+                "remove": "r",
+                "mark_review": "m",
+                "escalate": "e",
+            },
+        },
+        "c0007_risk": {"type": "noul", "instructions": "risk"},
+    }
+    batch = ask(state, questions, live=False)
+    assert batch.answers["c0007_action"].value == "keep"
+    assert batch.answers["c0007_action"].confidence == 0.93
+
+
 def test_dry_run_does_not_touch_the_network(monkeypatch):
     monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-test")
 

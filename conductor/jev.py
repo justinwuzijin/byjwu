@@ -290,6 +290,11 @@ def _policy(candidate: Mapping[str, Any], taste: Mapping[str, Any] | None = None
     signals = candidate.get("signals") or {}
     duration = float(candidate.get("duration_seconds") or 0.0)
     prefs = (taste or {}).get("prefs") or {}
+    feedback = (taste or {}).get("feedback") or {}
+    applied = feedback.get("applied") or []
+    fingerprint = candidate.get("fingerprint")
+    if fingerprint and isinstance(applied, list) and fingerprint in applied:
+        return "keep", 0.93, 0.05
     if prefs.get("cold_open_bias") == "keep" and signals.get("is_cold_open"):
         return "keep", 0.90, 0.10
     if kind == "silence_gap":

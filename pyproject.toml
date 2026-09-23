@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "cutmcp"
 version = "0.1.0"
-description = "cutmcp interview cutter and Cut Conductor, an FCPXML editorial co-pilot"
+description = "jevid: a Final Cut editorial co-pilot (Cut Conductor), plus the cutmcp EDL cutter"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [

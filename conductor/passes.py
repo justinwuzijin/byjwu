@@ -21,7 +21,8 @@ Leave it unset to reuse the spine heuristics filtered by ``kinds``.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
+from collections.abc import Sequence as SequenceOf
 from dataclasses import dataclass
 
 from .candidates import Candidate, assign_ids, generate
@@ -29,7 +30,7 @@ from .errors import ConductorError
 from .fcpxml import Sequence
 from .transcript import Cue
 
-Generator = Callable[[Sequence[Sequence], list[Cue], bool], list[Candidate]]
+Generator = Callable[[SequenceOf[Sequence], list[Cue], bool], list[Candidate]]
 
 
 @dataclass(frozen=True)

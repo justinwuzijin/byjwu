@@ -47,7 +47,9 @@ def seconds(value: Fraction) -> float:
 
 def clock(pos: Fraction) -> str:
     """``HH:MM:SS.mmm`` from a timeline position."""
-    ms_total = int((Fraction(pos) * 1000).to_integral_value())
+    # Fraction has no to_integral_value. round() is half-to-even, same as
+    # Decimal's default, and returns an int.
+    ms_total = round(Fraction(pos) * 1000)
     if ms_total < 0:
         ms_total = 0
     ms = ms_total % 1000

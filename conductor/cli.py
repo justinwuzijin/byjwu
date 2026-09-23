@@ -6,8 +6,11 @@ import argparse
 import sys
 from pathlib import Path
 
+from .drop import output_dir_for
 from .errors import ConductorError
 from .ingest import DEFAULT_BRIEF, ingest
+from .iterate import format_table, iterate
+from .metrics import Targets
 from .passes import PASSES
 from .run import Report, analyze
 from .taste import feedback_event, load_taste, write_taste
@@ -44,7 +47,16 @@ def main(argv: list[str] | None = None) -> int:
             help="build a starter FCPXML from a folder of clips, then shadow-mark it",
         )
     )
-    ui = sub.add_parser("ui", help="local page that runs ingest on a folder path")
+    _add_iterate(
+        sub.add_parser(
+            "iterate",
+            help="repeat shadow plus mechanical auto-apply until the stop metrics clear",
+        )
+    )
+    ui = sub.add_parser(
+        "ui",
+        help="developer page that runs ingest on a folder path (editors use the room)",
+    )
     ui.add_argument("--port", type=int, default=8765, help="localhost port (default: 8765)")
     feedback = sub.add_parser("feedback", help="append an accept or reject to a taste log")
     feedback.add_argument("--taste", required=True, help="taste JSON to read")
@@ -62,6 +74,8 @@ def main(argv: list[str] | None = None) -> int:
             return _ui(args)
         if args.command == "ingest":
             return _ingest(args)
+        if args.command == "iterate":
+            return _iterate(args)
         report = analyze(
             args.fcpxml,
             transcript_path=args.transcript,
@@ -147,6 +161,106 @@ def _add_ingest(parser: argparse.ArgumentParser) -> None:
         type=float,
         help="with --apply and --pass, apply only auto-gated calls at or above this confidence",
     )
+
+
+def _add_iterate(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--drop",
+        help="folder the editor dropped. One FCPXML, or video files in that folder.",
+    )
+    parser.add_argument("--fcpxml", help="an export, when there is no drop folder")
+    parser.add_argument("--media", help="a folder of clips, when there is no drop folder")
+    parser.add_argument("--brief", help="overrides brief.txt in a drop folder")
+    parser.add_argument("--transcript", help="optional SRT or WebVTT aligned to the sequence")
+    parser.add_argument("--taste", help="taste JSON (prefs, gates, accept/reject log)")
+    parser.add_argument(
+        "--durations",
+        help="JSON object of file name to length. Used when the drop is a folder of clips.",
+    )
+    parser.add_argument(
+        "--out-dir",
+        help="where to write. Default for a jevid-in drop is the sibling jevid-out; otherwise out.",
+    )
+    parser.add_argument("--max-rounds", type=int, default=5, help="stop after this many rounds (default: 5)")
+    parser.add_argument("--target-seconds", type=float, help="duration the handback should land near")
+    parser.add_argument(
+        "--duration-tolerance",
+        type=float,
+        default=2.0,
+        help="seconds either side of --target-seconds that still count (default: 2)",
+    )
+    parser.add_argument(
+        "--max-silence",
+        type=float,
+        default=1.25,
+        help="stop when total gap time is at or under this many seconds (default: 1.25)",
+    )
+    parser.add_argument(
+        "--max-escalations",
+        type=int,
+        default=0,
+        help="stop when open escalations are at or under this count (default: 0)",
+    )
+    parser.add_argument(
+        "--max-reviews",
+        type=int,
+        help="when set, stop only if open reviews are at or under this count",
+    )
+    parser.add_argument("--min-shot", type=float, help="when set, average shot length must be at least this")
+    parser.add_argument("--max-shot", type=float, help="when set, average shot length must be at most this")
+    parser.add_argument("--min-cpm", type=float, help="when set, cuts per minute must be at least this")
+    parser.add_argument("--max-cpm", type=float, help="when set, cuts per minute must be at most this")
+    parser.add_argument(
+        "--min-confidence",
+        type=float,
+        help="mechanical auto-apply floor (default: the taste gate, 0.80)",
+    )
+    parser.add_argument(
+        "--live",
+        action="store_true",
+        help="call Jev. Requires OPENROUTER_API_KEY or TYPESAFE_API_KEY. Off by default.",
+    )
+
+
+def _iterate(args) -> int:
+    if not args.drop and not args.fcpxml and not args.media:
+        raise ConductorError("iterate needs --drop, --fcpxml, or --media")
+    if args.drop and not args.out_dir:
+        out_dir = output_dir_for(Path(args.drop))
+    else:
+        out_dir = args.out_dir or "out"
+    targets = Targets(
+        target_seconds=args.target_seconds,
+        duration_tolerance=args.duration_tolerance,
+        max_silence=args.max_silence,
+        max_escalations=args.max_escalations,
+        max_reviews=args.max_reviews,
+        min_shot=args.min_shot,
+        max_shot=args.max_shot,
+        min_cuts_per_minute=args.min_cpm,
+        max_cuts_per_minute=args.max_cpm,
+    )
+    result = iterate(
+        out_dir=out_dir,
+        brief=args.brief,
+        fcpxml=args.fcpxml,
+        media_dir=args.media,
+        drop=args.drop,
+        transcript_path=args.transcript,
+        taste_path=args.taste,
+        durations_path=args.durations,
+        max_rounds=args.max_rounds,
+        live=args.live,
+        targets=targets,
+        min_confidence=args.min_confidence,
+    )
+    print(format_table(result))
+    if result.summary_json:
+        print(f"  summary {result.summary_json}")
+    if result.reason == "error":
+        print(f"cut-conductor: {result.error}", file=sys.stderr)
+        return 2
+    return 0
 
 
 def _accept(value: str | None) -> list[str] | None:

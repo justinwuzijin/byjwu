@@ -12,6 +12,7 @@ from pathlib import Path
 
 from . import __version__
 from .apply import apply_edits
+from .candidates import decision_fingerprint
 from .decide import deletions_for, judge
 from .errors import ConductorError
 from .fcpxml import Document, parse_fcpxml, write_document
@@ -60,12 +61,18 @@ def analyze(
     apply: bool = False,
     accept: list[str] | None = None,
     min_confidence: float | None = None,
+    apply_passes: list[str] | None = None,
+    allow_empty: bool = False,
 ) -> Report:
     """Run the named passes and write a shadow proposal.
 
     ``live=False`` (the default) uses the local mock and does not read an API
     key. ``apply=True`` writes a second FCPXML. It requires ``accept`` or
-    ``min_confidence`` together with ``passes``.
+    ``min_confidence`` together with ``passes`` (or ``apply_passes``).
+
+    ``apply_passes`` limits which passes may be cut. The report still includes
+    every pass that ran. ``allow_empty=True`` writes the shadow file and no
+    cut file when the gate matches nothing, instead of raising.
     """
     source = Path(fcpxml_path)
     source_bytes = source.read_bytes()
@@ -88,27 +95,37 @@ def analyze(
     apply_warnings: list[str] = []
     applied_doc = None
     if apply:
-        deletions = deletions_for(
-            proposals,
-            candidates,
-            accept=accept,
-            min_confidence=min_confidence,
-            passes=passes,
-            hold=taste.hold(),
-        )
-        applied_doc = parse_fcpxml(source)
-        result = apply_edits(applied_doc, deletions)
-        cuts = result.cuts
-        apply_warnings = result.warnings
-        for deletion in deletions:
-            taste.append(
-                feedback_event(
+        try:
+            deletions = deletions_for(
+                proposals,
+                candidates,
+                accept=accept,
+                min_confidence=min_confidence,
+                passes=apply_passes if apply_passes is not None else passes,
+                hold=taste.hold(),
+            )
+        except ConductorError as exc:
+            if allow_empty and "no cuts matched" in str(exc):
+                deletions = []
+            else:
+                raise
+        if deletions:
+            applied_doc = parse_fcpxml(source)
+            result = apply_edits(applied_doc, deletions)
+            cuts = result.cuts
+            apply_warnings = result.warnings
+            by_id = {item.id: item for item in candidates}
+            for deletion in deletions:
+                event = feedback_event(
                     event="accept",
                     candidate_id=deletion.candidate_id,
                     action=deletion.action,
                     pass_name=deletion.pass_name,
                 )
-            )
+                matched = by_id.get(deletion.candidate_id)
+                if matched is not None:
+                    event["fingerprint"] = decision_fingerprint(matched)
+                taste.append(event)
 
     out_fcpxml = out_applied = out_json = out_md = out_html = out_taste = None
     markers_added = 0
@@ -157,8 +174,8 @@ def analyze(
         gates=taste.gates.to_dict(),
         cuts=cuts,
         apply_warnings=apply_warnings,
-        shadow=not apply,
-        applied=apply,
+        shadow=applied_doc is None,
+        applied=applied_doc is not None,
     )
     if source.read_bytes() != source_bytes:
         raise ConductorError("refusing to finish: the source FCPXML changed during the run")

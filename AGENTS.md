@@ -202,13 +202,21 @@ A second package in this repo. It is an FCPXML co-pilot: named passes,
 Jev decisions, proposal markers, and an explicit apply that writes a new
 file. Human docs are `README.md` and `docs/room-protocol.md`.
 
+The human editor does not run the CLI. The Grok Bot room is the only UX.
+The conventional Mac drop is `~/Desktop/jevid-in`; the bot writes
+`~/Desktop/jevid-out` (`conductor/drop.py`). After a drop the bot runs
+`python -m conductor iterate`, which ingests a selects folder when the drop
+is clips, then repeats shadow analysis and mechanical auto-apply
+(`conductor/iterate.py`). People answer in the room only on escalate or when
+the loop hits its round limit.
+
 `python -m conductor ingest` inventories a folder of clips, writes a starter
 FCPXML (filename order, absolute `file://` paths), and calls `analyze`.
 `--apply` uses the same gates as `apply`. Source media is only read.
 Durations come from a `--durations` map, otherwise ffprobe, otherwise a 10s
 placeholder when the file cannot be probed. `python -m conductor ui` is a
-localhost page that posts a folder path to that command. It does not upload
-media.
+localhost page for the bot and for developers. It posts a folder path to
+ingest. It does not upload media, and it is not the editor path.
 
 Cut Conductor does **not** follow the tier rule above, and it is not a sixth MCP tool.
 Do not fold its pipeline into `cutmcp/decide.py` or `cutmcp/assemble.py`.

@@ -139,7 +139,7 @@ def page_html() -> str:
 </head>
 <body>
 <h1>Clips to FCPXML</h1>
-<p class="note">Point this at a folder on this machine. The page sends the path, the brief, and nothing else. Video is not uploaded. Final Cut is not controlled.</p>
+<p class="note">This page is for the Conductor bot and for developers. Editors drop an FCPXML or a selects folder into the Cut Conductor room (on a Mac, <code>~/Desktop/jevid-in</code>). The page sends a folder path, the brief, and nothing else. Video is not uploaded. Final Cut is not controlled.</p>
 <div id="drop">Drop a <code>file://</code> path here, or type the folder below. A dropped clip uses its parent folder. The browser is not asked for the file bytes.</div>
 <p id="drop-note" class="warn"></p>
 <form method="post" action="/ingest">

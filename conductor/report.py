@@ -241,6 +241,7 @@ def _row(proposal: Proposal, candidate: Candidate, sequence: Sequence, section: 
         "rank": rank,
         "section": section,
         "candidate_id": candidate.id,
+        "fingerprint": candidate.to_state()["fingerprint"],
         "sequence": candidate.sequence,
         "clip_name": candidate.clip_name,
         "kind": candidate.kind,

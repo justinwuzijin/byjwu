@@ -1,17 +1,26 @@
-# AGENTS.md — cutmcp
+# AGENTS.md
 
-Context for coding agents working in this repo. Read this before editing.
+The product in this repo is **jevid**: an editorial co-pilot for Final Cut.
+Human docs are `README.md` and `docs/room-protocol.md`. The package you edit
+for that product is `conductor/`.
+
+What follows is the design rule for **cutmcp**, the older raw-footage MCP
+cutter that still lives here. `conductor/` does not follow that tier rule.
+Read the Cut Conductor section at the bottom of this file before changing
+Final Cut behavior.
+
 Works as-is for Cursor and Codex; `cp AGENTS.md CLAUDE.md` for Claude Code.
 
-## What this is
+## What cutmcp is
 
 An MCP server that turns raw interview footage into a cut timeline. An agent
 calls five intent-level tools; underneath, thousands of small typed judgments
 are made by Jev (TypeSafe's System One model) and turned into an EDL by
 deterministic code.
 
-Human-facing setup lives in `README.md`. This file is about **how to change
-the code without breaking the design**.
+Human-facing setup for cutmcp lives in `docs/cutmcp.md`. The product README
+is `README.md`. This file is about **how to change the code without breaking
+the design**.
 
 ---
 

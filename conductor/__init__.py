@@ -14,6 +14,8 @@ from __future__ import annotations
 __version__ = "0.1.0"
 
 from .errors import ConductorError
+# The callable shares the submodule name. ``import conductor.ingest`` is this
+# function; the module object remains ``sys.modules["conductor.ingest"]``.
 from .ingest import ingest
 from .run import analyze
 

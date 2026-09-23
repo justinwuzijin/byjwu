@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+import sys
 from fractions import Fraction
 from pathlib import Path
 from urllib.parse import unquote, urlparse
@@ -167,7 +168,7 @@ def test_override_does_not_call_the_probe(tmp_path, monkeypatch):
     def boom(path):
         raise AssertionError(f"probe called for {path}")
 
-    monkeypatch.setattr("conductor.ingest.ffprobe_probe", boom)
+    monkeypatch.setattr(sys.modules["conductor.ingest"], "ffprobe_probe", boom)
     result = ingest(media, out_dir=tmp_path / "out", durations_path=durations)
     assert result.inventory.clips[0].duration_source == "override"
     assert result.inventory.clips[0].duration == 4

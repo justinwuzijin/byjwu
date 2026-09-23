@@ -184,3 +184,29 @@ text plus question text would make brief edits nearly free.
 - Timeline IDs use `hash()`, which is not stable across processes. Fine for
   cache lookup within a session, wrong if you ever need a durable ID —
   switch to blake2b over the same inputs.
+
+---
+
+## Cut Conductor (`conductor/`)
+
+A second package in this repo. It is an FCPXML co-pilot: named passes,
+Jev decisions, proposal markers, and an explicit apply that writes a new
+file. Human docs are the Cut Conductor section of `README.md` and
+`docs/room-protocol.md`.
+
+It does **not** follow the tier rule above, and it is not a sixth MCP tool.
+Do not fold its pipeline into `cutmcp/decide.py` or `cutmcp/assemble.py`.
+Do not route its Jev calls through `cutmcp/jev.py`'s `ask` — the Decisions
+client, the mock, and the action set live in `conductor/jev.py`. The one
+shared piece is `cutmcp.jev.Answer`, `choice`, and `noul` as question
+constructors, plus `cutmcp.extract.is_trivial_filler` so both tools agree
+on what a whole-cue filler is.
+
+`JEV_MOCK=1` is the cutmcp switch. Conductor ignores it. Conductor dry-run
+is the default; `CONDUCTOR_DRY_RUN=1` forces the mock even with `--live`.
+
+Passes (`mechanical`, `dialogue`, `pacing`, plus reserved `story` / `audio`
+/ `broll`) are the extension point. A new editorial check is a
+`register_pass`, not a new CLI. Confidence gates live in `conductor/gates.py`.
+Creative passes never take the `auto` disposition. Apply never overwrites
+the input FCPXML.

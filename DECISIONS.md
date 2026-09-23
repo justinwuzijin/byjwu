@@ -197,3 +197,43 @@ spend by 1.8×, which is the wrong direction for a number you decide on.
 - The system interpreter here is Python 3.9, below the 3.11 floor, so the
   toolchain lives in a gitignored `.venv` built by `uv` with CPython 3.12.
   Nothing in the package depends on it.
+
+## Cut Conductor
+
+Sibling package, not a change to the tiers above.
+
+- **Python, because this repo is Python.** The product note preferred
+  TypeScript. A second language would have forked the Jev client and the
+  filler list. `conductor/` imports `cutmcp.jev.Answer` / `choice` / `noul`
+  and `cutmcp.extract.is_trivial_filler`, and nothing else from cutmcp.
+- **Dry-run is the default even when a key is present.** `--live` opts in.
+  `CONDUCTOR_DRY_RUN=1` forces the mock anyway. `JEV_MOCK` is not read, so a
+  cutmcp test session cannot silently flip Conductor into or out of mock.
+- **Two hosts, two model ids.** OpenRouter is
+  `POST /api/alpha/decisions` with `typesafe/jev-1.13`. TypeSafe direct is
+  `POST /v1/systemone` with `jev-1.13.0`, because that host rejects the
+  OpenRouter slug. OpenRouter wins when both keys are set.
+  `CONDUCTOR_JEV_PROVIDER` overrides.
+- **The mock is heuristic-calibrated, not the cutmcp hash mock.** A 2.5s
+  gap comes back `remove` at 0.86 so the auto gate is exercisable without a
+  key. A filler comes back `tighten` at 0.84 and stays in review because
+  dialogue is creative. Default taste prefs are a no-op. `target_pace:
+  loose` and `cold_open_bias: keep` are the only mock nudges.
+- **Marker color is a note field.** The FCPXML marker DTD has `start`,
+  `duration`, `value`, `note`, `completed` — no color. `color=` is written
+  into the note. Review and escalate set `completed="0"` so Final Cut shows
+  a to-do. Marker `start` is source time (`clip.start + local`), matching
+  markers the editor already placed.
+- **The gate rewrites the surfaced action.** Receipts and `raw_action` keep
+  what Jev said. The marker and `action` show what the gate allows. Creative
+  passes never receive disposition `auto`.
+- **Apply is a second file, parsed from the source again.** Markers and
+  cuts do not share a tree. The input path is never opened for write. The
+  source bytes are re-read at the end and must match. `--accept` performs
+  the raw tighten/remove for those ids. The confidence path requires
+  `--min-confidence` and `--pass` and only cuts `auto` rows. One of the two
+  is required; if ids are present they win.
+- **ElementTree preserves elements and attributes, not whitespace or
+  comments.** A round trip is not byte-identical. The safety check is "the
+  source file's bytes did not change," not "the shadow XML matches the
+  export byte for byte."

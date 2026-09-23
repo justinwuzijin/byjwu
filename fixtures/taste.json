@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "prefs": {
+    "jump_cut_tolerance": 0.5,
+    "target_pace": "measured",
+    "cold_open_bias": "neutral",
+    "hold_seconds": 4.0
+  },
+  "gates": {
+    "auto_confidence": 0.8,
+    "review_confidence": 0.55,
+    "auto_risk_max": 0.35
+  },
+  "log": [
+    {
+      "event": "reject",
+      "candidate_id": "c0004",
+      "action": "tighten",
+      "pass": "dialogue",
+      "note": "keep the breath before the explanation"
+    }
+  ]
+}

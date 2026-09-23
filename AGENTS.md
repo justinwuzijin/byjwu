@@ -200,10 +200,17 @@ text plus question text would make brief edits nearly free.
 
 A second package in this repo. It is an FCPXML co-pilot: named passes,
 Jev decisions, proposal markers, and an explicit apply that writes a new
-file. Human docs are the Cut Conductor section of `README.md` and
-`docs/room-protocol.md`.
+file. Human docs are `README.md` and `docs/room-protocol.md`.
 
-It does **not** follow the tier rule above, and it is not a sixth MCP tool.
+`python -m conductor ingest` inventories a folder of clips, writes a starter
+FCPXML (filename order, absolute `file://` paths), and calls `analyze`.
+`--apply` uses the same gates as `apply`. Source media is only read.
+Durations come from a `--durations` map, otherwise ffprobe, otherwise a 10s
+placeholder when the file cannot be probed. `python -m conductor ui` is a
+localhost page that posts a folder path to that command. It does not upload
+media.
+
+Cut Conductor does **not** follow the tier rule above, and it is not a sixth MCP tool.
 Do not fold its pipeline into `cutmcp/decide.py` or `cutmcp/assemble.py`.
 Do not route its Jev calls through `cutmcp/jev.py`'s `ask` — the Decisions
 client, the mock, and the action set live in `conductor/jev.py`. The one

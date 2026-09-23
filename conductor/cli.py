@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import argparse
 import sys
-
 from pathlib import Path
 
 from .errors import ConductorError
+from .ingest import DEFAULT_BRIEF, ingest
 from .passes import PASSES
-from .run import analyze
+from .run import Report, analyze
 from .taste import feedback_event, load_taste, write_taste
 
 
@@ -17,8 +17,9 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="cut-conductor",
         description=(
-            "Editorial co-pilot for a Final Cut export. Dry-run by default: "
-            "proposal markers on a new FCPXML, never a rewrite of the file you pass in."
+            "Editorial co-pilot for Final Cut. Dry-run by default: "
+            "proposal markers on a new FCPXML. The file you pass in, and any "
+            "source clips, are never modified."
         ),
     )
     sub = parser.add_subparsers(dest="command", required=True)
@@ -37,6 +38,14 @@ def main(argv: list[str] | None = None) -> int:
         type=float,
         help="with --pass, apply only auto-gated calls at or above this confidence",
     )
+    _add_ingest(
+        sub.add_parser(
+            "ingest",
+            help="build a starter FCPXML from a folder of clips, then shadow-mark it",
+        )
+    )
+    ui = sub.add_parser("ui", help="local page that runs ingest on a folder path")
+    ui.add_argument("--port", type=int, default=8765, help="localhost port (default: 8765)")
     feedback = sub.add_parser("feedback", help="append an accept or reject to a taste log")
     feedback.add_argument("--taste", required=True, help="taste JSON to read")
     feedback.add_argument("--out", required=True, help="where to write the updated taste JSON")
@@ -49,6 +58,10 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "feedback":
             return _feedback(args)
+        if args.command == "ui":
+            return _ui(args)
+        if args.command == "ingest":
+            return _ingest(args)
         report = analyze(
             args.fcpxml,
             transcript_path=args.transcript,
@@ -66,24 +79,7 @@ def main(argv: list[str] | None = None) -> int:
     except ConductorError as exc:
         print(f"cut-conductor: {exc}", file=sys.stderr)
         return 2
-    changes = len(report.changes)
-    print(
-        f"cut-conductor: {report.mode}, {len(report.candidates)} candidates, "
-        f"{report.marker_count} markers added, {changes} ranked changes, "
-        f"{report.cuts_applied} cuts written"
-    )
-    if report.out_fcpxml:
-        print(f"  shadow  {report.out_fcpxml}")
-    if report.out_applied:
-        print(f"  applied {report.out_applied}")
-    if report.out_markdown:
-        print(f"  report  {report.out_markdown}")
-    if report.out_json:
-        print(f"  json    {report.out_json}")
-    if report.out_taste:
-        print(f"  taste   {report.out_taste}")
-    if report.out_html:
-        print(f"  html    {report.out_html}")
+    _print_report(report)
     return 0
 
 
@@ -110,6 +106,49 @@ def _add_analyze(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--html", action="store_true", help="also write a single-file HTML report")
 
 
+def _add_ingest(parser: argparse.ArgumentParser) -> None:
+    ready = ", ".join(name for name, spec in PASSES.items() if spec.implemented)
+    parser.add_argument("--media", required=True, help="folder of video clips (not searched recursively)")
+    parser.add_argument(
+        "--brief",
+        help=f"what this cut is for (default: {DEFAULT_BRIEF})",
+    )
+    parser.add_argument("--transcript", help="optional SRT or WebVTT aligned to the sequence")
+    parser.add_argument("--out-dir", default="out", help="directory for new files (default: out)")
+    parser.add_argument("--sequence", help="project name (default: the folder name)")
+    parser.add_argument(
+        "--durations",
+        help="JSON object of file name to length (8, 8s, or 1/8s). Wins over ffprobe.",
+    )
+    parser.add_argument(
+        "--pass",
+        dest="passes",
+        action="append",
+        help=f"run one pass (repeatable). Ready: {ready}.",
+    )
+    parser.add_argument("--taste", help="taste JSON (prefs, gates, accept/reject log)")
+    parser.add_argument(
+        "--live",
+        action="store_true",
+        help="call Jev. Requires OPENROUTER_API_KEY or TYPESAFE_API_KEY. Off by default.",
+    )
+    parser.add_argument("--html", action="store_true", help="also write a single-file HTML report")
+    parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="also write an applied FCPXML, with the same gates as the apply command",
+    )
+    parser.add_argument(
+        "--accept",
+        help="with --apply, comma-separated candidate ids a person has accepted",
+    )
+    parser.add_argument(
+        "--min-confidence",
+        type=float,
+        help="with --apply and --pass, apply only auto-gated calls at or above this confidence",
+    )
+
+
 def _accept(value: str | None) -> list[str] | None:
     if not value:
         return None
@@ -117,6 +156,63 @@ def _accept(value: str | None) -> list[str] | None:
     if not ids:
         raise ConductorError("--accept did not contain any candidate ids")
     return ids
+
+
+def _ingest(args) -> int:
+    accept = _accept(args.accept)
+    if not args.apply and (accept or args.min_confidence is not None):
+        raise ConductorError(
+            "--accept and --min-confidence require --apply. The default is shadow markers."
+        )
+    result = ingest(
+        args.media,
+        brief=args.brief,
+        transcript_path=args.transcript,
+        taste_path=args.taste,
+        durations_path=args.durations,
+        out_dir=args.out_dir,
+        name=args.sequence,
+        live=args.live,
+        html=args.html,
+        passes=args.passes,
+        apply=args.apply,
+        accept=accept,
+        min_confidence=args.min_confidence,
+    )
+    _print_report(result.report, starter=result.starter)
+    for warning in result.warnings:
+        print(f"  warning {warning}", file=sys.stderr)
+    return 0
+
+
+def _ui(args) -> int:
+    from .ui import serve
+
+    serve(args.port)
+    return 0
+
+
+def _print_report(report: Report, starter: Path | None = None) -> None:
+    changes = len(report.changes)
+    print(
+        f"cut-conductor: {report.mode}, {len(report.candidates)} candidates, "
+        f"{report.marker_count} markers added, {changes} ranked changes, "
+        f"{report.cuts_applied} cuts written"
+    )
+    if starter is not None:
+        print(f"  starter {starter}")
+    if report.out_fcpxml:
+        print(f"  shadow  {report.out_fcpxml}")
+    if report.out_applied:
+        print(f"  applied {report.out_applied}")
+    if report.out_markdown:
+        print(f"  report  {report.out_markdown}")
+    if report.out_json:
+        print(f"  json    {report.out_json}")
+    if report.out_taste:
+        print(f"  taste   {report.out_taste}")
+    if report.out_html:
+        print(f"  html    {report.out_html}")
 
 
 def _feedback(args) -> int:

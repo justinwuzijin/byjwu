@@ -2,11 +2,11 @@
 
 How a Grok bot room drives Cut Conductor. v1 is the library and the CLI. No bot is implemented here, and nothing in this repo talks to Final Cut or to a bot API. This file is the contract those bots call.
 
-The shared object is one Final Cut export plus one brief. The shared artifact is the JSON report (`protocol` `cut-conductor.room`, `protocol_version` 1).
+The shared object is one timeline plus one brief. The timeline is a Final Cut export, or a starter sequence built from a selects folder. The shared artifact is the JSON report (`protocol` `cut-conductor.room`, `protocol_version` 1).
 
 ```text
-editor export
-    → Transcript supplies SRT/VTT
+editor export, or a selects folder via ingest
+    → Transcript supplies SRT/VTT (optional)
     → Conductor runs named passes (shadow)
     → Pacing / Transcript may re-run their own pass
     → human reads the ranked list
@@ -16,13 +16,42 @@ editor export
     → the next decide call sees that taste
 ```
 
+## Selects folder
+
+A Conductor bot can start from a folder of clips, not only from an export.
+
+```bash
+python -m conductor ingest --media selects/ \
+  --brief "A tight interview. Keep the guest's story, lose dead air." \
+  --transcript selects.srt \
+  --taste taste.json \
+  --out-dir out/room
+```
+
+`ingest` writes a starter FCPXML, then calls the same `analyze` path. Shadow markers are the default. `--apply` uses the same gate as `apply`: `--accept`, or `--min-confidence` together with `--pass`. Creative passes still do not auto-apply.
+
+The bot posts paths and metadata back into the room, not the picture or the sound:
+
+- the starter path (`ingest.starter_fcpxml`)
+- the shadow path (`files.fcpxml`), and `files.applied_fcpxml` only after a gated apply
+- the inventory (`ingest.clips`: file name, absolute path, `file://` URL, duration, and `blake2b` of the bytes that were read)
+- the brief
+
+Source clips are not modified. `source.fcpxml` and `source.blake2b` refer to the starter XML. The `ingest` object is present only when the run started from a folder. An export-only analyze leaves it out.
+
+Final Cut is still opened by a person. Each `media-rep` `src` is an absolute `file://` URL from the machine that ran ingest. If a path does not resolve, the person uses Relink Files. There is no plugin and no live control.
+
+Order is filename, case-insensitive, and only the folder itself is scanned. Duration comes from `--durations`, otherwise ffprobe, otherwise a 10s placeholder. A placeholder is not the picture's length; the XML carries 10s until a duration is known. The sequence format follows the first clip when ffprobe can read it, and is 1920×1080 at 24fps when it cannot.
+
+`python -m conductor ui` serves a page on 127.0.0.1 that posts a folder path to this command. It is not a webhook and it does not accept media bytes.
+
 ## Roles
 
 ### Conductor
 
 Owns the brief, which passes run, the taste file, and whether the run is shadow or apply.
 
-- Calls `conductor.analyze(...)` or `python -m conductor analyze|apply`.
+- Calls `conductor.analyze(...)` or `python -m conductor analyze|apply`. For a selects folder, calls `conductor.ingest(...)` or `python -m conductor ingest`, which writes a starter FCPXML and then calls `analyze`.
 - Actions stay inside `{keep, tighten, remove, mark_review, escalate}`. A bot does not add a sixth.
 - Default is shadow. Apply is a separate command and a separate file.
 - Applies an unattended cut only when the gate marked it `auto` and the caller passed `--min-confidence` together with `--pass`.
@@ -206,7 +235,8 @@ The next analyze/apply that points `--taste` at the updated file puts those even
 | `mode` | `dry-run` or `live` |
 | `shadow`, `applied` | shadow is always true for a successful run; `applied` is true only after a cut file was written |
 | `brief`, `passes`, `gates`, `taste` | what this run was asked |
-| `source.blake2b` | hash of the export bytes |
+| `source.blake2b` | hash of the FCPXML that was read (the export, or the starter from ingest) |
+| `ingest` | only when the run started from a folder: starter path, clip paths, durations. Absent on an export-only analyze |
 | `changes[]` | ranked rows: `section` is `eligible`, `review`, or `escalate` |
 | `changes[].candidate_id` | the id for `--accept` |
 | `changes[].raw_action` | what Jev chose, before the gate |

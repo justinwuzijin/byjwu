@@ -5,16 +5,38 @@ How a Grok bot room drives Cut Conductor. v1 is the library and the CLI. No bot 
 The shared object is one timeline plus one brief. The timeline is a Final Cut export, or a starter sequence built from a selects folder. The shared artifact is the JSON report (`protocol` `cut-conductor.room`, `protocol_version` 1).
 
 ```text
-editor export, or a selects folder via ingest
+~/Desktop/jevid-in  (export, or a selects folder)
     → Transcript supplies SRT/VTT (optional)
-    → Conductor runs named passes (shadow)
-    → Pacing / Transcript may re-run their own pass
-    → human reads the ranked list
-    → human accepts ids, or a mechanical auto gate
-    → Conductor apply writes a new FCPXML
+    → Conductor iterate: analyze, then auto-apply mechanical cuts only
+    → ~/Desktop/jevid-out/vN
+    → stop on metrics, no further mechanical cut, or the round cap
+    → a person only for escalate, or when the cap hits
     → accept/reject events land in taste.json
     → the next decide call sees that taste
 ```
+
+## Desktop folders
+
+The person does not run the CLI. The bots do.
+
+| folder | who writes it | what it holds |
+|---|---|---|
+| `~/Desktop/jevid-in` | the person | a selects folder, or one FCPXML export |
+| `~/Desktop/jevid-out` | the Conductor bot | `starter.fcpxml` when the input was a folder, `v1/` … `vN/`, and `iterate.json` |
+
+Nothing in this repo watches those folders or uploads media. The bot on that machine is what reads the path and writes the next file. Final Cut is still opened by a person, and only to import the FCPXML the room points at.
+
+```bash
+python -m conductor iterate \
+  --media ~/Desktop/jevid-in \
+  --brief "A tight interview. Keep the guest's story, lose dead air." \
+  --transcript ~/Desktop/jevid-in/interview.srt \
+  --taste taste.json \
+  --out-dir ~/Desktop/jevid-out \
+  --max-rounds 5
+```
+
+An export uses `--fcpxml` instead of `--media`. Exactly one of the two.
 
 ## Selects folder
 
@@ -45,18 +67,48 @@ Order is filename, case-insensitive, and only the folder itself is scanned. Dura
 
 `python -m conductor ui` serves a page on 127.0.0.1 that posts a folder path to this command. It is not a webhook and it does not accept media bytes.
 
+## Iterate
+
+`python -m conductor iterate` is the loop the Conductor bot owns. A person is not in the round.
+
+Each round writes `<out-dir>/vN/`:
+
+1. Stage the current timeline as `timeline.fcpxml` (a copy; the dropped file is not modified).
+2. Analyze the implemented passes (mechanical, dialogue, pacing, colour), or the subset passed with `--pass`.
+3. Auto-apply only mechanical rows the gate marked `auto`, at or above `--min-confidence` (default 0.8). Same rule as `apply --min-confidence --pass mechanical`.
+4. If that matched nothing, the round's next file is the shadow FCPXML. If it matched, the next file is the applied FCPXML.
+5. Append one taste `accept` per cut, including clip name and kind. The next round loads that taste file. The taste path the bot passed in is not overwritten.
+
+Stop after the round, on the first reason that holds:
+
+| `stop_reason` | when |
+|---|---|
+| `metrics` | every configured target holds. Unset targets are not constraints. If the timeline is already inside them, the round does not cut. |
+| `no-progress` | the round applied no mechanical cut |
+| `max-rounds` | the cap (default 5) was hit after a round that did cut |
+
+Configured targets: `--target-seconds` with `--tolerance` (default 1 second, a symmetric window), `--max-escalate`, `--max-review`, `--max-silence-seconds`, `--min-shot-seconds`, `--max-cuts-per-minute`.
+
+Silence is the sum of `silence_gap` candidates (explicit gaps and holes of at least 1.25s). It is not a waveform. Average shot length and cuts per minute are spine arithmetic: a cut is the join between two non-gap clips.
+
+`iterate.json` at the output root is `protocol` `cut-conductor.iterate`, `protocol_version` 1. Bots post `stop_reason`, `needs_human`, `human_reasons`, `applied`, and `rounds`. Each round still has its own `*.conductor.json` (`cut-conductor.room`). Do not invent a third schema.
+
+`needs_human` is true when the last round's escalate count is above zero, or `stop_reason` is `max-rounds`. A `metrics` or `no-progress` stop with no escalate is the bot finishing. Review rows are marked and left for later. The loop does not `--accept` them.
+
+The transcript stays on the clock of the file you passed. After a ripple, later dialogue times can drift. Mechanical silence and short clips do not use the transcript, so the unattended loop still converges. A bot that cares about filler after a cut should rebuild the SRT on the new sequence clock before the next dialogue pass.
+
 ## Roles
 
 ### Conductor
 
-Owns the brief, which passes run, the taste file, and whether the run is shadow or apply.
+Owns the brief, which passes run, the taste file, the iterate loop, and whether a one-shot run is shadow or apply.
 
-- Calls `conductor.analyze(...)` or `python -m conductor analyze|apply`. For a selects folder, calls `conductor.ingest(...)` or `python -m conductor ingest`, which writes a starter FCPXML and then calls `analyze`.
+- Calls `python -m conductor iterate` for the unattended loop, or `conductor.analyze` / `conductor.ingest` for a single shadow pass.
 - Actions stay inside `{keep, tighten, remove, mark_review, escalate}`. A bot does not add a sixth.
-- Default is shadow. Apply is a separate command and a separate file.
-- Applies an unattended cut only when the gate marked it `auto` and the caller passed `--min-confidence` together with `--pass`.
-- Applies a review call only when a person named that candidate id with `--accept`.
-- Writes `*.conductor.json`. That file is the room state. Do not invent a second schema.
+- Default for a one-shot command is shadow. Apply is a separate command and a separate file. Iterate's apply is the mechanical auto gate only, and it still writes a new file.
+- Applies an unattended cut only when the gate marked it `auto` and the pass is mechanical.
+- Applies a review call only when a person named that candidate id with `--accept`. Iterate does not do this.
+- Writes `*.conductor.json` per round and `iterate.json` for the loop. Do not invent another schema.
 
 ### Transcript
 
@@ -76,31 +128,41 @@ Owns pace preferences: `target_pace`, `jump_cut_tolerance`, `hold_seconds`.
 - A `tighten` on a whole clip keeps the first `hold_seconds` (default 4) and lifts the tail. That number comes from taste, not from the model.
 - `target_pace: loose` is a hint in Jev state. The mock treats a long silence as a review-level tighten when pace is loose. Live Jev receives the same state; it does not get a rewritten prompt per preference.
 
+### Colour
+
+Owns picture notes that can be read from the XML, and the honest limit where they cannot.
+
+- Drives `colour`: a spine clip with no role, an asset frame that badly mismatches the sequence (portrait against landscape, or a relative aspect gap of at least 0.15), and one placeholder per sequence for exposure, white balance, and skin.
+- Does not decode media. The placeholder says so. A grade of the pixels is not this pass.
+- Colour is creative. Jev may answer `mark_review` or `escalate`. The mock escalates an extreme aspect mismatch and marks the role note and the exposure placeholder for review. The gate will not mark colour `auto`, and iterate will not apply it.
+- A person `--accept`s a colour id only when the raw action is already `tighten` or `remove`. That ripples a range. It does not change pixels. The mock does not return those actions.
+
 ### Human
 
-Reads `*.conductor.md`, the HTML page, or the markers after importing the shadow FCPXML into a **duplicate** event.
+Opens the FCPXML from `~/Desktop/jevid-out` when `iterate.json` says `needs_human`. That is an escalate, or a loop that hit `--max-rounds`. Other stops are the bot finishing.
 
-- `eligible` — high-confidence mechanical calls. Safe for `--min-confidence` on the `mechanical` pass.
-- `review` — creative calls, and mechanical calls that missed the auto gate. A person may `--accept` an id whose raw action is `tighten` or `remove`.
-- `escalate` — confidence below the review threshold, or Jev said escalate. No unattended cut.
+- `eligible` — high-confidence mechanical calls. Iterate already applied these when they cleared the gate. A one-shot `apply` can do the same with `--min-confidence` on the `mechanical` pass.
+- `review` — creative calls, including colour, and mechanical calls that missed the auto gate. Left marked. A person may `--accept` an id whose raw action is `tighten` or `remove`. The loop does not wait on these.
+- `escalate` — confidence below the review threshold, or Jev said escalate. No unattended cut. This is one of the two reasons the room asks a person.
 - `keep`, `mark_review`, and `escalate` have no range to lift. `--accept` on those ids errors.
 
 ## Passes
 
-A pass is a named slice. Omit `--pass` and the room runs `mechanical`, then `dialogue`, then `pacing`. Repeat `--pass` to run one or a subset, in the order given.
+A pass is a named slice. Omit `--pass` and the room runs `mechanical`, then `dialogue`, then `pacing`, then `colour`. Repeat `--pass` to run one or a subset, in the order given. `iterate` uses that set for the judgment and then auto-applies only `mechanical`.
 
 | pass | typical owner | creative | v1 |
 |---|---|---|---|
-| `mechanical` | Conductor | no | silence gaps, clips under half a second |
+| `mechanical` | Conductor | no | silence gaps, clips under half a second. The only pass `iterate` auto-applies. |
 | `dialogue` | Transcript | yes | transcript filler and the pauses around it |
 | `pacing` | Pacing | yes | long holds and low-speech stretches |
+| `colour` | Colour | yes | missing roles, extreme aspect mismatches in the XML, placeholder for exposure and skin. Never an unattended cut. |
 | `story` | later | yes | reserved |
 | `audio` | later | yes | reserved |
 | `broll` | later | yes | reserved |
 
 `story`, `audio`, and `broll` are registered and refused until a generator is attached. The extension point is `conductor.passes.register_pass`. A generator is `(sequences, cues, transcript_present) -> list[Candidate]`. Registering a pass as `creative=True` keeps it out of unattended apply. Registering `creative=False` makes it eligible for the auto gate; do that only for a check a regex or a duration already decided.
 
-Candidate ids (`c0001`, …) are assigned after the passes that actually ran, in timeline order. An id from a dialogue-only report is not the same id in a three-pass report. Bots treat ids as valid for that JSON only.
+Candidate ids (`c0001`, …) are assigned after the passes that actually ran, in timeline order. An id from a dialogue-only report is not the same id in a four-pass report. Bots treat ids as valid for that JSON only.
 
 ## Confidence gates
 
@@ -156,7 +218,7 @@ Rules the bots must not relax:
 
 - `--accept` and the confidence path are alternatives. When ids are present, those ids are what get cut. The confidence path runs only when no ids were named.
 - Apply without `--accept`, and without both `--min-confidence` and `--pass`, is an error.
-- `--min-confidence` on `dialogue` or `pacing` matches nothing, because those passes are creative. The error tells the caller to `--accept` ids.
+- `--min-confidence` on `dialogue`, `pacing`, or `colour` matches nothing, because those passes are creative. The error tells the caller to `--accept` ids. Colour is still not a pixel grade.
 - `cut.conductor.applied.fcpxml` is a new file. The export the editor handed over is not modified. A bot checks the source hash in the JSON (`source.blake2b`) against the file on disk if it needs a receipt.
 - Import either FCPXML into a duplicate event. There is no plugin and no live timeline write.
 
@@ -252,5 +314,7 @@ The next analyze/apply that points `--taste` at the updated file puts those even
 
 - No Final Cut plugin, Apple Events, or watch-folder rewrite of the open library.
 - No sixth tool on the cutmcp MCP server. Conductor is a sibling package.
-- No story, audio, or b-roll judgments until a generator is registered.
+- No story, audio, or b-roll judgments until a generator is registered. Colour is registered and review-only; it does not decode the picture.
+- No unattended cut outside the mechanical auto gate. Iterate does not accept review ids on its own.
+- No Desktop watcher in this repo. `~/Desktop/jevid-in` and `~/Desktop/jevid-out` are the folders the bot is told to use.
 - No training step on the taste log.

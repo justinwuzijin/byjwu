@@ -30,7 +30,8 @@ Schema (version 1)::
 ``cold_open_bias`` is ``keep``, ``neutral``, or ``cut``.
 ``jump_cut_tolerance`` is 0 to 1. ``hold_seconds`` is how much of a long
 hold a ``tighten`` keeps. Extra event fields (a room may add ``at``) are
-preserved and ignored by the loader.
+preserved. Apply adds ``clip_name``, ``kind``, and the timeline range on each
+accept so a later round can see what was cut. The loader keeps those fields.
 """
 
 from __future__ import annotations
@@ -125,6 +126,7 @@ def feedback_event(
     action: str,
     pass_name: str,
     note: str = "",
+    fields: dict | None = None,
 ) -> dict:
     if event not in _EVENTS:
         raise ConductorError(f"feedback event must be accept or reject, got {event!r}")
@@ -138,6 +140,9 @@ def feedback_event(
     }
     if note:
         row["note"] = note
+    for key, value in (fields or {}).items():
+        if key not in row and value is not None:
+            row[key] = value
     return row
 
 

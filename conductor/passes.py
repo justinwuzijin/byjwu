@@ -1,8 +1,9 @@
 """Named editorial passes.
 
 A pass is a slice of the timeline a room can run on its own. v1 implements
-three. ``story``, ``audio`` and ``broll`` are registered so a later bot has a
-place to hang a generator without inventing a new pipeline.
+mechanical, dialogue, pacing, and a review-only colour scaffold. ``story``,
+``audio`` and ``broll`` are registered so a later bot has a place to hang a
+generator without inventing a new pipeline.
 
 ::
 
@@ -26,6 +27,7 @@ from collections.abc import Sequence as SequenceOf
 from dataclasses import dataclass
 
 from .candidates import Candidate, assign_ids, generate
+from .colour import generate as colour_generate
 from .errors import ConductorError
 from .fcpxml import Sequence
 from .transcript import Cue
@@ -48,7 +50,7 @@ def _builtin(name: str, kinds: frozenset[str], creative: bool, summary: str) -> 
 
 
 #: Execution order when the caller does not name a subset.
-ORDER: tuple[str, ...] = ("mechanical", "dialogue", "pacing")
+ORDER: tuple[str, ...] = ("mechanical", "dialogue", "pacing", "colour")
 
 PASSES: dict[str, Pass] = {
     "mechanical": _builtin(
@@ -92,6 +94,16 @@ PASSES: dict[str, Pass] = {
         False,
         "Reserved. Coverage against the A-roll. Register a generator.",
     ),
+    "colour": Pass(
+        "colour",
+        frozenset({"colour_role", "colour_aspect", "colour_unseen"}),
+        True,
+        True,
+        "Missing roles and extreme aspect mismatches already in the XML, plus "
+        "a placeholder for exposure and skin. Review only: the picture is not "
+        "decoded, and this pass is never an unattended cut.",
+        colour_generate,
+    ),
 }
 
 
@@ -116,7 +128,7 @@ def is_creative(name: str) -> bool:
 
 
 def resolve_names(requested: Sequence[str] | None) -> list[str]:
-    """Default is the three implemented passes, in order. Unknown names error."""
+    """Default is the implemented passes, in order. Unknown names error."""
     if not requested:
         return list(ORDER)
     names: list[str] = []

@@ -290,6 +290,12 @@ def _policy(candidate: Mapping[str, Any], taste: Mapping[str, Any] | None = None
     signals = candidate.get("signals") or {}
     duration = float(candidate.get("duration_seconds") or 0.0)
     prefs = (taste or {}).get("prefs") or {}
+    # Colour is a note, not a cut. Checked before the cold-open shortcut so a
+    # "keep the opening" preference cannot hide a missing role or a bad frame.
+    if kind == "colour_aspect":
+        return "escalate", 0.58, 0.62
+    if kind in {"colour_role", "colour_unseen"}:
+        return "mark_review", 0.64, 0.41
     if prefs.get("cold_open_bias") == "keep" and signals.get("is_cold_open"):
         return "keep", 0.90, 0.10
     if kind == "silence_gap":

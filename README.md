@@ -1,54 +1,96 @@
 # jevid
 
-A Grok Bot room that uses Jev to propose Final Cut cuts — and, when you accept them, apply those cuts. Every call has a confidence and a receipt. The handoff is FCPXML. You open the result in Final Cut yourself.
+A Grok Bot room that cuts with you. You drop a path. The room runs Cut Conductor until the mechanical cuts are done. You open the FCPXML in Final Cut when a person is actually needed.
 
-Not an auto-editor. Not remote control of the Final Cut window.
+Not an auto-editor. Not remote control of the Final Cut window. The handoff is FCPXML. Every Jev call has a confidence and a receipt.
+
+## The path you use
+
+You do not run the CLI. The bots do.
+
+1. Put a selects folder, or a Final Cut **File → Export XML…** file, in `~/Desktop/jevid-in`.
+2. The room runs `python -m conductor iterate` on that path.
+3. Each round is written under `~/Desktop/jevid-out` (`v1/`, `v2/`, …). The applied FCPXML in the last round that cut something is the cut so far.
+4. You step in when a row is an escalate, or the loop hits its round cap. Review markers stay on the timeline. The loop does not apply them.
+
+`~/Desktop/jevid-in` and `~/Desktop/jevid-out` are ordinary folders on the machine the bot runs on. Nothing in this repo watches the Desktop, uploads picture or sound, or drives Final Cut. The bot reads a path and writes a new file. You import that file yourself (**File → Import → XML…**). Import creates a new event. It does not patch the project you already have open.
+
+A folder of clips becomes a starter sequence first (filename order, absolute `file://` paths), then the same loop. An export is iterated as it stands. Source clips and the file you dropped are only read.
 
 ## Who it’s for
 
-Final Cut editors who want a decision layer and a small crew around a cut: someone on pace, someone on the transcript, and someone who will not change the timeline unless the call is solid or a person said yes.
+Final Cut editors who want a decision layer and a small crew around a cut: someone on pace, someone on the transcript, someone on colour, and someone who will not change the timeline unless the call is solid or a person said yes.
 
 ## How it fits together
 
 | Piece | What it does |
 |---|---|
 | **Final Cut Pro** | The timeline is the truth. You import the FCPXML jevid writes. You export XML when you already have a cut. |
-| **Cut Conductor** | The program in this repo. Named passes, confidence gates, proposal markers, and an explicit apply. |
+| **Cut Conductor** | The program in this repo. Named passes, confidence gates, proposal markers, an explicit apply, and the iterate loop the room owns. |
 | **Jev** (TypeSafe) | Typed decisions only: keep, tighten, remove, mark for review, or escalate. It does not write the marker text. |
-| **Grok Bot room** | Conductor, Pacing, and Transcript. They explain the list, ask a person, and follow the [room protocol](docs/room-protocol.md). |
+| **Grok Bot room** | Conductor, Pacing, Transcript, and Colour. They run the loop, explain the list, and ask a person only for an escalate or when the round cap hits. The contract is the [room protocol](docs/room-protocol.md). |
 
 Jev picks from options the code defines. The note on a marker is assembled afterwards from the action, the confidence, and the reason.
-
-## Two ways in
-
-Both end the same way: an FCPXML you import into Final Cut. Neither one edits the open library, and neither one posts picture or sound to a webhook.
-
-**A. An existing cut.** In Final Cut, choose **File → Export XML…** and run Cut Conductor on that file.
-
-**B. A folder of clips.** Point `--media` at the folder (and, if you have them, a brief and a transcript). Conductor writes a starter sequence in filename order, then runs the same passes. A page on your machine can do that from a path. The files stay on disk.
 
 ## The loop
 
 ```text
-FCPXML export, or a folder of clips
+~/Desktop/jevid-in  (a folder, or an FCPXML export)
         →  starter sequence when the input is a folder
-        →  mechanical, dialogue, pacing
-        →  Jev: action + confidence + risk
-        →  shadow markers and a ranked list
-        →  you accept an id, or a high-confidence mechanical cut qualifies
-        →  a new FCPXML
-        →  you open it in Final Cut
-        →  accept / reject is logged for the next pass
+        →  iterate: analyze, then auto-apply only mechanical cuts the gate allows
+        →  ~/Desktop/jevid-out/vN
+        →  stop when the metrics hold, when nothing mechanical is left, or at the round cap
+        →  a person, only for escalate or max rounds
+        →  you open the FCPXML in Final Cut
+        →  accept / reject is logged for the next decide call
 ```
 
-A morning with an export: you run a dry-run. The long silence shows up as a mechanical cut the gate would allow. The “um” and the long hold show up for you to look at, and they are not cut. If you want the markers on a timeline, you import the shadow XML into a duplicate event. When you agree with the silence cut, you apply it to yet another file. The export you made in Final Cut is still sitting there, unchanged. No plugin was attached. A folder of clips takes the same path after ingest writes the starter sequence.
+On the checked-in interview, round 1 lifts the long silence. The “um”, the hold, and the colour placeholder stay marked and are not cut. Round 2 finds no further mechanical cut and stops. The export you made in Final Cut is still sitting there, unchanged. No plugin was attached.
 
-## Quickstart
+## Commands the room runs
 
-From the repo root. No API key.
+From the repo root. No API key. These are the commands a bot shells out to. The desktop folders above are the paths it passes.
 
 ```bash
 pip install -e ".[dev]"
+```
+
+The loop the room owns:
+
+```bash
+python -m conductor iterate \
+  --media ~/Desktop/jevid-in \
+  --brief "A tight interview. Keep the guest's story, lose dead air." \
+  --transcript ~/Desktop/jevid-in/interview.srt \
+  --out-dir ~/Desktop/jevid-out \
+  --max-rounds 5
+```
+
+An export instead of a folder uses `--fcpxml ~/Desktop/jevid-in/cut.fcpxml` and omits `--media`. One of those two inputs, not both. Dry-run is the default. `--live` is how a bot calls Jev.
+
+Each round writes `~/Desktop/jevid-out/vN/`: a shadow FCPXML, and an applied FCPXML only when a mechanical auto-gate cut landed. The next round reads the applied file, or the shadow when nothing was cut. `iterate.json` in the output folder is the stop record: the per-round metrics, the cuts, and `stop_reason` (`metrics`, `no-progress`, or `max-rounds`).
+
+Stop when every metric you set is true, when a round applies nothing, or at `--max-rounds` (default 5). Metrics are optional. Leave them unset and the loop runs until the mechanical cuts run out or the cap hits.
+
+| flag | stops when |
+|---|---|
+| `--target-seconds` + `--tolerance` (default 1s) | duration is inside that window |
+| `--max-escalate` | escalate rows are at or under the cap |
+| `--max-review` | review rows are at or under the cap |
+| `--max-silence-seconds` | silence-gap candidates sum to at most this |
+| `--min-shot-seconds` | average non-gap spine clip is at least this long |
+| `--max-cuts-per-minute` | joins between spine shots, per minute, are at or under this |
+
+Silence is the sum of gap and hole candidates of at least 1.25s. It is not a decoded quiet measurement. Shot length and cuts per minute are read off the spine. If the timeline is already inside the metrics, the round does not cut.
+
+Auto-apply uses the same gate as `apply --min-confidence 0.8 --pass mechanical`. Dialogue, pacing, and colour are judged and marked. They are not cut. Taste from `--taste` is carried forward; each round's accepts are appended and the next round sees them. The taste file you passed in is not overwritten.
+
+A person is asked when the last round still has an escalate, or the stop reason is `max-rounds`. A `metrics` or `no-progress` stop with an empty escalate list is the bot finishing.
+
+The checked-in fixture, no API key:
+
+```bash
+python scripts/iterate_dry_run.py
 ```
 
 ### From a folder of clips
@@ -149,13 +191,14 @@ OpenRouter wins when both are set. `CONDUCTOR_JEV_PROVIDER=typesafe` forces the 
 
 ## Passes, gates, apply, taste
 
-Passes run in order — `mechanical`, then `dialogue`, then `pacing` — or one at a time with `--pass`.
+Passes run in order — `mechanical`, then `dialogue`, then `pacing`, then `colour` — or one at a time with `--pass`. `iterate` judges that same set and auto-applies only `mechanical`.
 
 | Pass | Looks for | Who may apply it |
 |---|---|---|
-| `mechanical` | Silence of at least 1.25s. Clips under 0.45s (under 0.20s is a flash). | High-confidence tighten/remove, with `--min-confidence` |
+| `mechanical` | Silence of at least 1.25s. Clips under 0.45s (under 0.20s is a flash). | High-confidence tighten/remove, with `--min-confidence`. This is what `iterate` auto-applies. |
 | `dialogue` | A whole filler cue (0.25–3s), or a pause of at least 0.80s beside filler | Review, unless you `--accept` the id |
 | `pacing` | A clip of at least 20s under 0.40 words/second. With no transcript: a hold/slate/b-roll name, or a clip of at least 45s | Review, unless you `--accept` the id |
+| `colour` | A spine clip with no role. An asset frame that badly mismatches the sequence (portrait against landscape, or about 15% off). A placeholder for exposure and skin. | Review or escalate. The picture is not decoded. Never an unattended cut, and never a grade of the pixels. |
 | `story`, `audio`, `broll` | Not built | `conductor.passes.register_pass` |
 
 Filler matches the whole cue (`um`, `you know`, `i mean`, and the same list cutmcp uses). `like`, `yeah`, and `okay` are not filler.
@@ -181,7 +224,7 @@ python -m conductor apply cut.fcpxml --transcript cut.srt \
   --brief "..." --accept c0003 --out-dir out/cut
 ```
 
-`cut.conductor.applied.fcpxml` is the cut. `cut.fcpxml` is untouched. `--min-confidence` on dialogue or pacing matches nothing, because those passes are creative. Name the id.
+`cut.conductor.applied.fcpxml` is the cut. `cut.fcpxml` is untouched. `--min-confidence` on dialogue, pacing, or colour matches nothing, because those passes are creative. Name the id. Colour still does not grade pixels: there is no picture decode, and an accept only ripples a range when the raw action is already a tighten or remove. The colour mock does not return those actions.
 
 A `tighten` on a whole clip keeps the first `hold_seconds` (default 4) and lifts the tail. A `remove`, a filler, or a hole lifts that range and closes the gap. A transition on the spine is refused rather than left at a stale offset.
 
@@ -201,7 +244,8 @@ Roles, the accept loop, and the payload fields are in [docs/room-protocol.md](do
 
 ## Safety
 
-- The default command is `analyze`. `ingest` without `--apply` does not cut.
+- The default command is `analyze`. `ingest` without `--apply` does not cut. `iterate` cuts only mechanical auto-gate rows, into a new file under `vN/`.
+- Colour is creative. `--min-confidence --pass colour` matches nothing. `iterate` does not put colour on the apply path.
 - `apply`, and `ingest --apply`, error unless you pass `--accept`, or both `--min-confidence` and `--pass`.
 - The confidence path only cuts `auto` rows. Creative calls stay in review or escalate.
 - Output paths that resolve to the source FCPXML, or to a source clip, are refused. The source bytes are checked at the end of the run.
@@ -211,9 +255,9 @@ Roles, the accept loop, and the payload fields are in [docs/room-protocol.md](do
 
 ## The Grok Bot room
 
-Conductor, Pacing, and Transcript are how a person is meant to drive this. v1 of the software is the library and the CLI they call. The contract is [docs/room-protocol.md](docs/room-protocol.md): who owns which pass, how a shadow run becomes an accepted cut, and how accept/reject events land in taste for the next decide call.
+Conductor, Pacing, Transcript, and Colour are how a cut moves. A person drops a path in `~/Desktop/jevid-in` and opens whatever lands in `~/Desktop/jevid-out` when the room asks. v1 of the software is the library and the CLI those bots call. The contract is [docs/room-protocol.md](docs/room-protocol.md): who owns which pass, how `iterate` stops, and how accept/reject events land in taste.
 
-A Conductor bot runs `python -m conductor analyze` or `python -m conductor ingest` (or imports `conductor.analyze` / `conductor.ingest`). It does not invent a sixth action. It does not apply a cut the gate did not allow unless a person accepted that id. The JSON report (`protocol` `cut-conductor.room`) is the state the room posts. Bots do not re-sort it.
+The Conductor bot runs `python -m conductor iterate` (or `analyze` / `ingest` for a single shadow pass). It does not invent a sixth action. It does not apply a cut the gate did not allow unless a person accepted that id. Unattended cuts are mechanical only. The per-round JSON report (`protocol` `cut-conductor.room`) is the state the room posts. `iterate.json` (`protocol` `cut-conductor.iterate`) is the stop record. Bots do not re-sort either list.
 
 When the input is a folder, the room is woken with the starter FCPXML path, the inventory, the brief, and the media paths. Not with the media bytes.
 
@@ -221,7 +265,7 @@ When the input is a folder, the room is woken with the starter FCPXML path, the 
 
 - **Ordering.** Ingest is filename order. A brief does not reorder clips yet.
 - **Taste.** The log is already in the decide state. Learning from it — actually shifting later calls — is not built.
-- **More passes.** `story`, `audio`, and `broll` are reserved. A new check is a `register_pass`, not a new product.
+- **More passes.** `colour` is a review-only scaffold: roles and aspect from the XML, and an honest placeholder where exposure and skin would need the picture. `story`, `audio`, and `broll` are still reserved. A new check is a `register_pass`, not a new product.
 - **A Mac drop helper.** The local page is a browser on 127.0.0.1. A Finder drop that never opens a terminal is not built. Still FCPXML out, still no plugin.
 
 ## Tests
@@ -230,9 +274,10 @@ When the input is a folder, the room is woken with the starter FCPXML path, the 
 python -m pytest
 python scripts/dry_run.py
 python scripts/ingest_dry_run.py
+python scripts/iterate_dry_run.py
 ```
 
-No API key. Conductor tests cover the parser, marker write-back, the mock client, the gates, apply, and ingest (including the fixture folder and the local page). The placeholder clips under `fixtures/selects/` are a few bytes each.
+No API key. Conductor tests cover the parser, marker write-back, the mock client, the gates, apply, ingest (including the fixture folder and the local page), the colour pass, and iterate (two rounds, the round cap, and a duration window). The placeholder clips under `fixtures/selects/` are a few bytes each.
 
 ## Also in this repo: cutmcp
 

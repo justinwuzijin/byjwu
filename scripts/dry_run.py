@@ -39,10 +39,14 @@ def main() -> int:
     if missing:
         raise SystemExit(f"missing candidate kinds: {sorted(missing)}")
     eligible = [row for row in report.changes if row["section"] == "eligible"]
-    if [row["candidate_id"] for row in eligible] != ["c0001"]:
+    silence = [row for row in eligible if row["kind"] == "silence_gap"]
+    if len(eligible) != 1 or len(silence) != 1:
         raise SystemExit(f"expected only the silence gap to be eligible, got {eligible}")
-    if eligible[0]["pass"] != "mechanical" or eligible[0]["action"] != "remove":
-        raise SystemExit(f"eligible call changed: {eligible[0]}")
+    if silence[0]["pass"] != "mechanical" or silence[0]["action"] != "remove":
+        raise SystemExit(f"eligible call changed: {silence[0]}")
+    colour = [row for row in report.changes if row["pass"] == "colour"]
+    if not colour or any(row["disposition"] == "auto" for row in colour):
+        raise SystemExit(f"colour pass should be present and not auto, got {colour}")
     review_passes = {row["pass"] for row in report.changes if row["section"] == "review"}
     if not {"dialogue", "pacing"} <= review_passes:
         raise SystemExit(f"creative passes should stay in review, got {review_passes}")

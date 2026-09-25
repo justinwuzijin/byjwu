@@ -43,7 +43,16 @@ accept so a later round can see what was cut. The loader keeps those fields.
 Priors key on ``kind``. Rejections lower confidence and can only raise the
 mechanical auto threshold. Accepts may raise confidence, but they cannot open
 auto-apply on a call that was under the threshold unless a rule sets
-``loosen_auto``. That flag is the explicit opt-in.
+``loosen_auto``. That flag is the explicit opt-in. Accepts with ``source``
+``auto`` are cuts the gate made on its own; they are logged and never count
+toward a prior.
+
+``observe`` events carry a ``param`` and a ``value`` (and optionally a
+``section``) instead of a ``kind``. They are what a re-export shows about a
+style parameter: pacing by section, music fade length, a typography choice.
+Priors ignore them. :meth:`Taste.observations` reads them back. Unknown
+top-level keys (a future ``style`` block keyed to ``styles/<name>/profile``)
+are kept on load and written back unchanged.
 """
 
 from __future__ import annotations
@@ -75,7 +84,10 @@ DEFAULT_PREFS = {
 
 _PACES = frozenset({"tight", "measured", "loose"})
 _BIASES = frozenset({"keep", "neutral", "cut"})
-_EVENTS = frozenset({"accept", "reject", "modify", "extra"})
+_EVENTS = frozenset({"accept", "reject", "modify", "extra", "observe"})
+_KNOWN_KEYS = frozenset({"version", "prefs", "gates", "log", "rules", "pending"})
+#: Accepts the gate made unattended. Logged for the record, never a prior.
+MACHINE_SOURCES = frozenset({"auto"})
 
 
 @dataclass(frozen=True)
@@ -105,6 +117,17 @@ class Taste:
     global_rules: list[dict] = field(default_factory=list)
     supplied_prefs: dict = field(default_factory=dict)
     supplied_gates: dict = field(default_factory=dict)
+    extra: dict = field(default_factory=dict)
+    project_prefs: dict | None = None
+    project_gates: Gates | None = None
+
+    def observations(self, param: str | None = None) -> list[dict]:
+        """Style-parameter observations, project and global, oldest first."""
+        return [
+            dict(event)
+            for event in self._events()
+            if event.get("event") == "observe" and (param is None or event.get("param") == param)
+        ]
 
     def to_state(self) -> dict:
         """The slice of taste that goes into a Jev request."""
@@ -191,18 +214,25 @@ class Taste:
             base_auto=base_auto,
             capped=capped,
             rule_notes="; ".join(notes),
+            blocked=block,
         )
         if reason is None and abs(combined) < 1e-9 and abs(bumped - base_auto) < 1e-9:
             adjusted = float(raw)
         return Adjustment(adjusted, float(raw), bumped, reason)
 
     def dump(self) -> dict:
-        payload = {
-            "version": 1,
-            "prefs": self.prefs,
-            "gates": self.gates.to_dict(),
-            "log": self.log,
-        }
+        """The project file. Global prefs, gates, rules, and log stay out of it."""
+        prefs = self.prefs if self.project_prefs is None else self.project_prefs
+        gates = self.gates if self.project_gates is None else self.project_gates
+        payload = {key: value for key, value in self.extra.items() if key not in _KNOWN_KEYS}
+        payload.update(
+            {
+                "version": 1,
+                "prefs": prefs,
+                "gates": gates.to_dict(),
+                "log": self.log,
+            }
+        )
         if self.rules:
             payload["rules"] = self.rules
         if self.pending:
@@ -237,8 +267,11 @@ class Taste:
         }
         for event in self._events():
             slot = names.get(event.get("event"))
-            if slot and event.get("kind") == kind:
-                counts[slot] += 1
+            if not slot or event.get("kind") != kind:
+                continue
+            if event.get("source") in MACHINE_SOURCES:
+                continue
+            counts[slot] += 1
         return counts
 
     def _seen(self, fingerprint: str) -> bool:
@@ -273,7 +306,7 @@ def feedback_event(
     note: str = "",
     fields: dict | None = None,
 ) -> dict:
-    if event not in _EVENTS:
+    if event not in _EVENTS - {"observe"}:
         raise ConductorError(
             f"feedback event must be accept, reject, modify, or extra, got {event!r}"
         )
@@ -373,9 +406,11 @@ def _read_taste(path: str | Path) -> Taste:
     for event in log:
         if event.get("event") not in _EVENTS:
             raise ConductorError(
-                "taste log event must be accept, reject, modify, or extra, "
+                "taste log event must be accept, reject, modify, extra, or observe, "
                 f"got {event.get('event')!r}"
             )
+        if event.get("event") == "observe" and not event.get("param"):
+            raise ConductorError("an observe event needs a param")
     rules = [normalize_rule(item) for item in _object_list(data.get("rules") or [], "taste rules")]
     pending = _object_list(data.get("pending") or [], "taste pending")
     return Taste(
@@ -387,6 +422,7 @@ def _read_taste(path: str | Path) -> Taste:
         [dict(item) for item in pending],
         supplied_prefs=dict(supplied),
         supplied_gates=dict(supplied_gates),
+        extra={key: value for key, value in data.items() if key not in _KNOWN_KEYS},
     )
 
 
@@ -396,6 +432,8 @@ def _merge_global(project: Taste, glob: Taste) -> Taste:
     prefs.update(project.supplied_prefs)
     _validate_prefs(prefs)
     gates = _gates({**glob.supplied_gates, **project.supplied_gates})
+    project.project_prefs = project.prefs
+    project.project_gates = project.gates
     project.prefs = prefs
     project.gates = gates
     project.global_log = [dict(item) for item in glob.log]
@@ -497,6 +535,7 @@ def _reason(
     base_auto: float,
     capped: bool,
     rule_notes: str,
+    blocked: bool = False,
 ) -> str | None:
     decided = stats["accepts"] + stats["rejects"] + stats["modifies"]
     parts: list[str] = []
@@ -522,7 +561,9 @@ def _reason(
             "auto-apply threshold raised to "
             f"{auto:.2f} because you rejected {stats['rejects']}/{decided} similar suggestions"
         )
-    if capped:
+    if blocked:
+        parts.append("auto-apply closed by a standing reject rule")
+    elif capped:
         parts.append("auto-apply stays closed without an explicit opt-in")
     if rule_notes and (not parts or abs(delta) > 1e-9 or capped):
         if rule_notes not in " ".join(parts):

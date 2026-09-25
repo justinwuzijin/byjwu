@@ -300,6 +300,97 @@ def test_feedback_cli_diffs_the_fixture_pair(tmp_path):
     assert code == 2
 
 
+def test_global_prefs_and_gates_stay_out_of_the_project_file(tmp_path):
+    project = tmp_path / "project.json"
+    glob = tmp_path / "global.json"
+    project.write_text(json.dumps({"version": 1, "prefs": {"hold_seconds": 3}}), encoding="utf-8")
+    glob.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "prefs": {"target_pace": "tight", "hold_seconds": 9},
+                "gates": {"auto_confidence": 0.9},
+            }
+        ),
+        encoding="utf-8",
+    )
+    taste = load_taste(project, global_path=glob)
+    assert taste.prefs["target_pace"] == "tight"
+    assert taste.prefs["hold_seconds"] == 3
+    assert taste.gates.auto_confidence == 0.9
+    written = taste.dump()
+    assert written["prefs"]["target_pace"] == "measured"
+    assert written["gates"]["auto_confidence"] == 0.8
+
+
+def test_iterate_auto_applies_do_not_feed_the_prior(tmp_path):
+    result = iterate(
+        fcpxml=FIXTURE,
+        transcript_path=SRT,
+        brief=BRIEF,
+        out_dir=tmp_path,
+        max_rounds=3,
+    )
+    first = result.rounds[0]
+    assert first["applied_ids"]
+    taste = load_taste(first["taste"])
+    accepts = [event for event in taste.log if event["event"] == "accept"]
+    assert accepts and all(event["source"] == "auto" for event in accepts)
+    assert taste.priors()["silence_gap"]["accepts"] == 0
+    assert taste.priors()["silence_gap"]["confidence_delta"] == 0.0
+
+
+def test_person_accept_counts_and_auto_accept_does_not(tmp_path):
+    shadow = analyze(FIXTURE, transcript_path=SRT, brief=BRIEF, out_dir=tmp_path / "shadow")
+    gap_id = _silence(shadow)["candidate_id"]
+    report = analyze(FIXTURE, transcript_path=SRT, brief=BRIEF, out_dir=tmp_path, apply=True, accept=[gap_id])
+    taste = load_taste(report.out_taste)
+    assert taste.log[-1]["source"] == "person"
+    assert taste.priors()["silence_gap"]["accepts"] == 1
+
+
+def test_reject_rule_says_it_closed_auto(tmp_path):
+    taste_path = tmp_path / "taste.json"
+    _write_log(taste_path, [], rules=[{"kind": "silence_gap", "event": "reject"}])
+    report = analyze(FIXTURE, transcript_path=SRT, brief=BRIEF, out_dir=tmp_path / "out", taste_path=taste_path)
+    gap = _silence(report)
+    assert "standing reject rule" in gap["taste_reason"]
+    assert "opt-in" not in gap["taste_reason"]
+
+
+def test_style_observers_and_unknown_keys_round_trip(tmp_path, monkeypatch):
+    from conductor import feedback
+
+    monkeypatch.setattr(feedback, "OBSERVERS", {})
+
+    def fades(proposed, edited):
+        return [{"param": "music.fade_out_seconds", "section": "outro", "value": 1.5}]
+
+    feedback.register_observer("fades", fades)
+    events, _warnings = diff_fcpxml(PROPOSED, EDITED)
+    observed = [event for event in events if event["event"] == "observe"]
+    assert observed[0]["param"] == "music.fade_out_seconds"
+    assert observed[0]["observer"] == "fades"
+
+    taste_path = tmp_path / "taste.json"
+    taste_path.write_text(
+        json.dumps({"version": 1, "style": {"profile": "styles/doc/profile"}, "log": []}),
+        encoding="utf-8",
+    )
+    taste = load_taste(taste_path)
+    for event in events:
+        taste.append(event)
+    out = tmp_path / "out.json"
+    write_taste(taste, out)
+    reloaded = load_taste(out)
+    assert reloaded.extra["style"] == {"profile": "styles/doc/profile"}
+    assert reloaded.observations("music.fade_out_seconds")[0]["value"] == 1.5
+    assert "music.fade_out_seconds" not in reloaded.priors()
+    with pytest.raises(ConductorError, match="param"):
+        feedback.register_observer("bad", lambda p, e: [{"value": 1}])
+        diff_fcpxml(PROPOSED, EDITED)
+
+
 def test_unreadable_timecode_is_an_error():
     with pytest.raises(ConductorError, match="timecode"):
         parse_at("noon")

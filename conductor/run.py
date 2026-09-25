@@ -160,6 +160,7 @@ def analyze(
                             "kind": candidate.kind,
                             "timeline_start_seconds": seconds(deletion.start),
                             "timeline_end_seconds": seconds(deletion.end),
+                            "source": "person" if accept else "auto",
                         },
                     )
                 )

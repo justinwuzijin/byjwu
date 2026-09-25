@@ -13,6 +13,12 @@ Two inputs, both JSON-or-FCPXML a room bot can write or drop:
 Rejects are inferred from a deleted marker only when some other Conductor
 marker survived the re-export. A file that lost every marker is treated as
 an export that stripped notes, not as a reject-all.
+
+Style parameters (pacing by section, music fade lengths, typography) are
+not candidate kinds. A module that knows a ``styles/<name>/profile`` format
+calls :func:`register_observer` with ``(proposed, edited) -> [observation]``.
+Each observation needs a ``param`` and a ``value``. It lands in the log as an
+``observe`` event, and it does not move a confidence prior.
 """
 
 from __future__ import annotations
@@ -20,6 +26,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from collections.abc import Callable
 from fractions import Fraction
 from pathlib import Path
 
@@ -33,6 +40,37 @@ _CLOCK = re.compile(r"^(\d+):(\d{2}):(\d{2})(?:\.(\d{1,3}))?$")
 _SMPTE = re.compile(r"^(\d+):(\d{2}):(\d{2}):(\d{2})$")
 _MINSEC = re.compile(r"^(\d+):(\d{2})$")
 _FIELD = re.compile(r"(?:^|\|)\s*([A-Za-z0-9_]+)=([^|]*)")
+
+Observer = Callable[[Document, Document], list[dict]]
+OBSERVERS: dict[str, Observer] = {}
+
+
+def register_observer(name: str, observer: Observer) -> None:
+    """Add a re-export reader for style parameters. Same name replaces."""
+    if not name:
+        raise ConductorError("an observer needs a name")
+    OBSERVERS[name] = observer
+
+
+def _observations(proposed: Document, edited: Document) -> list[dict]:
+    events: list[dict] = []
+    for name, observer in OBSERVERS.items():
+        for item in observer(proposed, edited) or []:
+            if not isinstance(item, dict) or not item.get("param") or "value" not in item:
+                raise ConductorError(f"observer {name!r} returned a row without param and value")
+            row = {**item, "event": "observe", "source": "diff", "observer": name}
+            row.setdefault(
+                "fingerprint",
+                _fingerprint(
+                    "observe",
+                    name,
+                    item["param"],
+                    item.get("section") or "",
+                    json.dumps(item["value"], sort_keys=True, default=str),
+                ),
+            )
+            events.append(row)
+    return events
 
 
 def diff_fcpxml(
@@ -102,6 +140,7 @@ def diff_documents(proposed: Document, edited: Document) -> tuple[list[dict], li
         )
     if suggestions == 0:
         warnings.append("no conductor markers in the proposed FCPXML")
+    events.extend(_observations(proposed, edited))
     return events, warnings
 
 

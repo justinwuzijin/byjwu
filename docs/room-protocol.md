@@ -341,6 +341,7 @@ Counts are per `kind`, from the project log and the global log, deduped by `fing
 - Rejections lower confidence. Four rejects and one accept of the same kind produce `confidence lowered because you rejected 4/5 similar suggestions`.
 - The same rejections raise that kind's auto threshold (at most +0.12 at a total reject rate). Accepts never lower it.
 - A positive shift cannot push a below-threshold call across the auto line unless a matching rule has `loosen_auto`.
+- Accepts that `iterate` or `apply --min-confidence` made on their own are logged with `source` `auto` and never count. Only a person's `--accept`, a re-export, or a note moves a prior.
 - The sentence is stored on the change row. The gate sees the shifted confidence, so a mechanical cut can leave `eligible` and land in `review`. `iterate` then will not auto-apply it.
 
 `taste.json` version 1. `rules` and `pending` are optional.

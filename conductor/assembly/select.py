@@ -206,7 +206,7 @@ def build_units(material: Material, profile: StyleProfile, *, talking_max: float
         clip = footage.clip
         duration = clip.duration
         if footage.role == "a_roll":
-            ranges = _speech_ranges(footage, merge_gap, max_len, min_speech)
+            ranges = _speech_ranges(footage, merge_gap, max_len, min_speech, profile)
             if not ranges:
                 warnings.append(f"{clip.name}: A-roll with no usable speech range; treated as b-roll.")
             else:
@@ -562,33 +562,130 @@ def _pinned(question: Question, value: object) -> Decision:
 
 
 def _speech_ranges(
-    footage: Footage, merge_gap: Fraction, max_len: Fraction, min_speech: Fraction
+    footage: Footage,
+    merge_gap: Fraction,
+    max_len: Fraction,
+    min_speech: Fraction,
+    profile: StyleProfile | None = None,
 ) -> list[tuple[Fraction, Fraction, list[Cue], str]]:
     signals = footage.signals
     if signals.has_transcript:
-        ranges: list[tuple[Fraction, Fraction, list[Cue], str]] = []
-        group: list[Cue] = []
-        for cue in signals.cues:
-            if cue.start >= footage.clip.duration:
-                continue
-            if is_trivial_filler(cue.text):
-                if group:
-                    ranges.append((group[0].start, group[-1].end, group, "transcript"))
-                    group = []
-                continue
-            if group and (cue.start - group[-1].end > merge_gap or cue.end - group[0].start > max_len):
-                ranges.append((group[0].start, group[-1].end, group, "transcript"))
-                group = []
-            group.append(cue)
-        if group:
-            ranges.append((group[0].start, group[-1].end, group, "transcript"))
-        return [(s, min(e, footage.clip.duration), cues, basis) for s, e, cues, basis in ranges]
+        cues = [cue for cue in signals.cues if cue.start < footage.clip.duration and not is_trivial_filler(cue.text)]
+        grouped = _holds(footage, cues, max_len, profile, merge_gap) if profile is not None else _gap_groups(cues, merge_gap, max_len)
+        return [(s, min(e, footage.clip.duration), rows, "transcript") for s, e, rows in grouped]
     voiced = signals.speech_ranges(footage.clip.duration, min_speech)
     if voiced:
         return [(s, e, [], "silencedetect") for s, e in voiced]
     if footage.role == "a_roll":
         return [(Fraction(0), footage.clip.duration, [], "whole clip; no signals")]
     return []
+
+
+def _gap_groups(cues: list[Cue], merge_gap: Fraction, max_len: Fraction) -> list[tuple[Fraction, Fraction, list[Cue]]]:
+    ranges: list[tuple[Fraction, Fraction, list[Cue]]] = []
+    group: list[Cue] = []
+    for cue in cues:
+        if group and (cue.start - group[-1].end > merge_gap or cue.end - group[0].start > max_len):
+            ranges.append((group[0].start, group[-1].end, group))
+            group = []
+        group.append(cue)
+    if group:
+        ranges.append((group[0].start, group[-1].end, group))
+    return ranges
+
+
+def _holds(
+    footage: Footage,
+    cues: list[Cue],
+    max_len: Fraction,
+    profile: StyleProfile,
+    merge_gap: Fraction,
+) -> list[tuple[Fraction, Fraction, list[Cue]]]:
+    """Pack consecutive sentences from one topic into one hold.
+
+    The target length is the talking average. A topic boundary from the
+    segment index, or a gap wider than the profile's speech merge, starts
+    a new hold. A false start and a sign-off stay their own units so a
+    retake can still be dropped.
+    """
+    if not cues:
+        return []
+    target = _f(profile.pacing("talking")["asl_seconds"])
+    segments = _topic_segments(footage, cues)
+    holds: list[tuple[Fraction, Fraction, list[Cue]]] = []
+    group: list[Cue] = []
+    group_topic = ""
+
+    def flush() -> None:
+        nonlocal group, group_topic
+        if group:
+            holds.append((group[0].start, group[-1].end, group))
+        group = []
+        group_topic = ""
+
+    for index, cue in enumerate(cues):
+        topic = _topic_at(segments, cue)
+        nxt = cues[index + 1] if index + 1 < len(cues) else None
+        alone = _sign_off(cue.text) or (nxt is not None and _false_start(cue.text, nxt.text))
+        gapped = bool(group) and cue.start - group[-1].end > merge_gap
+        if alone or (group and topic != group_topic) or gapped:
+            flush()
+        if alone:
+            holds.append((cue.start, cue.end, [cue]))
+            continue
+        if group and cue.end - group[0].start > max_len:
+            flush()
+        if not group:
+            group_topic = topic
+        group.append(cue)
+        if group[-1].end - group[0].start >= target:
+            flush()
+    flush()
+    return holds
+
+
+def _topic_segments(footage: Footage, cues: list[Cue]):
+    from ..segments import segment_words
+
+    words = list(footage.signals.words)
+    if not words:
+        words = []
+        for cue in cues:
+            tokens = cue.text.split()
+            if not tokens or cue.end <= cue.start:
+                continue
+            step = (cue.end - cue.start) / len(tokens)
+            for index, token in enumerate(tokens):
+                words.append(type("W", (), {
+                    "text": token,
+                    "start": cue.start + step * index,
+                    "end": cue.start + step * (index + 1),
+                })())
+    if not words:
+        return []
+    return segment_words(words, source=footage.clip.stem)
+
+
+def _topic_at(segments, cue: Cue) -> str:
+    if not segments:
+        return ""
+    mid = (cue.start + cue.end) / 2
+    for segment in segments:
+        if segment.start <= mid < segment.end:
+            return segment.id
+    return segments[-1].id
+
+
+def _sign_off(text: str) -> bool:
+    return bool(OUTRO.search(text))
+
+
+def _false_start(text: str, later: str) -> bool:
+    left = _take_tokens(text)
+    right = _take_tokens(later)
+    if len(left) < 3 or len(right) <= len(left):
+        return False
+    return right[: len(left)] == left
 
 
 def _interleave(units: list[Unit]) -> list[Unit]:

@@ -45,46 +45,61 @@ CLIPS: tuple[Clip, ...] = (
         12,
         "testsrc2",
         (
-            Line(0.3, 1.8, "So today we are"),
-            Line(2.6, 11.2, "So today we are going to fix why every edit I make feels slow."),
+            Line(0.3, 1.6, "So today we are"),
+            Line(2.0, 8.5, "So today we are going to fix why every edit I make feels slow."),
         ),
     ),
     Clip(
         "02_talk_story.mp4",
-        32,
+        40,
         "smptebars",
         (
-            Line(0.4, 12.4, "The first pass keeps the line and throws away the air around it, and the picture stays with the voice."),
-            Line(13.0, 14.2, "Um."),
-            Line(15.4, 27.4, "A hold that says nothing is just a hold. It does not earn the frame, so the cut moves on."),
-            Line(28.2, 31.2, "A hold that says nothing."),
+            Line(0.4, 4.2, "The first pass keeps the line and throws the air away."),
+            Line(4.6, 8.4, "The picture stays with the voice while that line finishes."),
+            Line(8.8, 12.6, "Nothing in that stretch is waiting on a pause."),
+            Line(13.2, 14.4, "Um."),
+            Line(16.2, 20.2, "The station picture is a different picture entirely."),
+            Line(20.6, 24.6, "The station picture shows people boarding as the doors shut."),
+            Line(25.0, 29.0, "The station picture belongs under the music, not under this sentence."),
         ),
     ),
     Clip(
         "03_talk_bridge.mp4",
-        26,
+        28,
         "testsrc",
         (
-            Line(0.4, 12.2, "B-roll covers the jump, and the voice keeps going underneath it without a gap in the sentence."),
-            Line(13.0, 25.0, "The picture changes on the music. The sentence is already finished before the shot does."),
+            Line(0.4, 4.4, "B-roll covers the jump and the voice keeps going."),
+            Line(4.8, 8.6, "The sentence does not stop just because the picture changes."),
+            Line(9.0, 12.8, "Underneath, the line is already whole."),
+            Line(14.6, 18.4, "Night streets are a second subject, after the cut."),
+            Line(18.8, 22.6, "Lamps, wet pavement, and no one talking over them."),
+            Line(23.0, 26.8, "Those shots live in the montage, on the beat."),
         ),
     ),
     Clip(
-        "04_talk_detail.mp4",
-        26,
+        "04_talk_breath.mp4",
+        28,
         "smptehdbars",
         (
-            Line(0.4, 12.2, "I leave a short breath, then I am already into the next idea before the pause can grow."),
-            Line(13.0, 25.0, "That is the whole pace. Nothing sits there waiting for permission from the song."),
+            Line(0.4, 4.4, "I leave a short breath and I am into the next idea."),
+            Line(4.8, 8.6, "The breath is part of the line, not a hole."),
+            Line(9.0, 12.8, "That is the pace of the talking section."),
+            Line(14.6, 18.4, "The kitchen counter is the other half of this tape."),
+            Line(18.8, 22.6, "Hands, a mug, and the window behind them."),
+            Line(23.0, 26.8, "Hold the talk, and cut the pictures on the song."),
         ),
     ),
     Clip(
         "05_talk_turn.mp4",
-        26,
+        28,
         "testsrc2",
         (
-            Line(0.4, 12.2, "The montage is the part where the song is allowed to be loud and the pictures keep time."),
-            Line(13.0, 25.0, "Talk comes back after that, and the bed gets out of the way of the voice."),
+            Line(0.4, 4.4, "The montage is where the song is allowed to be loud."),
+            Line(4.8, 8.6, "Pictures keep time with it and nobody is speaking."),
+            Line(9.0, 12.8, "When the talk comes back the bed gets out of the way."),
+            Line(14.6, 18.4, "A desk lamp is the last quiet picture I have."),
+            Line(18.8, 22.6, "It sits there while the music carries the cut."),
+            Line(23.0, 26.8, "Then the voice returns and the song ducks down."),
         ),
     ),
     Clip(
@@ -103,8 +118,11 @@ CLIPS: tuple[Clip, ...] = (
 )
 
 SONG = "bed_120bpm.wav"
-SONG_SECONDS = 150.0
+SONG_SECONDS = 48.0
 BPM = 120.0
+SONG_SLOW = "bed_96bpm.wav"
+SONG_SLOW_SECONDS = 160.0
+BPM_SLOW = 96.0
 
 
 def generate(folder: Path, *, use_ffmpeg: bool = True) -> dict:
@@ -125,6 +143,8 @@ def generate(folder: Path, *, use_ffmpeg: bool = True) -> dict:
     (folder / "durations.json").write_text(json.dumps(durations, indent=2) + "\n", encoding="utf-8")
     song = folder / SONG
     write_click_track(song, bpm=BPM, seconds=SONG_SECONDS)
+    slow = folder / SONG_SLOW
+    write_click_track(slow, bpm=BPM_SLOW, seconds=SONG_SLOW_SECONDS)
     return {
         "folder": str(folder),
         "clips": len(CLIPS),
@@ -133,6 +153,10 @@ def generate(folder: Path, *, use_ffmpeg: bool = True) -> dict:
         "song": song.name,
         "bpm": BPM,
         "song_seconds": SONG_SECONDS,
+        "songs": [
+            {"name": song.name, "bpm": BPM, "seconds": SONG_SECONDS},
+            {"name": slow.name, "bpm": BPM_SLOW, "seconds": SONG_SLOW_SECONDS},
+        ],
     }
 
 

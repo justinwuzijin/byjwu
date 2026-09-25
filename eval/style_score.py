@@ -228,15 +228,28 @@ def _beat(reading, profile) -> float:
 
 
 def _beats(reading) -> list[float]:
-    for asset_id, src in reading.assets.items():
-        if not src:
+    """Beat times on the timeline, from each music clip's own in-point."""
+    found: list[float] = []
+    for item in reading.connected:
+        role = str(item.element.get("audioRole") or "")
+        if item.tag != "asset-clip" or not role.startswith("music"):
             continue
-        path = _file(src)
-        if path is None or path.suffix.lower() not in {".wav", ".aif", ".aiff", ".mp3", ".m4a"}:
+        src = reading.assets.get(item.element.get("ref") or "")
+        path = _file(src) if src else None
+        if path is None:
             continue
-        grid = detect_beats(path, duration=float(reading.duration) or 30.0, fallback_bpm=120.0)
-        if grid and grid.beats:
-            return [float(beat) for beat in grid.beats]
+        grid = detect_beats(path, duration=float(item.end - item.start) + float(item.local_start) + 1.0, fallback_bpm=120.0)
+        if grid is None or not grid.beats:
+            continue
+        origin = float(item.local_start)
+        for beat in grid.beats:
+            if beat + 1e-6 < origin:
+                continue
+            moment = float(item.start) + (float(beat) - origin)
+            if float(item.start) - 1e-6 <= moment <= float(item.end) + 1e-6:
+                found.append(moment)
+    if found:
+        return sorted(found)
     return []
 
 

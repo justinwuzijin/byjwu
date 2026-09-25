@@ -172,11 +172,11 @@ def test_hook_and_chapters_land_in_fcpxml():
         kind="clip",
         lane=0,
         offset=Fraction(0),
-        duration=Fraction(40),
+        duration=Fraction(20),
         section="intro",
         name="talk",
         media=media,
-        start=Fraction(0),
+        start=Fraction(30),
         role="dialogue",
     )
     timeline = Timeline(

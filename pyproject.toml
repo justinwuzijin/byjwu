@@ -18,6 +18,7 @@ dependencies = [
 otio = ["opentimelineio>=0.17"]
 dev = ["pytest>=8", "pytest-asyncio>=0.23", "lxml>=5"]
 yaml = ["pyyaml>=6"]
+whisper = ["faster-whisper>=1.0"]
 
 [project.scripts]
 cutmcp = "cutmcp.server:main"

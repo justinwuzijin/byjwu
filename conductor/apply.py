@@ -129,6 +129,10 @@ def _shield_connected(sequence, deletions: list[Deletion]) -> tuple[list[Deletio
                 f"kept {format_time(covered)} of {deletion.candidate_id} "
                 "because a connected clip covers it"
             )
+        # A sliver the bed does not cover would split the shot and slide later
+        # cuts off the beat. Keep the shot whole.
+        if covered > 0 and kept <= Fraction(1, 2):
+            continue
         for start, end in pieces:
             adjusted.append(
                 Deletion(

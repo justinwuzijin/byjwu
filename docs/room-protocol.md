@@ -164,13 +164,10 @@ The binary is `whisper-cli` (some installs name it `whisper-cpp`).
 faster-whisper:
 
 ```bash
-pip install faster-whisper
-# download once, outside a cut, then leave the cache in place:
-# python -c "from faster_whisper import WhisperModel; WhisperModel('base')"
-export CONDUCTOR_WHISPER_MODEL=base
+pip install 'byjwu[whisper]'
 ```
 
-`CONDUCTOR_WHISPER_MODEL` may also be a CTranslate2 model directory. If it is unset, a model already present under the Hugging Face hub cache (`models--Systran--faster-whisper-*`) is used. If neither a tool nor a model is on disk, transcription is skipped and the reason is on `signals`.
+`CONDUCTOR_WHISPER_MODEL` may also be a CTranslate2 model directory. If it is unset, `base.en` is preferred when that folder is already in the Hugging Face hub cache. Any other cached `models--Systran--faster-whisper-*` model is used next. If nothing is cached, `base.en` (MIT, Systran CTranslate2 weights) is downloaded once into that cache and a log line records the path. A named model that is not on disk is not replaced by a download. If faster-whisper is not installed, the assembly warning says to install the `whisper` extra, and silence ranges are used.
 
 To check what the bot will find, run these in the shell the bot uses (a launchd or cron job may have a shorter `PATH` than Terminal):
 

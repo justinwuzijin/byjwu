@@ -140,6 +140,7 @@ class Layout:
         self.snap_tol = self._f(float(profile.get("cuts.beat_snap_tolerance_seconds")) * adjustments.snap_scale)
         self.used: set[str] = set()
         self.montage_src: dict[int, Fraction] = {}
+        self.source_used: dict[int, list[tuple[Fraction, Fraction]]] = {}
         self.cutaways: list[Item] = []
         self._media: dict[str, Media] = {}
 
@@ -252,12 +253,13 @@ class Layout:
             drawn = min(drawn, room)
             end, on_beat = self._cut_point(drawn, mode, room, window=window)
             length = end - self.t
-            self._place_visual(
+            placed = self._place_visual(
                 unit, section, length, on_beat, mode, "montage shot",
                 extend=max(Fraction(0), (src + length) - unit.end),
                 src_in=src,
             )
-            self.montage_src[unit.footage_index] = src + length
+            if placed is not None:
+                self.montage_src[unit.footage_index] = placed
 
     def _montage_on_grid(self, section: Section, units: list[Unit], mode: str) -> None:
         """Shot lengths from the keypoint grid. They sum to the section budget."""
@@ -338,6 +340,20 @@ class Layout:
                 how = f"no beat within {float(tol):.2f}s that keeps every word; natural end kept"
         duration = max(self.frame, self._q(src_end - src_start))
         duration = min(duration, self._q(clip.duration - src_start))
+        asl = self._f(self.profile.pacing(section.kind)["asl_seconds"])
+        asl *= self._f(self.adj.asl_scale.get(section.kind, 1.0))
+        if duration < asl:
+            after = min(self._next_speech_start(unit), clip.duration)
+            room = max(Fraction(0), after - (src_start + duration))
+            extra = min(room, asl - duration)
+            if extra >= self.frame:
+                duration = min(self._q(duration + extra), self._q(after - src_start))
+                how = f"tail extended toward pacing.{section.kind}.asl_seconds={float(asl):.2f}"
+        claimed = self._claim_source(unit.footage_index, src_start, src_start + duration)
+        if claimed is None:
+            return
+        src_start, src_end = claimed
+        duration = src_end - src_start
         item = Item(
             kind="clip",
             lane=0,
@@ -360,6 +376,7 @@ class Layout:
         self.timeline.spine.append(item)
         self.used.add(unit.id)
         self.t += duration
+        return src_end
 
     def _place_visual(
         self,
@@ -377,6 +394,11 @@ class Layout:
         cap = (unit.end - src) + max(Fraction(0), extend)
         duration = max(self.frame, self._q(min(length, cap)))
         duration = min(duration, self._q(clip.duration - src))
+        claimed = self._claim_source(unit.footage_index, src, src + duration)
+        if claimed is None:
+            return
+        src, end = claimed
+        duration = end - src
         item = Item(
             kind="clip",
             lane=0,
@@ -400,6 +422,37 @@ class Layout:
         self.timeline.spine.append(item)
         self.used.add(unit.id)
         self.t += duration
+        return end
+
+    def _claim_source(
+        self, footage_index: int, start: Fraction, end: Fraction
+    ) -> tuple[Fraction, Fraction] | None:
+        """Reserve ``[start, end)`` on one take. A second use gets only the free tail.
+
+        Picture ranges are what lint checks. J-cuts extend audio outside this
+        reservation. A range shorter than one frame is refused.
+        """
+        if end <= start:
+            return None
+        used = self.source_used.setdefault(footage_index, [])
+        cursor = start
+        for lo, hi in sorted(used):
+            if hi <= cursor:
+                continue
+            if lo >= end:
+                break
+            if lo <= cursor < hi:
+                cursor = hi
+        if end - cursor < self.frame:
+            return None
+        for lo, hi in sorted(used):
+            if cursor < lo < end:
+                end = lo
+                break
+        if end - cursor < self.frame:
+            return None
+        used.append((cursor, end))
+        return cursor, end
 
     def _keyword_cover(self, section: Section, pool: list[Unit]):
         """Keyword slots over talking. None means the pacing cover should run."""
@@ -424,10 +477,22 @@ class Layout:
         )
         if not result.applied:
             return None
-        self.cutaways.extend(result.items)
+        kept = []
+        for item in result.items:
+            unit = next((row for row in pool if row.id == item.tags.get("unit")), None)
+            if unit is None or item.start is None:
+                kept.append(item)
+                continue
+            claimed = self._claim_source(unit.footage_index, item.start, item.start + item.duration)
+            if claimed is None:
+                continue
+            item.start, src_end = claimed
+            item.duration = src_end - item.start
+            kept.append(item)
+        self.cutaways.extend(kept)
         self.decisions.update(result.decisions)
         self.receipts.extend(result.receipts)
-        for item in result.items:
+        for item in kept:
             if item.tags.get("unit"):
                 self.used.add(item.tags["unit"])
         return result
@@ -491,15 +556,19 @@ class Layout:
             start, end = self._q(start), self._q(end)
             if end - start < self.frame:
                 continue
+            claimed = self._claim_source(unit.footage_index, unit.start, unit.start + (end - start))
+            if claimed is None:
+                continue
+            src, src_end = claimed
             item = Item(
                 kind="clip",
                 lane=1,
                 offset=start,
-                duration=end - start,
+                duration=src_end - src,
                 section=section.kind,
                 name=unit.footage.clip.stem,
                 media=self._clip_media(unit),
-                start=unit.start,
+                start=src,
                 src_enable="video",
                 tags={
                     "unit": unit.id,
@@ -511,7 +580,7 @@ class Layout:
             )
             self.cutaways.append(item)
             self.used.add(unit.id)
-            placed += end - start
+            placed += src_end - src
 
     def _split_edits(self, section: Section) -> None:
         spec_j = self.profile.get("cuts.j_cut")

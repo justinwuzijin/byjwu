@@ -601,16 +601,20 @@ def _holds(
     profile: StyleProfile,
     merge_gap: Fraction,
 ) -> list[tuple[Fraction, Fraction, list[Cue]]]:
-    """Pack consecutive sentences from one topic into one hold.
+    """Pack consecutive cues from one take into one hold.
 
-    The target length is the talking average. A topic boundary from the
-    segment index, or a gap wider than the profile's speech merge, starts
-    a new hold. A false start and a sign-off stay their own units so a
-    retake can still be dropped.
+    Pause length, the segment index, and staying on the same clip decide the
+    groups. Transcript text only isolates a false start or a sign-off, and a
+    topic id only splits the hold when the gap is a real pause. A gap wider
+    than the profile's speech merge still starts a new hold. The target
+    length is the talking average.
     """
     if not cues:
         return []
+    from ..segments import DEFAULT_PAUSE_SECONDS
+
     target = _f(profile.pacing("talking")["asl_seconds"])
+    pause = _f(DEFAULT_PAUSE_SECONDS)
     segments = _topic_segments(footage, cues)
     holds: list[tuple[Fraction, Fraction, list[Cue]]] = []
     group: list[Cue] = []
@@ -626,11 +630,21 @@ def _holds(
     for index, cue in enumerate(cues):
         topic = _topic_at(segments, cue)
         nxt = cues[index + 1] if index + 1 < len(cues) else None
-        alone = _sign_off(cue.text) or (nxt is not None and _false_start(cue.text, nxt.text))
-        gapped = bool(group) and cue.start - group[-1].end > merge_gap
-        if alone or (group and topic != group_topic) or gapped:
+        false_start = nxt is not None and _false_start(cue.text, nxt.text)
+        gap = cue.start - group[-1].end if group else Fraction(0)
+        # Word timings from a local transcript run long on breaths. Same-take
+        # continuity keeps those in the hold. A tight sidecar still breaks at
+        # the profile merge gap. A topic id only splits a real pause, and a
+        # misheard word does not. A sign-off leaves the body; consecutive
+        # sign-off cues on this take stay one goodbye.
+        limit = _continuity_gap(footage, merge_gap)
+        gapped = bool(group) and gap > limit
+        topic_break = bool(group) and topic != group_topic and gap >= pause and gap > limit
+        sign = _sign_off(cue.text)
+        leave_body = sign and bool(group) and not all(_sign_off(row.text) for row in group)
+        if false_start or leave_body or topic_break or gapped:
             flush()
-        if alone:
+        if false_start:
             holds.append((cue.start, cue.end, [cue]))
             continue
         if group and cue.end - group[0].start > max_len:
@@ -642,6 +656,19 @@ def _holds(
             flush()
     flush()
     return holds
+
+
+# Local word times leave a breath between sentences that a sidecar cue does not.
+# 1.75s keeps those on one take and still splits the multi-second topic pause.
+TAKE_CONTINUITY_SECONDS = 1.75
+
+
+def _continuity_gap(footage: Footage, merge_gap: Fraction) -> Fraction:
+    signals = getattr(footage, "signals", None)
+    words = getattr(signals, "words", None)
+    if words:
+        return max(merge_gap, _f(TAKE_CONTINUITY_SECONDS))
+    return merge_gap
 
 
 def _topic_segments(footage: Footage, cues: list[Cue]):

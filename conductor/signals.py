@@ -1,10 +1,12 @@
 """Optional silence, loudness, and a local transcript from reachable media.
 
-Nothing here contacts the network. ffmpeg measures silence and loudness when
-it is on ``PATH`` and a ``media-rep`` ``file://`` path exists on this machine.
-A transcript is read from faster-whisper or whisper.cpp only when that tool
-and a model are already on disk. A missing tool, a missing model, or a media
-path that does not resolve is a skip recorded on the report, not a failed run.
+ffmpeg measures silence and loudness when it is on ``PATH`` and a ``media-rep``
+``file://`` path exists on this machine. A transcript is read from
+faster-whisper or whisper.cpp. When faster-whisper is installed and no model
+is on disk, ``base.en`` is downloaded once into the Hugging Face cache.
+A missing tool, a failed download, or a media path that does not resolve is a
+skip recorded on the report, not a failed run. Silence ranges stay the
+network-free fallback.
 
 Every range here is seconds into the media file (the asset's own ``start`` is
 already subtracted by ``timing``). Results are cached per file, keyed by path,
@@ -16,6 +18,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import math
 import os
 import shutil
@@ -28,6 +31,18 @@ from fractions import Fraction
 from pathlib import Path
 
 from cutmcp.extract import is_trivial_filler
+
+log = logging.getLogger(__name__)
+
+# English diary speech on a laptop CPU. ``tiny`` mis-hears synthesized and
+# quiet takes. ``small.en`` is more accurate but several times slower and
+# about 500 MB. ``base.en`` is the Systran CTranslate2 conversion of OpenAI
+# Whisper weights (MIT), about 150 MB, and int8 runs a few times realtime.
+DEFAULT_FASTER_MODEL = "base.en"
+# A sine or a silent clip still draws a token. Real speech in this pipeline
+# sits well above this; the junk token does not.
+MIN_WORD_CONFIDENCE = 0.2
+_download_attempted = False
 
 from .candidates import SILENCE_GAP, AudioSilence
 from .errors import ConductorError
@@ -309,7 +324,7 @@ def whisper_available() -> bool:
 
 
 def resolve_whisper() -> tuple[str, Transcriber] | None:
-    """A local backend, or None. This does not download a model."""
+    """A local backend, or None. May download ``base.en`` once when nothing is cached."""
     cpp = _cpp_backend()
     if cpp is not None:
         binary, model = cpp
@@ -922,6 +937,8 @@ def _transcribe_faster(model, path: Path, start: Fraction, end: Fraction) -> lis
                 if not text:
                     continue
                 probability = getattr(word, "probability", None)
+                if probability is not None and float(probability) < MIN_WORD_CONFIDENCE:
+                    continue
                 words.append(
                     Word(
                         start + _seconds(getattr(word, "start", 0.0)),
@@ -1033,12 +1050,47 @@ def _faster_model_name() -> str | None:
     if chosen:
         folder = hub / f"models--Systran--faster-whisper-{chosen}"
         return chosen if folder.is_dir() else None
+    cached = _cached_faster_models()
+    if DEFAULT_FASTER_MODEL in cached:
+        return DEFAULT_FASTER_MODEL
+    if cached:
+        return cached[0]
+    return _download_default_whisper()
+
+
+def _cached_faster_models() -> list[str]:
+    hub = _hf_hub()
     if not hub.is_dir():
+        return []
+    names = []
+    for path in sorted(hub.glob("models--Systran--faster-whisper-*")):
+        if path.is_dir():
+            names.append(path.name.split("faster-whisper-", 1)[-1])
+    return names
+
+
+def _download_default_whisper() -> str | None:
+    """Download ``base.en`` once. A set ``CONDUCTOR_WHISPER_MODEL`` never triggers this."""
+    global _download_attempted
+    if os.environ.get("CONDUCTOR_WHISPER_MODEL", "").strip():
         return None
-    matches = sorted(path.name for path in hub.glob("models--Systran--faster-whisper-*") if path.is_dir())
-    if not matches:
+    if _download_attempted or not _faster_importable():
         return None
-    return matches[0].split("faster-whisper-")[-1]
+    _download_attempted = True
+    log.info(
+        "no faster-whisper model on disk; downloading %s (MIT) into %s",
+        DEFAULT_FASTER_MODEL,
+        _hf_hub(),
+    )
+    try:
+        from faster_whisper import WhisperModel
+
+        WhisperModel(DEFAULT_FASTER_MODEL, device="cpu", compute_type="int8")
+    except Exception as exc:
+        log.warning("could not download faster-whisper %s: %s", DEFAULT_FASTER_MODEL, exc)
+        return None
+    log.info("downloaded faster-whisper %s into %s", DEFAULT_FASTER_MODEL, _hf_hub())
+    return DEFAULT_FASTER_MODEL
 
 
 def _hf_hub() -> Path:
@@ -1062,9 +1114,12 @@ def _faster_importable() -> bool:
 def _whisper_skip_reason() -> str:
     chosen = os.environ.get("CONDUCTOR_WHISPER_MODEL", "").strip()
     if not _faster_importable() and shutil.which("whisper-cli") is None and shutil.which("whisper-cpp") is None:
-        return "no local whisper tool is installed (faster-whisper or whisper.cpp)"
+        return "faster-whisper is not installed. Install it with: pip install 'byjwu[whisper]'"
     if not chosen:
-        return "no local whisper model is on disk; set CONDUCTOR_WHISPER_MODEL to a model already downloaded"
+        return (
+            "no local whisper model is on disk and the base.en download did not finish. "
+            "Silence ranges are used instead."
+        )
     return "the whisper model in CONDUCTOR_WHISPER_MODEL is not usable offline"
 
 

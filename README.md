@@ -27,10 +27,28 @@ Final Cut editors who want a decision layer and a small crew around a cut: someo
 |---|---|
 | **Final Cut Pro** | The timeline is the truth. You import the FCPXML jevid writes. You export XML when you already have a cut. |
 | **Cut Conductor** | The program in this repo. Named passes, confidence gates, proposal markers, an explicit apply, and the iterate loop the room owns. |
-| **Jev** (TypeSafe) | Typed decisions only: keep, tighten, remove, mark for review, or escalate. It does not write the marker text. |
+| **Jev** (TypeSafe) | Every linear, logical call: is this gap removable, is this a flash frame, keep or cut a take under rules, does a cut meet the gate. Typed decisions only: keep, tighten, remove, mark for review, or escalate. It does not write the marker text. |
+| **Claude Opus 5.5** (Anthropic) | Every open-ended creative call: story shape, which moments carry the video, music feel, type and visual treatment, montage. Answers are JSON checked against a schema. Nothing it says is cut without a gate or a person. |
 | **Grok Bot room** | Conductor, Pacing, Transcript, and Colour. They run the loop, explain the list, and ask a person only for an escalate or when the round cap hits. The contract is the [room protocol](docs/room-protocol.md). |
 
 Jev picks from options the code defines. The note on a marker is assembled afterwards from the action, the confidence, and the reason.
+
+## Who decides what
+
+`conductor/router.py` holds the list. Each decision type names its engine and the reason. Every row in the report, and every marker note, says which engine made the call (`engine=jev/live`, `engine=opus/mock`, …).
+
+| Engine | Decision types | When the engine is not there |
+|---|---|---|
+| Jev | `silence_gap`, `short_clip`, `filler_pause`, `long_static`, `colour_role`, `colour_aspect`, `take_keep`, `take_compare`, `cut_gate`, `pacing_violation`, `subtitle_break`, `audio_check` | The deterministic rules answer instead, at 0.85× confidence (`engine_source` `rules`). Never another model. A rules call is never `auto`. |
+| Opus | `colour_unseen`, `story_structure`, `key_moments`, `music`, `typography`, `visual_treatment`, `montage`, `broll_selection` | The call becomes a review marker with no action (`engine_source` `unavailable`). Nothing is auto-applied. |
+
+The engine decides. The gate still decides who may act: dialogue filler is a Jev call, and it stays in review because the pass is creative. Threshold comparisons inside the gate are arithmetic, so they stay code.
+
+No Grok or xAI model is in the decision path. The room bots run commands and post reports. They do not make the calls. A Grok or xAI model id or URL in `CONDUCTOR_JEV_MODEL`, `CONDUCTOR_OPUS_MODEL`, or the host overrides is refused.
+
+Calls are batched: one Jev request per 24 candidates (48 questions), one Opus request per 12. Answers are cached by content, not by id or position. So `iterate` round 2 only asks about regions that changed, and identical regions are asked once. The first failed request marks that engine down for the rest of the run. Every report has a `decision_usage` counter: calls per engine (live and mock), items, cache hits, fallbacks, and tokens and cost when the host returns them. The CLI prints it as a `decisions` line.
+
+The assembly engine and future passes call the same router: `Router.decide([Ask(...)])`. See the docstring in `conductor/router.py`. A new decision type is a `register_decision(name, engine=..., question=..., why=...)`.
 
 ## The loop
 
@@ -193,14 +211,17 @@ Read `cut.conductor.md`. The companion `cut.conductor.fcpxml` is the same edit w
 
 The transcript is optional SRT or WebVTT. Times are the sequence clock, not the source clip.
 
-To call live Jev, copy `.env.example` and pass `--live`. Dry-run stays the default even when a key is present. `CONDUCTOR_DRY_RUN=1` forces the mock anyway.
+To call live engines, copy `.env.example` and pass `--live`. Dry-run stays the default even when a key is present. `CONDUCTOR_DRY_RUN=1` forces both mocks anyway.
 
-| Variable | Host | Model |
-|---|---|---|
-| `OPENROUTER_API_KEY` | `POST https://openrouter.ai/api/alpha/decisions` | `typesafe/jev-1.13` |
-| `TYPESAFE_API_KEY` | `POST https://api.typesafe.ai/v1/systemone` | `jev-1.13.0` |
+| Variable | Engine | Host | Model |
+|---|---|---|---|
+| `OPENROUTER_API_KEY` | Jev | `POST https://openrouter.ai/api/alpha/decisions` | `typesafe/jev-1.13` |
+| `TYPESAFE_API_KEY` | Jev | `POST https://api.typesafe.ai/v1/systemone` | `jev-1.13.0` |
+| `ANTHROPIC_API_KEY` | Opus | `POST https://api.anthropic.com/v1/messages` | `claude-opus-5-5` (`CONDUCTOR_OPUS_MODEL`) |
 
-OpenRouter wins when both are set. `CONDUCTOR_JEV_PROVIDER=typesafe` forces the other. The TypeSafe host rejects the slug `jev-1.13`, so the client sends `jev-1.13.0` there.
+OpenRouter wins when both Jev keys are set. `CONDUCTOR_JEV_PROVIDER=typesafe` forces the other. The TypeSafe host rejects the slug `jev-1.13`, so the client sends `jev-1.13.0` there.
+
+`--live` needs at least one engine key. With only a Jev key, creative calls become review markers. With only an Anthropic key, linear calls use the rules. Both cases are warnings on stderr and in the report. Opus requests use `output_config.format` (JSON schema) and `output_config.effort` (`CONDUCTOR_OPUS_EFFORT`, default `medium`). Opus 5.5 rejects forced tool use and disabled thinking, so neither is sent.
 
 `python -m conductor` is the command to use from the repo. A `cut-conductor` script is installed with the package and may land outside your `PATH`.
 
@@ -278,6 +299,8 @@ The Conductor bot runs `python -m conductor room-run`. That command detects the 
 
 When the input is a folder, the room is woken with the starter FCPXML path, the inventory, the brief, and the media paths. Not with the media bytes.
 
+The bots are orchestration, not a decision engine. A call about the cut goes through the router to Jev or Opus, and the bot posts what came back.
+
 ## Roadmap
 
 - **Ordering.** Ingest is filename order. A brief does not reorder clips yet.
@@ -295,6 +318,8 @@ python scripts/iterate_dry_run.py
 ```
 
 No API key. Conductor tests cover the parser, marker write-back, the mock client, the gates, apply, ingest (including the fixture folder and the local page), the colour pass, iterate (two rounds, the round cap, and a duration window), and `room-run` (an FCPXML, a `.fcpxmld` bundle, a zip, a clip folder, bad drops, and the watcher). The placeholder clips under `fixtures/selects/` are a few bytes each.
+
+`tests/test_conductor_router.py` covers the decision router against fake Jev and Anthropic hosts (`httpx.MockTransport`). It checks the classification, attribution on rows and markers, the rules fallback and the review fallback, bad or refused Opus answers, batching, the cache across runs and iterate rounds, the call counter, and that no key reaches a report.
 
 ## Also in this repo: cutmcp
 

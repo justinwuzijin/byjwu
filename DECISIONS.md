@@ -237,3 +237,49 @@ Sibling package, not a change to the tiers above.
   comments.** A round trip is not byte-identical. The safety check is "the
   source file's bytes did not change," not "the shadow XML matches the
   export byte for byte."
+
+## Decision router
+
+- **`colour_unseen` goes to Opus.** Exposure, white balance, and skin are a
+  look, which the product rule puts with creative calls. The other two
+  colour checks read facts out of the XML (a role is present or not, an
+  aspect gap is over a threshold), so they stay with Jev. The Opus mock
+  reuses the heuristic numbers, so the dry-run report did not move.
+- **`broll_selection` goes to Opus.** Picking the image that plays over a
+  line is an editorial read. cutmcp's open-work note frames b-roll as a Jev
+  choice. That note is about the raw-footage cutter, not this router.
+  `register_decision` can move it.
+- **The gate stays code.** "Does a cut meet the gate" is a Jev type
+  (`cut_gate`) for a real judgment such as "does this cut clip a word".
+  `gates.route` compares numbers against thresholds. Sending that to a model
+  would be asking Jev what code can compute.
+- **Opus uses `output_config.format`, not a forced tool.** Opus 5.5 returns
+  400 on `tool_choice` `tool`/`any` and on disabled thinking. The wire
+  schema drops `minimum`/`maximum`/length limits and closes every object,
+  because Anthropic rejects the rest. The full schema is checked locally.
+  Confidence and risk are clamped rather than rejected, and the rationale
+  is trimmed rather than length-limited, so one long sentence does not void
+  a batch.
+- **One failure trips the engine for the run.** Each client already retries
+  408/429/5xx three times. A second window against the same dead host
+  would only multiply the wait. `iterate` shares the router, so the breaker
+  holds across rounds.
+- **A rules answer is never `auto`.** The discount alone keeps it under the
+  default gate. A taste file can lower that gate, and a `loosen_auto` rule
+  can lift a prior, so `decide` downgrades any rules `auto` to review. An
+  unattended cut needs Jev.
+- **Opus unavailable is review, not escalate.** Confidence 0 would route to
+  escalate, which makes `iterate` ask for a person. A missing creative
+  opinion is a to-do marker, not a stop.
+- **`--live` with no engine key at all is still a usage error.** With one
+  key, the other engine starts down and takes its fallback. With none, the
+  run would not be live in any sense, and the old error is the useful one.
+- **The cache ignores the taste feedback log.** Taste priors are applied
+  after the engine answers (`Taste.adjust`), so a cached raw answer plus a
+  fresh prior is exact for those. Inside one run the only other log growth
+  is the loop's own accepts, for regions that no longer exist. Leaving the
+  log out is what lets `iterate` round 2 cost zero calls. A new router
+  starts cold, so a person's feedback between runs is always seen.
+- **Cost is reported, not guessed.** `provider_cost_usd` is whatever the
+  host returned. `estimated_cost_usd` uses Jev's $0.042/M input rate and
+  Opus 5.5's $4/$20 per M. It is null for a model with no listed rate.

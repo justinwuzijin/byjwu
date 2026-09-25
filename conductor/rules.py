@@ -276,7 +276,7 @@ def format_rules(report: Mapping) -> list[str]:
     applied = int(report.get("applied") or 0)
     lines = [
         f"Mode: `{mode}`.",
-        f"Rules fired: {len(fired)}. Cuts applied: {applied}. Vetoed: {len(vetoed)}.",
+        f"Rules fired: {len(fired)}. Rule cuts written: {applied}. Vetoed: {len(vetoed)}.",
     ]
     thresholds = report.get("thresholds") or {}
     if thresholds:

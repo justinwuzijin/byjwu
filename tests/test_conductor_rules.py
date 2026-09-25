@@ -157,7 +157,7 @@ def test_logic_first_cuts_bare_gaps_when_the_model_returns_half(env, tmp_path):
     assert "threshold=bare_gap_seconds" in shadow
     decisions = (tmp_path / "DECISIONS.md").read_text(encoding="utf-8")
     assert "bare_uncovered_gap" in decisions
-    assert "Cuts applied: 2" in decisions
+    assert "Rule cuts written: 2" in decisions
     applied = parse_fcpxml(report.out_applied)
     gap = next(clip for clip in applied.sequences[0].spine if clip.kind == "gap")
     assert [clip.name for clip in gap.connected_clips if clip.lane is not None] == [

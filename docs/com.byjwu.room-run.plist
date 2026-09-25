@@ -3,19 +3,19 @@
 <plist version="1.0">
 <dict>
 	<key>Label</key>
-	<string>com.jevid.room-run</string>
+	<string>com.byjwu.room-run</string>
 	<key>WorkingDirectory</key>
-	<string>/Users/CHANGE_ME/jevid</string>
+	<string>/Users/CHANGE_ME/byjwu</string>
 	<key>ProgramArguments</key>
 	<array>
-		<string>/Users/CHANGE_ME/jevid/.venv/bin/python</string>
+		<string>/Users/CHANGE_ME/byjwu/.venv/bin/python</string>
 		<string>-m</string>
 		<string>conductor</string>
 		<string>room-run</string>
 		<string>--watch</string>
-		<string>/Users/CHANGE_ME/Desktop/jevid-in</string>
+		<string>/Users/CHANGE_ME/Desktop/byjwu-in</string>
 		<string>--out-root</string>
-		<string>/Users/CHANGE_ME/Desktop/jevid-out</string>
+		<string>/Users/CHANGE_ME/Desktop/byjwu-out</string>
 		<string>--brief</string>
 		<string>A tight interview. Keep the guest's story, lose dead air.</string>
 	</array>
@@ -24,9 +24,9 @@
 	<key>KeepAlive</key>
 	<true/>
 	<key>StandardOutPath</key>
-	<string>/Users/CHANGE_ME/Library/Logs/jevid/room-run.log</string>
+	<string>/Users/CHANGE_ME/Library/Logs/byjwu/room-run.log</string>
 	<key>StandardErrorPath</key>
-	<string>/Users/CHANGE_ME/Library/Logs/jevid/room-run.err</string>
+	<string>/Users/CHANGE_ME/Library/Logs/byjwu/room-run.err</string>
 	<key>EnvironmentVariables</key>
 	<dict>
 		<key>PATH</key>

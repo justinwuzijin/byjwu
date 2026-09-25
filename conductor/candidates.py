@@ -1,7 +1,7 @@
 """Candidate regions an editor might want a second look at.
 
 These are heuristics, not judgments. Jev decides what to do with each one.
-Nothing here calls a model. Thresholds are the spec; the README quotes them.
+Nothing here calls a model. Thresholds are the spec; docs/technical.md quotes them.
 
 Silence gaps
     A spine ``<gap>`` of at least 1.25s, a hole of that length between two

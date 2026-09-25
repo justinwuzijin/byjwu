@@ -41,16 +41,14 @@ Marker `start` is the clip's source time (the same clock as the clip's `start`),
 
 Graphics (`conductor/graphics`) stay off unless `--graphics` is set or the style profile sets `graphics.enabled` (the shipped `byjustinwu` profile leaves it false). The stage then writes onto the file the summary names, on a free lane, and does not change existing clip timing. Subtitles and `none` / `scale_warp` titles are Basic Title elements. Other title treatments are alpha movies in `<stem>.assets/`. Rectangles are Shapes generators with transform keyframes, Gaussian blur, and Hue/Saturation. A second pass leaves a timeline that already has a `byjwu ` asset.
 
-A logic-first decision mode is not on this branch. Measured rules such as uncovered black and dead air cutting by default, with models only able to veto, are still in progress.
-
 ## Who decides what
 
 | Piece | Decides | Does not |
 |---|---|---|
 | **Jev** (TypeSafe) | Every linear, logical call: is this gap removable, is this a flash frame, keep or cut a take under rules, does a cut meet the gate. Typed decisions only: keep, tighten, remove, mark for review, or escalate, each with a confidence and a risk. It picks from options the code defines (`conductor/jev.py`). | Write text, or make open-ended taste calls. |
-| **Grok 4.7** | Every open-ended creative and taste call: story shape, which moments carry the video, music feel, type and visual treatment, montage, and graphics. Default model `grok-4.7-medium` (`CONDUCTOR_TASTE_MODEL`). Answers are JSON checked against a schema. Nothing it says is cut without a gate or a person (`conductor/opus.py`). Claude Opus stays selectable by setting that env var to a Claude id. | Generate video. |
+| **Grok 4.7** | Every open-ended creative and taste call: story shape, which moments carry the video, music feel, type and visual treatment, montage, and graphics. Default model `grok-4.7-medium` (`CONDUCTOR_TASTE_MODEL`), sent through the Cursor CLI when that slug is selected. Opus stays optional: set the same variable to a Claude id. Answers are JSON checked against a schema. Nothing it says is cut without a gate or a person (`conductor/cursor_agent.py`, `conductor/opus.py`). | Generate video. |
 | **Grok Bot room** | Coordination: routes work, runs the engine, posts paths and reports, and asks the editor when a call needs him. | The taste-model calls themselves. Those go through the decision router. |
-| **Final Cut Pro** | The timeline is the truth. the editor imports the FCPXML byjwu writes, and exports XML when he already has a cut. | — |
+| **Final Cut Pro** | The timeline is the truth. The editor imports the FCPXML byjwu writes, and exports XML when he already has a cut. | — |
 
 The note on a marker is assembled afterwards from the action, the confidence, and the reason. No model writes it.
 
@@ -58,7 +56,7 @@ The note on a marker is assembled afterwards from the action, the confidence, an
 
 Measured facts are decided by rules in `conductor/rules.py`. A model does not have to score them above 0.80 before they cut. `CONDUCTOR_DECISION_MODE` defaults to `logic-first`. `model-gated` restores the old gate.
 
-In `logic-first`, a rule that clears its threshold is the cut. Confidence starts at 0.80 once the measurement is past the line and rises toward 0.99 as the margin grows. The model sees the proposed cut and the evidence, and may only veto with a named reason. A veto is logged and becomes a review marker. Fuzzy taste calls (story, music, type, montage, colour) still go to Jev or Opus exactly as before, and the creative passes still do not auto-apply.
+In `logic-first`, a rule that clears its threshold is the cut. Confidence starts at 0.80 once the measurement is past the line and rises toward 0.99 as the margin grows. The model sees the proposed cut and the evidence, and may only veto with a named reason. A veto is logged and becomes a review marker. Fuzzy taste calls (story, music, type, montage, colour) go to the taste model, default `grok-4.7-medium`. Linear calls stay on Jev. Creative passes still do not auto-apply.
 
 The rules and their placeholder defaults:
 
@@ -85,9 +83,43 @@ A rule cut keeps covered b-roll, because apply still refuses to drop a connected
 
 The engine decides. The gate still decides who may act: dialogue filler is a Jev call, and it stays in review because the pass is creative. Threshold comparisons inside the gate are arithmetic, so they stay code.
 
-Linear calls stay on Jev. Creative calls use `CONDUCTOR_TASTE_MODEL`, default `grok-4.7-medium`. Set it to a Claude id to use Opus instead. The room bots run commands and post reports.
+Linear calls stay on Jev. Creative calls use `CONDUCTOR_TASTE_MODEL`, default `grok-4.7-medium`, through the Cursor CLI when that slug is a Cursor or Opus model. A missing `cursor-agent` binary or `CURSOR_API_KEY` turns those calls into review markers. Set the model to `claude-opus-5-5-medium` to use Opus. Jev still refuses a Grok or xAI model id. The room bots run commands and post reports.
 
 Calls are batched: one Jev request per 24 candidates (48 questions), one Opus request per 12. Answers are cached by content, not by id or position. So `iterate` round 2 only asks about regions that changed, and identical regions are asked once. The first failed request marks that engine down for the rest of the run. Every report has a `decision_usage` counter: calls per engine (live and mock), items, cache hits, fallbacks, and tokens and cost when the host returns them. The CLI prints it as a `decisions` line.
+
+### Opus backends
+
+Opus can be reached two ways. `CONDUCTOR_OPUS_BACKEND` picks one: `cursor`, `anthropic`, or `auto` (the default).
+
+| Setting | Uses |
+|---|---|
+| `auto` | Cursor when the `cursor-agent` binary is found and `CURSOR_API_KEY` is set. Otherwise Anthropic when `ANTHROPIC_API_KEY` is set. Otherwise no backend, and creative calls become review markers. |
+| `cursor` | Cursor only. When it is not there, creative calls become review markers. |
+| `anthropic` | The Anthropic API only (`conductor/opus.py`), as before. |
+
+The Cursor backend (`conductor/cursor_agent.py`) needs no Anthropic key. It looks for the binary in `CURSOR_AGENT_BIN`, then `cursor-agent` on `PATH`, then `~/.local/bin/cursor-agent`. Each batch is one headless run:
+
+```bash
+cursor-agent -p --mode ask --trust --model grok-4.7-medium --output-format json \
+  --workspace <empty temp dir> '<prompt>'
+```
+
+- `-p` can use tools, so the run is always `--mode ask` (read-only). It runs in an empty temporary directory that is deleted afterwards.
+- Auth is `CURSOR_API_KEY` only. The child process is started without `CURSOR_AUTH_TOKEN`, and without the Jev and Anthropic keys. The key is passed in the environment, not on the command line.
+- The slug defaults to `grok-4.7-medium` (`CONDUCTOR_TASTE_MODEL`, with `CONDUCTOR_OPUS_MODEL` still accepted). Cursor's confirmed families are `grok-4.7-{low,medium,high,xhigh}[-fast]` and `claude-opus-5-5-{low,medium,high,xhigh,max}[-fast]`. Plain `claude-opus-5-5` means `claude-opus-5-5-medium`. Anything else, including other Grok or xAI ids, is refused. Jev still refuses every Grok and xAI id, and so does the Anthropic backend.
+- `CONDUCTOR_TASTE_TIMEOUT` (or `CONDUCTOR_OPUS_TIMEOUT`) bounds each request, in seconds. Cursor defaults to 180, because a call is about 50s of wall clock. Anthropic stays at 120.
+- The answer is parsed defensively. The CLI's documented output is one JSON object with the reply as a string in `result`. The engine takes that object, then finds the answer JSON inside `result`, fenced or not. If the outer shape is different, it takes the last JSON object on stdout. The answer is always validated against the decision schema locally. A timeout, a non-zero exit, a missing binary, or an answer that does not parse or validate marks Opus down for the rest of the run. Its calls become review markers.
+
+Cursor batches 30 items per call when the prompt fits, and runs up to 3 batches at once (`CONDUCTOR_TASTE_CONCURRENCY`, or `CONDUCTOR_OPUS_CONCURRENCY`). Anthropic stays at 12. The content cache, the call counter, and review markers when the taste engine is down are unchanged. The counter prints `taste` and the slug that ran. Every Opus row and marker note says `engine=opus` and `via=cursor` (or `via=anthropic`), and `decision_usage` lists the backends under `via`. The counter records calls and latency (`latency_seconds`) for both backends. It records tokens only when the output reports them. Calls through Cursor get no estimated cost, because Cursor bills them, not an Anthropic rate.
+
+### Checking the engines
+
+```bash
+python -m conductor doctor          # one line per engine
+python -m conductor doctor --json   # the same, for a bot
+```
+
+The doctor checks Jev: it needs a key (`OPENROUTER_API_KEY` or `TYPESAFE_API_KEY`), then sends one one-question request. It checks the taste model through Cursor: it finds the binary and `CURSOR_API_KEY`, runs `cursor-agent models` to confirm the configured slug is listed, then does one tiny JSON round trip. The report names the resolved taste backend and model. Keys are reported as `set` or `unset`, never printed. The exit code is 0 when both engines are live, and 1 otherwise. With `CONDUCTOR_DRY_RUN=1` the checks are skipped and the exit code is 1.
 
 The assembly engine and future passes call the same router: `Router.decide([Ask(...)])`. See the docstring in `conductor/router.py`. A new decision type is a `register_decision(name, engine=..., question=..., why=...)`.
 
@@ -279,12 +311,12 @@ To call live engines, copy `.env.example` and pass `--live`. Dry-run stays the d
 |---|---|---|---|
 | `OPENROUTER_API_KEY` | Jev | `POST https://openrouter.ai/api/alpha/decisions` | `typesafe/jev-1.13` |
 | `TYPESAFE_API_KEY` | Jev | `POST https://api.typesafe.ai/v1/systemone` | `jev-1.13.0` |
-| `XAI_API_KEY` or `CONDUCTOR_TASTE_KEY` | Taste (default) | `POST https://api.x.ai/v1/chat/completions` | `grok-4.7-medium` (`CONDUCTOR_TASTE_MODEL`) |
-| `ANTHROPIC_API_KEY` | Opus, when `CONDUCTOR_TASTE_MODEL` is a Claude id | `POST https://api.anthropic.com/v1/messages` | `claude-opus-5-5` (`CONDUCTOR_OPUS_MODEL`) |
+| `CURSOR_API_KEY` | taste (default) | `cursor-agent` (`~/.local/bin/cursor-agent`) | `grok-4.7-medium` (`CONDUCTOR_TASTE_MODEL`) |
+| `ANTHROPIC_API_KEY` | taste, when `CONDUCTOR_TASTE_BACKEND=anthropic` | `POST https://api.anthropic.com/v1/messages` | `claude-opus-5-5` |
 
-OpenRouter wins when both Jev keys are set. `CONDUCTOR_JEV_PROVIDER=typesafe` forces the other. The TypeSafe host rejects the slug `jev-1.13`, so the client sends `jev-1.13.0` there.
+OpenRouter wins when both Jev keys are set. `CONDUCTOR_JEV_PROVIDER=typesafe` forces the other. The TypeSafe host rejects the slug `jev-1.13`, so the client sends `jev-1.13.0` there. A Cursor or Opus slug uses the Cursor CLI. If the binary or `CURSOR_API_KEY` is missing, creative calls become review markers.
 
-`--live` needs at least one engine key. With only a Jev key, creative calls become review markers. With only a taste-model key, linear calls use the rules. The default taste model is `grok-4.7-medium`. Set `CONDUCTOR_TASTE_MODEL` to a Claude id to use Opus instead. Opus requests use `output_config.format` (JSON schema) and `output_config.effort` (`CONDUCTOR_OPUS_EFFORT`, default `medium`).
+`--live` needs at least one engine key. With only a Jev key, creative calls become review markers. With only a taste-model key, linear calls use the rules. The default taste model is `grok-4.7-medium`. Set `CONDUCTOR_TASTE_MODEL` to `claude-opus-5-5-medium` to use Opus. Anthropic requests, when that backend is selected, use `output_config.format` (JSON schema) and `output_config.effort` (`CONDUCTOR_OPUS_EFFORT`, default `medium`).
 
 `python -m conductor` is the command to use from the repo. A `cut-conductor` script is installed with the package and may land outside your `PATH`.
 
@@ -424,6 +456,8 @@ python scripts/iterate_dry_run.py
 No API key. Engine tests cover the parser, marker write-back, the mock client, the gates, apply, ingest (including the fixture folder and the local page), the colour pass, iterate (two rounds, the round cap, and a duration window), `room-run` (an FCPXML, a `.fcpxmld` bundle, a zip, a clip folder, bad drops, and the watcher), the byjwu drop folders with their legacy fallback, and the graphics stage (subtitles that stay inside a clip and do not overlap, a deterministic rectangle layer, and a clean skip when ffmpeg is missing). The placeholder clips under `fixtures/selects/` are a few bytes each.
 
 `tests/test_conductor_router.py` covers the decision router against fake Jev and Anthropic hosts (`httpx.MockTransport`). It checks the classification, attribution on rows and markers, the rules fallback and the review fallback, bad or refused Opus answers, batching, the cache across runs and iterate rounds, the call counter, and that no key reaches a report.
+
+`tests/test_conductor_cursor.py` covers the Cursor backend with `subprocess.run` replaced, so no test starts `cursor-agent`. It checks the backend choice, the binary lookup, the read-only arguments, and that `CURSOR_AUTH_TOKEN` never reaches the child (once more through a real stub script). It also checks normal, fenced, and unwrapped output, bad JSON, a timeout, a non-zero exit, a missing binary, the refused Grok slug, and the doctor.
 
 ## Also in this repo: cutmcp
 

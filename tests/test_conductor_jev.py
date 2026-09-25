@@ -84,7 +84,7 @@ def test_mock_silence_and_taste_nudges():
 
 
 def test_dry_run_does_not_touch_the_network(monkeypatch):
-    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-test")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
 
     def boom(*args, **kwargs):
         raise AssertionError("network")
@@ -102,14 +102,14 @@ def test_dry_run_does_not_touch_the_network(monkeypatch):
 
 
 def test_openrouter_wins_and_posts_the_decisions_body(monkeypatch):
-    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-test")
-    monkeypatch.setenv("TYPESAFE_API_KEY", "sk-ts-test")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    monkeypatch.setenv("TYPESAFE_API_KEY", "test-key")
     monkeypatch.delenv("CONDUCTOR_JEV_PROVIDER", raising=False)
     endpoint = resolve_endpoint()
     assert endpoint.provider == "openrouter"
     assert endpoint.model == "typesafe/jev-1.13"
     assert endpoint.url == "https://openrouter.ai/api/alpha/decisions"
-    assert endpoint.headers["Authorization"] == "Bearer sk-or-test"
+    assert endpoint.headers["Authorization"] == "Bearer test-key"
 
     captured = {}
 
@@ -158,7 +158,7 @@ def test_openrouter_wins_and_posts_the_decisions_body(monkeypatch):
 
 def test_typesafe_uses_the_versioned_model_id(monkeypatch):
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
-    monkeypatch.setenv("TYPESAFE_API_KEY", "sk-ts-test")
+    monkeypatch.setenv("TYPESAFE_API_KEY", "test-key")
     endpoint = resolve_endpoint()
     assert endpoint.provider == "typesafe"
     assert endpoint.model == "jev-1.13.0"
@@ -167,14 +167,14 @@ def test_typesafe_uses_the_versioned_model_id(monkeypatch):
 
 @pytest.mark.parametrize("slug", ["x-ai/grok-4", "grok-4.7-high", "xai/grok-beta"])
 def test_a_grok_model_override_is_allowed(monkeypatch, slug):
-    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-test")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
     monkeypatch.setenv("CONDUCTOR_JEV_MODEL", slug)
     assert resolve_endpoint().model == slug
 
 
 def test_default_models_are_jev_not_grok(monkeypatch):
     monkeypatch.delenv("CONDUCTOR_JEV_MODEL", raising=False)
-    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-test")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
     assert resolve_endpoint().model == "typesafe/jev-1.13"
 
 
@@ -187,7 +187,7 @@ def test_live_without_a_key_fails(monkeypatch):
 
 
 def test_conductor_dry_run_env_blocks_a_live_call(monkeypatch):
-    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-test")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
     monkeypatch.setenv("CONDUCTOR_DRY_RUN", "1")
 
     def boom(*args, **kwargs):

@@ -370,6 +370,8 @@ def _model(payload: dict) -> str:
 
 def _engine_label(row: dict) -> str:
     label = f"{row.get('engine', '?')} · {row.get('engine_source', '?')}"
+    if row.get("via"):
+        label += f" via {row['via']}"
     return label + " (cached)" if row.get("cached") else label
 
 

@@ -3,7 +3,8 @@
 The product rule: a decision that is linear and logical — a bounded choice
 with clear criteria — goes to **Jev**. An open-ended creative or taste
 decision goes through this router. The default taste model is
-``grok-4.7-medium`` (``CONDUCTOR_TASTE_MODEL``). A Claude id selects Opus.
+``grok-4.7-medium`` (``CONDUCTOR_TASTE_MODEL``). A Cursor or Opus slug
+selects that model on the Cursor CLI. Linear calls stay on Jev.
 
 Classification (``DECISION_TYPES``):
 
@@ -63,6 +64,11 @@ Fallbacks:
   Never another model. ``decide`` never gives a rules answer ``auto``.
 - Opus unavailable: the decision becomes a review marker with no action.
 
+A Cursor or Opus slug (:func:`conductor.opus.choose_backend`) uses the Cursor
+CLI (:mod:`conductor.cursor_agent`, ``CURSOR_API_KEY``). If the binary or the
+key is missing, creative calls become review markers. Each Opus decision
+records which backend answered in ``via``.
+
 The first failed request marks that engine down for the rest of the run, so
 a 40-minute timeline does not retry a dead host once per window.
 
@@ -79,7 +85,8 @@ Retake vetoes and close-take picks are taste calls on this router (Opus),
 the same idea as Descript, Gling, Selects, and ButterCut, with no new engine.
 
 Every run gets a :class:`Ledger`: calls per engine (live and mock), items,
-cache hits, fallbacks, and tokens and cost when the provider returns them.
+cache hits, fallbacks, live latency, and tokens and cost when the provider
+returns them. Calls through Cursor are not priced: Cursor bills them.
 """
 
 from __future__ import annotations
@@ -88,13 +95,15 @@ import hashlib
 import json
 import os
 import re
+import time
 from collections.abc import Callable, Iterable, Mapping
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
 from cutmcp.jev import MAX_OPTIONS, USD_PER_M_INPUT_TOKENS, choice, noul
 
-from . import jev, opus
+from . import cursor_agent, jev, opus
 from .errors import ConductorError
 from .rules import VETO_OPTIONS, RuleHit, decision_mode as resolve_decision_mode, evaluate
 from .schema import SchemaError, example, validate
@@ -105,6 +114,9 @@ ENGINES = (JEV, OPUS)
 
 JEV_WINDOW = 24
 OPUS_WINDOW = 12
+#: Each cursor-agent run pays CLI startup and a large cached agent context, so
+#: it gets bigger windows. ``MAX_STATE_CHARS`` still splits one that would not fit.
+CURSOR_OPUS_WINDOW = 30
 MAX_STATE_CHARS = 60_000
 FALLBACK_DISCOUNT = 0.85
 RATIONALE_CHARS = 240
@@ -112,7 +124,9 @@ HTTP_TIMEOUT = 120.0
 
 _ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 _POSITIONAL = frozenset({"id", "timeline_start_seconds", "timeline_end_seconds"})
-_SECRET_ENV = ("OPENROUTER_API_KEY", "TYPESAFE_API_KEY", "ANTHROPIC_API_KEY")
+_SECRET_ENV = (
+    "OPENROUTER_API_KEY", "TYPESAFE_API_KEY", "ANTHROPIC_API_KEY", "CURSOR_API_KEY", "CURSOR_AUTH_TOKEN",
+)
 _TOKEN = re.compile(r"(sk-|Bearer\s+)[A-Za-z0-9_\-.]{6,}")
 
 OPUS_SYSTEM = (
@@ -308,6 +322,7 @@ class Decision:
     model: str | None = None
     rationale: str = ""
     cached: bool = False
+    via: str | None = None
 
     @property
     def needs_review(self) -> bool:
@@ -334,7 +349,32 @@ class Verdict:
     model: str | None = None
     rationale: str = ""
     cached: bool = False
+    via: str | None = None
     rule: dict | None = None
+
+
+class _OpusJob:
+    """One Opus window: the asks, and the payload and schema sent for them."""
+
+    def __init__(self, window, dtype, value_schema, brief, context) -> None:
+        self.window = window
+        self.dtype = dtype
+        self.value_schema = value_schema
+        self.payload = {
+            "brief": brief,
+            "context": context,
+            "decision": {"type": dtype.name, "question": dtype.question},
+            "items": [
+                {
+                    "id": ask.id,
+                    "subject": ask.subject,
+                    **({"question": ask.question} if ask.question else {}),
+                    **({"options": ask.options} if ask.options else {}),
+                }
+                for _key, ask in window
+            ],
+        }
+        self.schema = _response_schema([ask.id for _key, ask in window], value_schema)
 
 
 @dataclass
@@ -350,10 +390,14 @@ class EngineUsage:
     unavailable_items: int = 0
     input_tokens: int | None = None
     output_tokens: int | None = None
+    cache_read_tokens: int | None = None
+    cache_write_tokens: int | None = None
     provider_cost_usd: float | None = None
     estimated_cost_usd: float | None = None
     unpriced_calls: int = 0
+    latency_seconds: float | None = None
     models: set[str] = field(default_factory=set)
+    vias: set[str] = field(default_factory=set)
     down_reason: str | None = None
     errors: list[str] = field(default_factory=list)
 
@@ -369,7 +413,15 @@ class EngineUsage:
             return "cache"
         return "unused"
 
-    def record(self, *, live: bool, model: str | None, usage: Mapping | None) -> None:
+    def record(
+        self,
+        *,
+        live: bool,
+        model: str | None,
+        usage: Mapping | None,
+        latency: float | None = None,
+        via: str | None = None,
+    ) -> None:
         self.calls += 1
         if live:
             self.live_calls += 1
@@ -377,8 +429,12 @@ class EngineUsage:
             self.mock_calls += 1
         if model:
             self.models.add(model)
+        if via:
+            self.vias.add(via)
         if not live:
             return
+        if latency is not None:
+            self.latency_seconds = round((self.latency_seconds or 0.0) + latency, 3)
         tokens_in, tokens_out, cost = _usage_numbers(usage)
         if tokens_in is not None:
             self.input_tokens = (self.input_tokens or 0) + tokens_in
@@ -386,7 +442,11 @@ class EngineUsage:
             self.output_tokens = (self.output_tokens or 0) + tokens_out
         if cost is not None:
             self.provider_cost_usd = round((self.provider_cost_usd or 0.0) + cost, 8)
-        rate = _rate(self.engine, model)
+        for name, aliases in _CACHE_TOKENS.items():
+            value = _first_number(usage, aliases)
+            if value is not None:
+                setattr(self, name, (getattr(self, name) or 0) + int(value))
+        rate = None if via == opus.CURSOR else _rate(self.engine, model)
         if rate is None or tokens_in is None:
             self.unpriced_calls += 1
             return
@@ -405,18 +465,21 @@ class EngineUsage:
             "fallback_items", "unavailable_items", "unpriced_calls",
         ):
             setattr(self, name, getattr(self, name) + getattr(other, name))
-        for name in ("input_tokens", "output_tokens"):
+        for name in ("input_tokens", "output_tokens", *_CACHE_TOKENS):
             if getattr(other, name) is not None:
                 setattr(self, name, (getattr(self, name) or 0) + getattr(other, name))
         for name in ("provider_cost_usd", "estimated_cost_usd"):
             if getattr(other, name) is not None:
                 setattr(self, name, round((getattr(self, name) or 0.0) + getattr(other, name), 8))
+        if other.latency_seconds is not None:
+            self.latency_seconds = round((self.latency_seconds or 0.0) + other.latency_seconds, 3)
         self.models |= other.models
+        self.vias |= other.vias
         self.down_reason = self.down_reason or other.down_reason
         self.errors = (self.errors + other.errors)[:5]
 
     def to_dict(self) -> dict:
-        rate = _rate(self.engine, next(iter(sorted(self.models)), None))
+        rate = None if self.vias == {opus.CURSOR} else _rate(self.engine, next(iter(sorted(self.models)), None))
         return {
             "status": self.status,
             "calls": self.calls,
@@ -429,11 +492,15 @@ class EngineUsage:
             "unavailable_items": self.unavailable_items,
             "input_tokens": self.input_tokens,
             "output_tokens": self.output_tokens,
+            "cache_read_tokens": self.cache_read_tokens,
+            "cache_write_tokens": self.cache_write_tokens,
             "provider_cost_usd": self.provider_cost_usd,
             "estimated_cost_usd": self.estimated_cost_usd,
             "rate_usd_per_m_tokens": list(rate) if rate else None,
             "unpriced_calls": self.unpriced_calls,
+            "latency_seconds": self.latency_seconds,
             "models": sorted(self.models),
+            "via": sorted(self.vias),
             "down_reason": self.down_reason,
             "errors": list(self.errors),
         }
@@ -497,7 +564,15 @@ def format_usage(usage: Mapping) -> str:
             text += f", {row['fallback_items']} by rules"
         if row.get("unavailable_items"):
             text += f", {row['unavailable_items']} left for review"
+        label = "taste" if name == OPUS else name
+        text = text.replace(f"{name} ", f"{label} ", 1)
         text += f") {row['status']}"
+        if row.get("models"):
+            text += f" [{', '.join(row['models'])}]"
+        if row.get("via"):
+            text += f" via {'+'.join(row['via'])}"
+        if row.get("latency_seconds") is not None:
+            text += f", {row['latency_seconds']:.1f}s"
         if row.get("input_tokens") is not None:
             text += f", {row['input_tokens']} in / {row.get('output_tokens') or 0} out tokens"
         parts.append(text)
@@ -531,18 +606,22 @@ class Router:
         jev_client: Any | None = None,
         opus_client: Any | None = None,
         jev_window: int = JEV_WINDOW,
-        opus_window: int = OPUS_WINDOW,
+        opus_window: int | None = None,
+        opus_concurrency: int | None = None,
         fallback_discount: float = FALLBACK_DISCOUNT,
         decision_mode: str | None = None,
         mock_veto: str | None = None,
     ) -> None:
-        if jev_window < 1 or opus_window < 1:
+        if jev_window < 1 or (opus_window is not None and opus_window < 1):
             raise ConductorError("router windows must be at least 1")
         if not 0.0 <= fallback_discount <= 1.0:
             raise ConductorError("fallback_discount must be between 0 and 1")
         self.live = bool(live) and not jev.dry_run_forced()
         self.jev_window = jev_window
-        self.opus_window = opus_window
+        self.opus_window = opus_window or OPUS_WINDOW
+        self.opus_concurrency = opus_concurrency or opus.concurrency()
+        if self.opus_concurrency < 1:
+            raise ConductorError("opus_concurrency must be at least 1")
         self.fallback_discount = fallback_discount
         self.decision_mode = decision_mode if decision_mode is not None else resolve_decision_mode()
         self.mock_veto = mock_veto
@@ -553,26 +632,33 @@ class Router:
         self._down: dict[str, str] = {}
         self._cache: dict[str, dict] = {}
         self._models = {JEV: jev.MOCK_MODEL, OPUS: opus.MOCK_MODEL}
-        self._opus_endpoint: opus.Endpoint | None = None
+        self._opus_endpoint: opus.Endpoint | cursor_agent.Endpoint | None = None
+        self.opus_via: str | None = None
         if not self.live:
             return
         jev_ready = jev.has_key()
-        opus_ready = opus.has_key()
-        if not jev_ready and not opus_ready:
+        opus_via, opus_missing = opus.choose_backend()
+        if not jev_ready and opus_via is None:
             raise ConductorError(
                 "No Jev key. Set OPENROUTER_API_KEY or TYPESAFE_API_KEY "
-                "(and ANTHROPIC_API_KEY for creative decisions), or drop --live "
-                "to dry-run with the local mock."
+                "(and CURSOR_API_KEY with cursor-agent for creative decisions), "
+                "or drop --live to dry-run with the local mock."
             )
         if jev_ready:
             self._models[JEV] = jev.resolve_endpoint().model
         else:
             self._down[JEV] = "no Jev key (OPENROUTER_API_KEY or TYPESAFE_API_KEY)"
-        if opus_ready:
+        if opus_via == opus.CURSOR:
+            self._opus_endpoint = cursor_agent.resolve_endpoint()
+        elif opus_via:
             self._opus_endpoint = opus.resolve_endpoint()
-            self._models[OPUS] = self._opus_endpoint.model
         else:
-            self._down[OPUS] = "no taste-model key (XAI_API_KEY, CONDUCTOR_TASTE_KEY, or ANTHROPIC_API_KEY when CONDUCTOR_TASTE_MODEL is Claude)"
+            self._down[OPUS] = opus_missing
+        if self._opus_endpoint is not None:
+            self.opus_via = opus_via
+            self._models[OPUS] = self._opus_endpoint.model
+            if opus_window is None and opus_via == opus.CURSOR:
+                self.opus_window = CURSOR_OPUS_WINDOW
 
     def __enter__(self) -> Router:
         return self
@@ -592,10 +678,13 @@ class Router:
         """``mock``, ``live``, or ``down: <reason>`` per engine, before any call."""
         if not self.live:
             return {engine: "mock" for engine in ENGINES}
-        return {
+        status = {
             engine: f"down: {self._down[engine]}" if engine in self._down else "live"
             for engine in ENGINES
         }
+        if status[OPUS] == "live" and self.opus_via:
+            status[OPUS] = f"live via {self.opus_via}"
+        return status
 
     # ------------------------------------------------------------------
     # timeline candidates
@@ -755,6 +844,7 @@ class Router:
     def _ask_jev(self, state: dict, questions: dict, usage: EngineUsage):
         if self.live and JEV in self._down:
             return None
+        started = time.monotonic()
         try:
             batch = jev.ask(state, questions, live=self.live, client=self._client(JEV))
         except ConductorError as exc:
@@ -762,7 +852,9 @@ class Router:
             self._down[JEV] = reason
             usage.fail(reason)
             return None
-        usage.record(live=not batch.dry_run, model=batch.model, usage=batch.usage)
+        usage.record(
+            live=not batch.dry_run, model=batch.model, usage=batch.usage, latency=time.monotonic() - started
+        )
         return batch
 
     # ------------------------------------------------------------------
@@ -918,82 +1010,107 @@ class Router:
             head = group[0]
             signature = json.dumps([head.type, _value_schema(head)], sort_keys=True)
             groups.setdefault(signature, []).append((key, head))
+        jobs = []
         for heads in groups.values():
             dtype = classify(heads[0][1].type)
             value_schema = _value_schema(heads[0][1])
             for window in _windows(heads, self.opus_window, lambda entry: entry[1].subject):
-                answers = self._opus_window(window, dtype, value_schema, brief, context, usage, ledger, receipts)
-                for key, head in window:
-                    decision = answers[head.id]
-                    if decision.source in {"live", "mock"}:
-                        self._cache[key] = _cacheable(decision)
-                    for ask in pending[key]:
-                        out[ask.id] = decision if ask is head else Decision(
-                            **{**asdict(decision), "id": ask.id, "cached": decision.source != "unavailable"}
-                        )
-                        if ask is not head and decision.source == "unavailable":
-                            usage.unavailable_items += 1
+                jobs.append(_OpusJob(window, dtype, value_schema, brief, context))
+        for job, answers in zip(jobs, self._run_opus(jobs, usage, ledger, receipts), strict=True):
+            for key, head in job.window:
+                decision = answers[head.id]
+                if decision.source in {"live", "mock"}:
+                    self._cache[key] = _cacheable(decision)
+                for ask in pending[key]:
+                    out[ask.id] = decision if ask is head else Decision(
+                        **{**asdict(decision), "id": ask.id, "cached": decision.source != "unavailable"}
+                    )
+                    if ask is not head and decision.source == "unavailable":
+                        usage.unavailable_items += 1
         return [out[ask.id] for ask in asks], receipts
 
-    def _opus_window(self, window, dtype, value_schema, brief, context, usage, ledger, receipts) -> dict[str, Decision]:
-        ids = [ask.id for _key, ask in window]
-        payload = {
-            "brief": brief,
-            "context": context,
-            "decision": {"type": dtype.name, "question": dtype.question},
-            "items": [
-                {
-                    "id": ask.id,
-                    "subject": ask.subject,
-                    **({"question": ask.question} if ask.question else {}),
-                    **({"options": ask.options} if ask.options else {}),
-                }
-                for _key, ask in window
-            ],
-        }
-        schema = _response_schema(ids, value_schema)
-        answers: dict[str, Decision] = {}
+    def _run_opus(self, jobs, usage, ledger, receipts) -> list[dict[str, Decision]]:
+        """Answers per job, in job order. Live calls run ``opus_concurrency`` at a time.
+
+        A failure marks Opus down, so later waves are not sent. Calls already in
+        flight in the same wave still count if they succeed.
+        """
         if not self.live:
-            usage.record(live=False, model=opus.MOCK_MODEL, usage=None)
-            for _key, ask in window:
-                value, confidence = _opus_mock(ask, value_schema)
-                answers[ask.id] = Decision(
-                    ask.id, ask.type, OPUS, "mock", value, float(confidence), dtype.why,
-                    model=opus.MOCK_MODEL, rationale="dry-run mock; no model was called",
+            return [self._opus_mock(job, usage, receipts) for job in jobs]
+        if self.opus_via and self.opus_via != opus.CURSOR:
+            self._client(OPUS)
+        results: list[dict[str, Decision]] = []
+        for start in range(0, len(jobs), self.opus_concurrency):
+            wave = jobs[start : start + self.opus_concurrency]
+            if OPUS in self._down:
+                calls = [(None, None, 0.0)] * len(wave)
+            elif len(wave) == 1:
+                calls = [self._opus_call(wave[0])]
+            else:
+                with ThreadPoolExecutor(max_workers=len(wave), thread_name_prefix="conductor-opus") as pool:
+                    calls = list(pool.map(self._opus_call, wave))
+            for job, (reply, error, latency) in zip(wave, calls, strict=True):
+                if error is not None:
+                    self._down.setdefault(OPUS, error)
+                    usage.fail(error)
+                results.append(self._opus_answers(job, reply, error, latency, usage, ledger, receipts))
+        return results
+
+    def _opus_call(self, job: _OpusJob) -> tuple[Any, str | None, float]:
+        """One backend request. Safe to run on a worker thread: it touches no router state."""
+        started = time.monotonic()
+        try:
+            if self.opus_via == opus.CURSOR:
+                reply = cursor_agent.complete(
+                    system=OPUS_SYSTEM, payload=job.payload, schema=job.schema, endpoint=self._opus_endpoint
                 )
-            receipts.append(_receipt(OPUS, "mock", opus.MOCK_MODEL, payload, {"schema": schema}, {
-                ask_id: item.to_dict() for ask_id, item in answers.items()
-            }))
-            return answers
-        reply = None
-        reason = self._down.get(OPUS)
-        if reason is None:
-            try:
+            else:
                 reply = opus.complete(
                     system=OPUS_SYSTEM,
-                    payload=payload,
-                    schema=schema,
+                    payload=job.payload,
+                    schema=job.schema,
                     endpoint=self._opus_endpoint,
-                    client=self._client(OPUS),
-                    max_tokens=min(32_000, 2_048 + 400 * len(window)),
+                    client=self._clients[OPUS],
+                    max_tokens=min(32_000, 2_048 + 400 * len(job.window)),
                 )
-            except ConductorError as exc:
-                reason = redact(str(exc))
-                self._down[OPUS] = reason
-                usage.fail(reason)
+        except ConductorError as exc:
+            return None, redact(str(exc)), time.monotonic() - started
+        return reply, None, time.monotonic() - started
+
+    def _opus_mock(self, job: _OpusJob, usage, receipts) -> dict[str, Decision]:
+        usage.record(live=False, model=opus.MOCK_MODEL, usage=None)
+        answers: dict[str, Decision] = {}
+        for _key, ask in job.window:
+            value, confidence = _opus_mock(ask, job.value_schema)
+            answers[ask.id] = Decision(
+                ask.id, ask.type, OPUS, "mock", value, float(confidence), job.dtype.why,
+                model=opus.MOCK_MODEL, rationale="dry-run mock; no model was called",
+            )
+        receipts.append(_receipt(OPUS, "mock", opus.MOCK_MODEL, job.payload, {"schema": job.schema}, {
+            ask_id: item.to_dict() for ask_id, item in answers.items()
+        }))
+        return answers
+
+    def _opus_answers(self, job: _OpusJob, reply, error, latency, usage, ledger, receipts) -> dict[str, Decision]:
+        via = self.opus_via
+        dtype = job.dtype
+        answers: dict[str, Decision] = {}
         if reply is None:
+            reason = error or self._down[OPUS]
             usage.down_reason = usage.down_reason or reason
-            usage.unavailable_items += len(window)
-            ledger.warn(f"Opus unavailable ({reason}). Creative calls were left as review markers.")
-            for _key, ask in window:
+            usage.unavailable_items += len(job.window)
+            ledger.warn(f"Opus unavailable ({self._down.get(OPUS, reason)}). Creative calls were left as review markers.")
+            for _key, ask in job.window:
                 answers[ask.id] = _unavailable(ask, dtype, reason)
-            receipts.append(_receipt(OPUS, "unavailable", None, payload, {"schema": schema}, {}, error=reason))
+            receipts.append(_receipt(
+                OPUS, "unavailable", None, job.payload, {"schema": job.schema}, {}, error=reason, via=via
+            ))
             return answers
-        usage.record(live=True, model=reply.model, usage=reply.usage)
+        usage.record(live=True, model=reply.model, usage=reply.usage, latency=latency, via=via)
         picked: dict[str, dict] = {}
         for row in reply.data["decisions"]:
             picked.setdefault(row["id"], row)
-        for _key, ask in window:
+        for _key, ask in job.window:
             row = picked.get(ask.id)
             if row is None:
                 usage.unavailable_items += 1
@@ -1001,11 +1118,11 @@ class Router:
                 continue
             answers[ask.id] = Decision(
                 ask.id, ask.type, OPUS, "live", row["value"], _clamp(row["confidence"]), dtype.why,
-                model=reply.model, rationale=_trim(row.get("rationale") or "", RATIONALE_CHARS),
+                model=reply.model, rationale=_trim(row.get("rationale") or "", RATIONALE_CHARS), via=via,
             )
-        receipts.append(_receipt(OPUS, "live", reply.model, payload, {"schema": schema}, {
+        receipts.append(_receipt(OPUS, "live", reply.model, job.payload, {"schema": job.schema}, {
             ask_id: item.to_dict() for ask_id, item in answers.items()
-        }, request_id=reply.request_id, usage=reply.usage))
+        }, request_id=reply.request_id, usage=reply.usage, via=via))
         return answers
 
     # ------------------------------------------------------------------
@@ -1017,14 +1134,15 @@ class Router:
         if client is None:
             import httpx
 
-            client = httpx.Client(timeout=HTTP_TIMEOUT)
+            client = httpx.Client(timeout=opus.timeout_seconds() if engine == OPUS else HTTP_TIMEOUT)
             self._clients[engine] = client
             self._owned.append(client)
         return client
 
     def _key(self, engine: str, type_name: str, subject: Any, brief: str, context: Any, spec: Any) -> str:
+        via = self.opus_via if engine == OPUS else None
         blob = json.dumps(
-            [engine, self._models[engine], self.live, type_name, subject, brief, context, spec],
+            [engine, self._models[engine], via, self.live, type_name, subject, brief, context, spec],
             sort_keys=True,
             default=str,
             ensure_ascii=False,
@@ -1160,6 +1278,7 @@ def _creative_verdict(decision: Decision, dtype: DecisionType) -> Verdict:
         model=decision.model,
         rationale=decision.rationale,
         cached=decision.cached,
+        via=decision.via,
     )
 
 
@@ -1277,9 +1396,12 @@ def _windows(items: list, size: int, state_of: Callable[[Any], Any]):
         yield window
 
 
-def _receipt(engine, source, model, state, questions, answers, *, error=None, request_id=None, usage=None) -> dict:
+def _receipt(
+    engine, source, model, state, questions, answers, *, error=None, request_id=None, usage=None, via=None
+) -> dict:
     row = {
         "engine": engine,
+        "via": via,
         "source": source,
         "dry_run": source == "mock",
         "model": model,
@@ -1310,20 +1432,26 @@ def _jev_receipt(batch, state: dict, questions: dict) -> dict:
     return row
 
 
-def _usage_numbers(usage: Mapping | None) -> tuple[int | None, int | None, float | None]:
+_CACHE_TOKENS = {
+    "cache_read_tokens": ("cache_read_tokens", "cache_read_input_tokens"),
+    "cache_write_tokens": ("cache_write_tokens", "cache_creation_input_tokens"),
+}
+
+
+def _first_number(usage: Mapping | None, names: Iterable[str]) -> int | float | None:
     if not isinstance(usage, Mapping):
-        return None, None, None
-
-    def first(*names):
-        for name in names:
-            value = usage.get(name)
-            if isinstance(value, (int, float)) and not isinstance(value, bool):
-                return value
         return None
+    for name in names:
+        value = usage.get(name)
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            return value
+    return None
 
-    tokens_in = first("input_tokens", "prompt_tokens")
-    tokens_out = first("output_tokens", "completion_tokens")
-    cost = first("cost", "total_cost", "cost_usd")
+
+def _usage_numbers(usage: Mapping | None) -> tuple[int | None, int | None, float | None]:
+    tokens_in = _first_number(usage, ("input_tokens", "prompt_tokens"))
+    tokens_out = _first_number(usage, ("output_tokens", "completion_tokens"))
+    cost = _first_number(usage, ("cost", "total_cost", "cost_usd"))
     return (
         int(tokens_in) if tokens_in is not None else None,
         int(tokens_out) if tokens_out is not None else None,

@@ -30,8 +30,8 @@ from conductor.schema import SchemaError, example, validate, wire
 FIXTURE = Path("fixtures/sample_interview.fcpxml")
 SRT = Path("fixtures/sample_interview.srt")
 BRIEF = "A tight interview. Keep the guest's story, lose dead air."
-JEV_KEY = "sk-or-v1-routersecret0001"
-OPUS_KEY = "sk-ant-api03-routersecret0002"
+JEV_KEY = "test-key"
+OPUS_KEY = "test-key"
 
 
 @pytest.fixture
@@ -45,12 +45,17 @@ def env(monkeypatch):
         "CONDUCTOR_JEV_MODEL",
         "CONDUCTOR_OPUS_MODEL",
         "CONDUCTOR_OPUS_EFFORT",
+        "CONDUCTOR_OPUS_BACKEND",
+        "CONDUCTOR_TASTE_BACKEND",
+        "CURSOR_API_KEY",
+        "CURSOR_AGENT_BIN",
         "CONDUCTOR_TASTE_MODEL",
         "CONDUCTOR_TASTE_KEY",
         "XAI_API_KEY",
     ):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("CONDUCTOR_TASTE_MODEL", "claude-opus-5-5")
+    monkeypatch.setenv("CONDUCTOR_TASTE_BACKEND", "anthropic")
     monkeypatch.setattr(opus, "_BACKOFF", 0.0)
     return monkeypatch
 
@@ -217,15 +222,25 @@ def test_pass_defaults_and_unknown_kinds():
         DECISION_TYPES.update(saved)
 
 
-def test_grok_is_the_default_taste_model_and_opus_stays_selectable(env):
+def test_grok_is_the_default_taste_model_and_opus_stays_selectable(env, tmp_path):
     env.delenv("CONDUCTOR_TASTE_MODEL", raising=False)
-    env.setenv("XAI_API_KEY", "xai-test")
+    env.delenv("CONDUCTOR_TASTE_BACKEND", raising=False)
+    binary = tmp_path / "cursor-agent"
+    binary.write_text("#!/bin/sh\nexit 99\n")
+    binary.chmod(0o755)
+    env.setenv("CURSOR_AGENT_BIN", str(binary))
+    env.setenv("CURSOR_API_KEY", "test-key")
     with Router(live=True) as router:
+        assert router.status()["opus"] == "live via cursor"
         assert router._models["opus"] == "grok-4.7-medium"
     env.setenv("CONDUCTOR_TASTE_MODEL", "claude-opus-5-5")
-    env.setenv("ANTHROPIC_API_KEY", OPUS_KEY)
     with Router(live=True) as router:
-        assert router._models["opus"] == "claude-opus-5-5"
+        assert router.opus_via == "cursor"
+        assert router._models["opus"] == "claude-opus-5-5-medium"
+    env.delenv("CURSOR_API_KEY")
+    env.setenv("OPENROUTER_API_KEY", JEV_KEY)
+    with Router(live=True) as router:
+        assert router.status()["opus"].startswith("down")
 
 
 # --------------------------------------------------------------------------
@@ -592,12 +607,13 @@ def test_schema_validate_wire_and_example():
 
 def test_redact_strips_keys(env):
     env.setenv("ANTHROPIC_API_KEY", OPUS_KEY)
-    text = redact(f"401 for {OPUS_KEY} and Bearer sk-or-abcdefghijkl")
-    assert OPUS_KEY not in text and "abcdefghijkl" not in text
+    text = redact(f"401 for {OPUS_KEY} and Bearer test-key-placeholder")
+    assert OPUS_KEY not in text and "test-key-placeholder" not in text
 
 
 def test_cli_prints_the_call_counter(env, tmp_path, capsys):
     code = main(["analyze", str(FIXTURE), "--brief", BRIEF, "--out-dir", str(tmp_path)])
     assert code == 0
     out = capsys.readouterr().out
-    assert "decisions jev 1 call" in out and "opus 1 call" in out
+    assert "decisions jev 1 call" in out and "taste 1 call" in out
+    assert "conductor-opus-mock-1" in out

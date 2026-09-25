@@ -64,7 +64,7 @@ class _Host:
 @pytest.fixture
 def env(monkeypatch):
     monkeypatch.delenv("CONDUCTOR_DECISION_MODE", raising=False)
-    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-v1-rulestest")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
     return monkeypatch
 
 

@@ -272,10 +272,11 @@ def test_source_media_is_never_written(shoot, small_style, tmp_path):
 
 
 def test_live_assembly_asks_claude_opus_for_every_editorial_call(shoot, small_style, tmp_path, monkeypatch):
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setenv("CONDUCTOR_TASTE_BACKEND", "anthropic")
     monkeypatch.setenv("CONDUCTOR_TASTE_MODEL", "claude-opus-5-5")
     monkeypatch.setenv("CONDUCTOR_JEV_PROVIDER", "openrouter")
-    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-test")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
     monkeypatch.delenv("CONDUCTOR_DRY_RUN", raising=False)
     monkeypatch.delenv("CONDUCTOR_LLM_MODEL", raising=False)
     seen: list[dict] = []

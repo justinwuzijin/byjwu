@@ -1,0 +1,16 @@
+{
+  "type": "result",
+  "subtype": "success",
+  "is_error": false,
+  "duration_ms": 1000,
+  "duration_api_ms": 1000,
+  "result": "{\"answer\":\"pong\"}",
+  "session_id": "session-placeholder",
+  "request_id": "request-placeholder",
+  "usage": {
+    "inputTokens": 10,
+    "outputTokens": 20,
+    "cacheReadTokens": 0,
+    "cacheWriteTokens": 30
+  }
+}

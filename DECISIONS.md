@@ -240,6 +240,7 @@ Sibling package, not a change to the tiers above.
 
 ## Decision router
 
+- **Taste calls default to Grok 4.7 through the Cursor CLI.** `CONDUCTOR_TASTE_MODEL` defaults to `grok-4.7-medium` on that backend (the confirmed family is `grok-4.7-{low,medium,high,xhigh}[-fast]`). Opus stays selectable with `claude-opus-5-5-medium` (plain `claude-opus-5-5` is that slug; Cursor has no unsuffixed one). The Anthropic backend is unchanged and still refuses a Grok slug. Jev still refuses Grok and xAI. The decisions counter prints the engine as `taste` and the slug that actually ran, in brackets. `CONDUCTOR_OPUS_BACKEND`, `CONDUCTOR_OPUS_MODEL`, `CONDUCTOR_OPUS_TIMEOUT`, and `CONDUCTOR_OPUS_CONCURRENCY` still work.
 - **`colour_unseen` goes to Opus.** Exposure, white balance, and skin are a
   look, which the product rule puts with creative calls. The other two
   colour checks read facts out of the XML (a role is present or not, an

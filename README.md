@@ -8,12 +8,12 @@ Not an auto-editor. Not remote control of the Final Cut window. The handoff is F
 
 You do not run the CLI. The bots do.
 
-1. Put a selects folder, or a Final Cut **File → Export XML…** file, in `~/Desktop/jevid-in`.
-2. The room runs `python -m conductor iterate` on that path.
-3. Each round is written under `~/Desktop/jevid-out` (`v1/`, `v2/`, …). The applied FCPXML in the last round that cut something is the cut so far.
+1. Put a selects folder, a Final Cut **File → Export XML…** file, a `.fcpxmld` bundle, or a zip of either, in `~/Desktop/jevid-in`.
+2. The room runs `python -m conductor room-run` on that drop. That is the one command the bots use.
+3. Results land in a new folder under `~/Desktop/jevid-out`, named for the drop and the time. Inside it: `v1/`, `v2/`, … and a short summary (`room.md`). The path in that summary is the file to open in Final Cut.
 4. You step in when a row is an escalate, or the loop hits its round cap. Review markers stay on the timeline. The loop does not apply them.
 
-`~/Desktop/jevid-in` and `~/Desktop/jevid-out` are ordinary folders on the machine the bot runs on. Nothing in this repo watches the Desktop, uploads picture or sound, or drives Final Cut. The bot reads a path and writes a new file. You import that file yourself (**File → Import → XML…**). Import creates a new event. It does not patch the project you already have open.
+`~/Desktop/jevid-in` and `~/Desktop/jevid-out` are ordinary folders on the machine the bot runs on. jevid does not upload picture or sound, and it does not drive Final Cut. You import the file the summary names (**File → Import → XML…**). Import creates a new event. It does not patch the project you already have open.
 
 A folder of clips becomes a starter sequence first (filename order, absolute `file://` paths), then the same loop. An export is iterated as it stands. Source clips and the file you dropped are only read.
 
@@ -35,13 +35,14 @@ Jev picks from options the code defines. The note on a marker is assembled after
 ## The loop
 
 ```text
-~/Desktop/jevid-in  (a folder, or an FCPXML export)
-        →  starter sequence when the input is a folder
+~/Desktop/jevid-in  (a folder, an export, a bundle, or a zip)
+        →  room-run detects which
+        →  starter sequence when the input is a folder of clips
         →  iterate: analyze, then auto-apply only mechanical cuts the gate allows
-        →  ~/Desktop/jevid-out/vN
+        →  ~/Desktop/jevid-out/<name>-<time>/vN  and room.md
         →  stop when the metrics hold, when nothing mechanical is left, or at the round cap
         →  a person, only for escalate or max rounds
-        →  you open the FCPXML in Final Cut
+        →  you open the FCPXML named in the summary
         →  a re-export or a note in the room updates taste, and the next gate moves
 ```
 
@@ -49,13 +50,27 @@ On the checked-in interview, round 1 lifts the long silence. The “um”, the h
 
 ## Commands the room runs
 
-From the repo root. No API key. These are the commands a bot shells out to. The desktop folders above are the paths it passes.
+From the repo root. No API key. Bots shell out to one command. The desktop folders above are the paths it passes.
 
 ```bash
 pip install -e ".[dev]"
 ```
 
-The loop the room owns:
+```bash
+python -m conductor room-run ~/Desktop/jevid-in/cut.fcpxml \
+  --brief "A tight interview. Keep the guest's story, lose dead air." \
+  --out-root ~/Desktop/jevid-out
+```
+
+The same command takes a `.fcpxml`, a `.fcpxmld` bundle, a `.zip` of either, or a folder of clips. It detects which, and it does not modify the drop. Dry-run is the default. `--live` is how a bot calls Jev. An SRT or WebVTT sitting next to the timeline is picked up; `--transcript` overrides that. A `durations.json` in a clip folder is picked up the same way.
+
+When the drop also carries music (`.mp3`, `.wav`, `.aif`, `.m4a`, and similar), room-run hands it to a style assembler first (`--style`, default `byjustinwu`) if one is installed, then runs the loop on what it built. Without one, the clips are handled as above and the summary says the music was not placed.
+
+Each run writes a new folder, `~/Desktop/jevid-out/<name>-<timestamp>/`, so repeating it is safe. `room.md` in that folder is the chat summary (input kind, duration before and after, cuts with timecodes, rows flagged for the editor, stop reason, which signals were available, and the file to open). `room.json` is the same summary. The shadow FCPXML is always there.
+
+`python -m conductor room-run --watch ~/Desktop/jevid-in` processes new drops after the copy has finished, and skips ones it has already recorded. Setup for that process is in [docs/room-run.md](docs/room-run.md). That note is for the person who runs the bot, not for the editor.
+
+What `room-run` calls is the iterate loop:
 
 ```bash
 python -m conductor iterate \
@@ -66,9 +81,9 @@ python -m conductor iterate \
   --max-rounds 5
 ```
 
-An export instead of a folder uses `--fcpxml ~/Desktop/jevid-in/cut.fcpxml` and omits `--media`. One of those two inputs, not both. Dry-run is the default. `--live` is how a bot calls Jev.
+An export instead of a folder uses `--fcpxml` and omits `--media`. One of those two inputs, not both. `room-run` chooses.
 
-Each round writes `~/Desktop/jevid-out/vN/`: a shadow FCPXML, and an applied FCPXML only when a mechanical auto-gate cut landed. The next round reads the applied file, or the shadow when nothing was cut. `iterate.json` in the output folder is the stop record: the per-round metrics, the cuts, and `stop_reason` (`metrics`, `no-progress`, or `max-rounds`).
+Each round writes `vN/` inside the output folder: a shadow FCPXML, and an applied FCPXML only when a mechanical auto-gate cut landed. The next round reads the applied file, or the shadow when nothing was cut. `iterate.json` in that folder is the stop record: the per-round metrics, the cuts, and `stop_reason` (`metrics`, `no-progress`, or `max-rounds`).
 
 Stop when every metric you set is true, when a round applies nothing, or at `--max-rounds` (default 5). Metrics are optional. Leave them unset and the loop runs until the mechanical cuts run out or the cap hits.
 
@@ -259,7 +274,7 @@ Roles, the accept loop, and the payload fields are in [docs/room-protocol.md](do
 
 Conductor, Pacing, Transcript, and Colour are how a cut moves. A person drops a path in `~/Desktop/jevid-in` and opens whatever lands in `~/Desktop/jevid-out` when the room asks. v1 of the software is the library and the CLI those bots call. The contract is [docs/room-protocol.md](docs/room-protocol.md): who owns which pass, how `iterate` stops, and how a re-export or a chat note becomes a prior on the next gate.
 
-The Conductor bot runs `python -m conductor iterate` (or `analyze` / `ingest` for a single shadow pass). It does not invent a sixth action. It does not apply a cut the gate did not allow unless a person accepted that id. Unattended cuts are mechanical only. The per-round JSON report (`protocol` `cut-conductor.room`) is the state the room posts. `iterate.json` (`protocol` `cut-conductor.iterate`) is the stop record. Bots do not re-sort either list.
+The Conductor bot runs `python -m conductor room-run`. That command detects the drop and calls `iterate` (a clip folder is ingested as the starter sequence, then iterated). It does not invent a sixth action. It does not apply a cut the gate did not allow unless a person accepted that id. Unattended cuts are mechanical only. Paste `room.md` into the room. The per-round JSON report (`protocol` `cut-conductor.room`) is still the state behind each round. `iterate.json` (`protocol` `cut-conductor.iterate`) is the stop record. `room.json` (`protocol` `cut-conductor.room-run`) is the chat summary. Bots do not re-sort those lists.
 
 When the input is a folder, the room is woken with the starter FCPXML path, the inventory, the brief, and the media paths. Not with the media bytes.
 
@@ -268,7 +283,7 @@ When the input is a folder, the room is woken with the starter FCPXML path, the 
 - **Ordering.** Ingest is filename order. A brief does not reorder clips yet.
 - **Taste.** Per-kind priors shift later confidence from rejections, accepts, and editor re-exports. They do not train a model, and they do not loosen mechanical auto-apply unless a rule opts in.
 - **More passes.** `colour` is a review-only scaffold: roles and aspect from the XML, and an honest placeholder where exposure and skin would need the picture. `story`, `audio`, and `broll` are still reserved. A new check is a `register_pass`, not a new product.
-- **A Mac drop helper.** The local page is a browser on 127.0.0.1. A Finder drop that never opens a terminal is not built. Still FCPXML out, still no plugin.
+- **A Mac drop helper.** `room-run --watch` plus the launchd example in [docs/room-run.md](docs/room-run.md) is how an operator keeps the inbox running. The editor still does not run a command. Still FCPXML out, still no plugin.
 
 ## Tests
 
@@ -279,7 +294,7 @@ python scripts/ingest_dry_run.py
 python scripts/iterate_dry_run.py
 ```
 
-No API key. Conductor tests cover the parser, marker write-back, the mock client, the gates, apply, ingest (including the fixture folder and the local page), the colour pass, and iterate (two rounds, the round cap, and a duration window). The placeholder clips under `fixtures/selects/` are a few bytes each.
+No API key. Conductor tests cover the parser, marker write-back, the mock client, the gates, apply, ingest (including the fixture folder and the local page), the colour pass, iterate (two rounds, the round cap, and a duration window), and `room-run` (an FCPXML, a `.fcpxmld` bundle, a zip, a clip folder, bad drops, and the watcher). The placeholder clips under `fixtures/selects/` are a few bytes each.
 
 ## Also in this repo: cutmcp
 

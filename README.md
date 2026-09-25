@@ -1,6 +1,6 @@
 # byjwu
 
-byjwu is an editing assistant for Final Cut Pro. You give it raw footage and music, or a timeline you've already started, and it hands back an FCPXML that opens in Final Cut as a new project, cut in the style of the [@byjustinwu](https://www.youtube.com/@byjustinwu) YouTube channel.
+byjwu is an editing assistant for Final Cut Pro. You give it raw footage and music, or a timeline you've already started, and it hands back an FCPXML that opens in Final Cut as a new project, cut to organize a [@byjustinwu](https://www.youtube.com/@byjustinwu) video.
 
 ## How it works
 

@@ -69,6 +69,21 @@ def dry_run_forced(environ: Mapping[str, str] | None = None) -> bool:
     return env.get("CONDUCTOR_DRY_RUN", "").strip().lower() in {"1", "true", "yes"}
 
 
+_BLOCKED_MODEL_MARKERS = ("grok", "x-ai/", "xai/", "x.ai")
+
+
+def _model_override(env: Mapping[str, str], default: str) -> str:
+    """``CONDUCTOR_JEV_MODEL``, refusing any Grok/xAI slug."""
+    model = env.get("CONDUCTOR_JEV_MODEL", "").strip() or default
+    lowered = model.lower()
+    if any(marker in lowered for marker in _BLOCKED_MODEL_MARKERS):
+        raise ConductorError(
+            f"CONDUCTOR_JEV_MODEL={model!r} is a Grok/xAI model. Conductor decisions "
+            "do not route to Grok or xAI. Unset it to use Jev."
+        )
+    return model
+
+
 def resolve_endpoint(environ: Mapping[str, str] | None = None) -> Endpoint:
     """Pick a host from the environment. Raises when a live call has no key."""
     env = os.environ if environ is None else environ
@@ -84,7 +99,7 @@ def resolve_endpoint(environ: Mapping[str, str] | None = None) -> Endpoint:
             raise ConductorError(
                 "TYPESAFE_API_KEY is unset. Export it, or pass no --live flag to dry-run."
             )
-        model = env.get("CONDUCTOR_JEV_MODEL", "").strip() or TYPESAFE_MODEL
+        model = _model_override(env, TYPESAFE_MODEL)
         url = env.get("CONDUCTOR_TYPESAFE_URL", "").strip() or TYPESAFE_URL
         return Endpoint(
             provider="typesafe",
@@ -100,7 +115,7 @@ def resolve_endpoint(environ: Mapping[str, str] | None = None) -> Endpoint:
             "No Jev key. Set OPENROUTER_API_KEY or TYPESAFE_API_KEY, "
             "or drop --live to dry-run with the local mock."
         )
-    model = env.get("CONDUCTOR_JEV_MODEL", "").strip() or OPENROUTER_MODEL
+    model = _model_override(env, OPENROUTER_MODEL)
     url = env.get("CONDUCTOR_OPENROUTER_URL", "").strip() or OPENROUTER_URL
     return Endpoint(
         provider="openrouter",

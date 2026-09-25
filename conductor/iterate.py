@@ -176,6 +176,7 @@ def iterate(
             "metrics": metrics,
             "mode": report.mode,
             "next": str(report.out_applied or report.out_fcpxml or staged),
+            "words": report.payload["files"].get("applied_words") or report.payload["files"].get("words"),
             "signals": _signal_summary(report),
         }
         rounds.append(row)
@@ -227,6 +228,7 @@ def iterate(
         "rounds": rounds,
         "warnings": warnings,
         "signals": rounds[-1].get("signals") if rounds else None,
+        "words": rounds[-1].get("words") if rounds else None,
     }
     out_json = destination / "iterate.json"
     out_json.write_text(dumps(payload), encoding="utf-8")
@@ -272,6 +274,7 @@ def _signal_summary(report: Report) -> dict:
         "transcript": raw.get("transcript"),
         "whisper_tool": raw.get("whisper_tool"),
         "summary": raw.get("summary") or "",
+        "word_count": raw.get("word_count", 0),
         "reasons": list(raw.get("reasons") or []),
         "unreachable": list(raw.get("unreachable") or []),
         "cache_hits": dict(raw.get("cache_hits") or {}),

@@ -109,17 +109,27 @@ What it measures, when it runs:
 
 | signal | tool | what the room sees |
 |---|---|---|
-| Silence inside a clip | ffmpeg `silencedetect` (noise floor −40 dB, at least 0.30s recorded) | Ranges of at least 1.25s on a spine item become `silence_gap` with `signals.audio` true. `iterate` may auto-apply those under the existing mechanical gate. Connected clips are measured and listed, and are not cut. |
+| Silence inside a clip | ffmpeg `silencedetect` (noise floor −40 dB, at least 0.30s recorded) | Ranges of at least 1.25s on a spine item become `silence_gap` with `signals.audio` true, trimmed inward to whole frames. Where a connected clip with a speech role (anything but music or effects) has sound, or could not be read, that part is not proposed, so a quiet camera track under a lav does not lose the line. `iterate` may auto-apply what is left under the existing mechanical gate. Connected clips are measured and listed, and are not cut. |
 | Loudness and true peak | ffmpeg `ebur128` | `integrated_lufs`, `true_peak_db`, and `clipping` (true peak at or above −0.1 dBFS) on each heard range in `signals.clips`. Not a cut. |
-| Words | faster-whisper or whisper.cpp, only if a model is already on disk | Cues on the sequence clock, fed to the dialogue and pacing passes. Filler, pauses of at least 0.80s, and a short restart stay review. |
+| Words | faster-whisper or whisper.cpp, only if a model is already on disk | Word timings, written as `<stem>.words.json`, and cues on the sequence clock fed to the dialogue and pacing passes. Filler, pauses of at least 0.80s, and a short restart stay review. Music and effects roles are not transcribed. |
 
 An SRT or WebVTT passed with `--transcript` wins. Local transcription does not run beside it, and it does not run when `--transcribe off`.
 
-Time mapping uses each item's `start`, `offset`, and `duration`, a `conform-rate` with `scaleEnabled="1"` (one source frame becomes one sequence frame), a `timeMap` when one is present (smooth curves are sampled linearly at the time points), and `ref-clip` compounds including a compound inside a compound. `audioStart` / `audioDuration` is the slip used for what is heard. A cut rewrites the picture `start` with the same map, so a conformed trim does not jump to the wrong frame.
+Time mapping uses each item's `start`, `offset`, and `duration`; the asset's own `start` (camera timecode), so ffmpeg reads the right second of the file; a `conform-rate` with `scaleEnabled="1"` (one source frame becomes one sequence frame); a `timeMap` when one is present, read on the clip's local clock from its `start` for its `duration` (smooth curves are sampled linearly at the time points); and `ref-clip` compounds including a compound inside a compound. A connected item's `offset` is on its parent's clock, which begins at the parent's `start`; that holds for connected items on a gap and for a secondary storyline. `audioStart` / `audioDuration` is the slip used for what is heard. Items with `enabled="0"` are not heard. Multicam audio is listed with an error and not read.
 
-Cache is one file per media path, keyed by path, size, and mtime, under `CONDUCTOR_CACHE` or `~/.cache/conductor`. A later round slices that file instead of transcribing again. `--signal-cache` overrides the directory for one command.
+A cut rewrites the picture `start` with the same map, so a conformed trim does not jump to the wrong frame. A time-mapped piece keeps its `timeMap` and moves `start`. Connected items keep their `offset`, because the parent's clock did not move under them.
 
-The round report (`*.conductor.json`, `signals`) and `iterate.json` (`signals.summary` on the loop and on each round) are what the bot should quote. `signals.audio` is `used` or `skipped`. `signals.transcript` is `file`, `whisper`, or `skipped`. `signals.reasons` says why a stage did not run. `signals.unreachable` lists `file://` URLs that were not on disk.
+Cache is one file per media path, keyed by path, size, and mtime, under `CONDUCTOR_CACHE` or `~/.cache/conductor`. It records which seconds of the file were decoded. Only the ranges a timeline uses are read (ranges within 5s of each other are read in one pass, and a transcript range gets 1s of context either side), so a clip from minute 58 of a long interview does not decode the whole hour. A later round reads the cache. A range that failed is not cached. `--signal-cache` overrides the directory for one command.
+
+The round report (`*.conductor.json`, `signals`) and `iterate.json` (`signals.summary` on the loop and on each round) are what the bot should quote. `signals.audio` is `used` or `skipped`. `signals.transcript` is `file`, `whisper`, or `skipped`. `signals.word_count` is the number of words heard. `signals.reasons` says why a stage did not run. `signals.unreachable` lists `file://` URLs that were not on disk.
+
+### Word timings
+
+When a local transcript ran, the report's `files.words` is `<stem>.words.json` on the analysed timeline, and `files.applied_words` is `<stem>.conductor.applied.words.json` on the cut that apply wrote. The second is mapped from the cache and does not transcribe again. Each `iterate` round carries `words` (the applied file when that round cut, otherwise the round's own), and `iterate.json` has `words` for the last round, which lines up with the FCPXML the person opens.
+
+The file is `cut-conductor.words` version 1. Each word has `text`, `start` / `end` as FCPXML time strings on the sequence clock (the same clock as spine `offset`, so `tcStart` is included), `start_seconds` / `end_seconds`, `sequence`, `clip_id`, `clip_name`, `connected`, `src`, `file_start_seconds` / `file_end_seconds`, `partial` (a cut took part of the word), and `confidence` (0..1 from faster-whisper, null from whisper.cpp). Words are in time order per sequence. A connected clip's word is kept only where no spine word overlaps it, so dual-system sound is not doubled. An SRT or WebVTT has no word timings and produces no words file.
+
+Code that renders subtitles reads the same data through `conductor.words`: `timeline_words(path, transcribe="cached")` maps cached words onto any FCPXML that uses the same media, and `words_payload` / `write_words` produce the file above.
 
 ### What the operator installs
 
@@ -153,6 +163,14 @@ export CONDUCTOR_WHISPER_MODEL=base
 ```
 
 `CONDUCTOR_WHISPER_MODEL` may also be a CTranslate2 model directory. If it is unset, a model already present under the Hugging Face hub cache (`models--Systran--faster-whisper-*`) is used. If neither a tool nor a model is on disk, transcription is skipped and the reason is on `signals`.
+
+To check what the bot will find, run these in the shell the bot uses (a launchd or cron job may have a shorter `PATH` than Terminal):
+
+```bash
+which ffmpeg whisper-cli whisper-cpp
+python3 -c "import faster_whisper" && echo faster-whisper
+echo "$CONDUCTOR_WHISPER_MODEL"
+```
 
 ## Roles
 
@@ -355,7 +373,7 @@ The next analyze/apply that points `--taste` at the updated file puts those even
 | `shadow`, `applied` | shadow is always true for a successful run; `applied` is true only after a cut file was written |
 | `brief`, `passes`, `gates`, `taste` | what this run was asked |
 | `source.blake2b` | hash of the FCPXML that was read (the export, or the starter from ingest) |
-| `signals` | whether audio and a local transcript ran. `summary` is the sentence to post. `audio` is `used` or `skipped`. `transcript` is `file`, `whisper`, or `skipped`. `unreachable` lists `file://` URLs that were not on disk. See Media signals. |
+| `signals` | whether audio and a local transcript ran. `summary` is the sentence to post. `audio` is `used` or `skipped`. `transcript` is `file`, `whisper`, or `skipped`. `word_count` is the number of words heard. `unreachable` lists `file://` URLs that were not on disk. See Media signals. |
 | `ingest` | only when the run started from a folder: starter path, clip paths, durations. Absent on an export-only analyze |
 | `changes[]` | ranked rows: `section` is `eligible`, `review`, or `escalate` |
 | `changes[].candidate_id` | the id for `--accept` |

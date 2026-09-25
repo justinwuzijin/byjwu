@@ -25,6 +25,7 @@ from .signals import gather
 from .taste import Taste, feedback_event, load_taste, write_taste
 from .timeutil import seconds
 from .transcript import load_transcript
+from .words import words_for_document, write_words
 
 
 @dataclass
@@ -173,6 +174,8 @@ def analyze(
         "markdown": None,
         "html": None,
         "taste": None,
+        "words": None,
+        "applied_words": None,
     }
     if out_dir is not None:
         paths = output_paths(source, Path(out_dir))
@@ -191,6 +194,16 @@ def analyze(
         files["taste"] = str(paths["taste"])
         if html:
             files["html"] = str(paths["html"])
+        if signal_report.words:
+            write_words(paths["words"], document, signal_report)
+            files["words"] = str(paths["words"])
+            if out_applied is not None:
+                applied = parse_fcpxml(out_applied)
+                applied_words = words_for_document(
+                    applied, project=project, transcribe="cached", cache_dir=signal_cache
+                )
+                write_words(paths["applied_words"], applied, applied_words)
+                files["applied_words"] = str(paths["applied_words"])
 
     payload = build_payload(
         document=document,
@@ -254,6 +267,8 @@ def output_paths(source: Path, out_dir: Path) -> dict[str, Path]:
         "md": out_dir / f"{stem}.conductor.md",
         "html": out_dir / f"{stem}.conductor.html",
         "taste": out_dir / f"{stem}.taste.json",
+        "words": out_dir / f"{stem}.words.json",
+        "applied_words": out_dir / f"{stem}.conductor.applied.words.json",
     }
 
 

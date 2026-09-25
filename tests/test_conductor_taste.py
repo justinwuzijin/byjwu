@@ -131,7 +131,8 @@ def test_four_of_five_rejections_name_the_count(tmp_path):
     assert prior["accepts"] == 1
 
 
-def test_accepts_cannot_open_auto_without_opt_in(tmp_path):
+def test_accepts_cannot_open_auto_without_opt_in(tmp_path, monkeypatch):
+    monkeypatch.setenv("CONDUCTOR_DECISION_MODE", "model-gated")
     gap_xml = tmp_path / "gap.fcpxml"
     gap_xml.write_text(_gap_xml(Fraction(3, 2)), encoding="utf-8")
     accepts = [

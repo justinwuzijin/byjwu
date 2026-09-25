@@ -95,8 +95,12 @@ def test_ranked_report_keeps_creative_calls_in_review(tmp_path):
     assert "c0001_action" not in jev_receipt["questions"]
     assert [item["id"] for item in opus_receipt["state"]["items"]] == ["c0001"]
     assert colour["engine"] == "opus" and colour["decision_type"] == "colour_unseen"
-    action = jev_receipt["questions"]["c0002_action"]
-    assert set(action["criteria"]) == {
+    veto = jev_receipt["questions"]["c0002_veto"]
+    assert set(veto["criteria"]) >= {"allow", "veto_story", "veto_breath"}
+    open_action = next(
+        spec for key, spec in jev_receipt["questions"].items() if key.endswith("_action")
+    )
+    assert set(open_action["criteria"]) == {
         "keep",
         "tighten",
         "remove",
@@ -190,7 +194,8 @@ def test_unknown_accept_id_and_non_cut(tmp_path):
         _run(tmp_path, apply=True, accept=["c0001"])
 
 
-def test_loose_pace_drops_the_gap_out_of_auto(tmp_path):
+def test_loose_pace_drops_the_gap_out_of_auto(tmp_path, monkeypatch):
+    monkeypatch.setenv("CONDUCTOR_DECISION_MODE", "model-gated")
     taste = tmp_path / "taste.json"
     taste.write_text(
         '{"version": 1, "prefs": {"target_pace": "loose", "cold_open_bias": "neutral",'

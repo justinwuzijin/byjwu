@@ -53,6 +53,7 @@ from .jev import dry_run_forced
 from .metrics import measure
 from .report import dumps
 from .router import Ledger, Router, format_usage
+from .rules import format_rules
 from .timeutil import clock
 
 PROTOCOL = "cut-conductor.room-run"
@@ -918,6 +919,7 @@ def _summarize(
         "music": [str(path) for path in prepared.music],
         "media_note": prepared.media_note,
         "decision_usage": _usage(result, router),
+        "rules": _rules_from_round(last),
         "warnings": list(
             dict.fromkeys(
                 [*prepared.warnings, *result.warnings, *(router.ledger.warnings if router else [])]
@@ -926,6 +928,21 @@ def _summarize(
     }
     markdown = _markdown(payload)
     return RoomRun(True, dest.resolve(), markdown, payload, open_path)
+
+
+def _rules_from_round(last: dict) -> dict:
+    path = last.get("json")
+    if not path:
+        return {}
+    file = Path(path)
+    if not file.is_file():
+        return {}
+    try:
+        payload = json.loads(file.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    rules = payload.get("rules") or {}
+    return rules if isinstance(rules, dict) else {}
 
 
 def _markdown(payload: dict) -> str:
@@ -942,6 +959,7 @@ def _markdown(payload: dict) -> str:
         f"Stop: {payload['stop_reason']}",
         f"Signals: {payload['signals_label']}",
         f"Decisions: {format_usage(payload['decision_usage']) or 'none'}",
+        *format_rules(payload.get("rules") or {}),
     ]
     if (payload.get("media_signals") or {}).get("summary"):
         lines.append(f"Audio and words: {payload['media_signals']['summary']}")

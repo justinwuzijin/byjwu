@@ -13,7 +13,10 @@ from pathlib import Path
 
 from . import __version__
 from .apply import apply_edits
+from .critic import review_plan
 from .decide import deletions_for, judge
+from .lint import lint_plan
+from .plan import plan_from_document
 from .errors import ConductorError
 from .fcpxml import Document, parse_fcpxml, stamp_projects, write_document
 from .feedback import bind_pending, diff_fcpxml, ingest_notes
@@ -175,6 +178,7 @@ def analyze(
     cuts: list[dict] = []
     apply_warnings: list[str] = []
     applied_doc = None
+    lint_payload: dict | None = None
     perform_apply = apply
     if perform_apply and skip_apply is not None:
         if skip_apply(measure(sequences, proposals=proposals)):
@@ -207,9 +211,46 @@ def analyze(
         if deletions:
             applied_doc = parse_fcpxml(source)
             result = apply_edits(applied_doc, deletions)
-            mark_applied_cuts(applied_doc, result.deletions, proposals, candidates)
-            cuts = result.cuts
-            apply_warnings = result.warnings
+            state = {"doc": applied_doc, "result": result, "deletions": list(deletions)}
+            source_plan = plan_from_document(document, words=signal_report.words)
+            baseline = lint_plan(source_plan, profile=_style_profile(taste), check_media=True)
+
+            def _without(cut_id: str):
+                state["deletions"] = [item for item in state["deletions"] if item.candidate_id != cut_id]
+                rebuilt = parse_fcpxml(source)
+                if state["deletions"]:
+                    state["result"] = apply_edits(rebuilt, state["deletions"])
+                    state["doc"] = rebuilt
+                else:
+                    state["result"] = None
+                    state["doc"] = None
+                return _applied_plan(rebuilt, signal_report.words, state["deletions"])
+
+            review = review_plan(
+                _applied_plan(applied_doc, signal_report.words, deletions),
+                profile=_style_profile(taste),
+                check_media=True,
+                baseline=baseline,
+                router=router if router.live else None,
+                brief=brief,
+                on_veto=_without,
+            )
+            notes = _lint_notes(review)
+            lint_payload = review.to_dict()
+            if review.blocked or state["doc"] is None or state["result"] is None:
+                applied_doc = None
+                cuts = []
+                apply_warnings = [*result.warnings, *notes]
+                if review.blocked:
+                    apply_warnings.append(f"export blocked: {review.blocked_reason}")
+                kept_deletions = []
+            else:
+                applied_doc = state["doc"]
+                result = state["result"]
+                cuts = result.cuts
+                apply_warnings = [*result.warnings, *notes]
+                kept_deletions = list(state["deletions"])
+                mark_applied_cuts(applied_doc, result.deletions, proposals, candidates)
             by_candidate = {item.id: item for item in candidates}
             for cut in cuts:
                 proposal = by_proposal.get(cut["candidate_id"])
@@ -221,7 +262,7 @@ def analyze(
                 cut["engine"] = proposal.engine
                 cut["engine_source"] = proposal.engine_source
                 cut["decision_type"] = proposal.decision_type
-            for deletion in deletions:
+            for deletion in kept_deletions:
                 candidate = by_candidate.get(deletion.candidate_id)
                 proposal = by_proposal.get(deletion.candidate_id)
                 if candidate is None or proposal is None:
@@ -309,6 +350,7 @@ def analyze(
         applied=bool(cuts),
         signals=signal_report.to_state(),
         learned=learned,
+        lint=lint_payload,
         decision_usage=ledger.to_dict(),
         rules=_rules_report(candidates, proposals, cuts, taste, router),
         routing={
@@ -434,3 +476,41 @@ def _refuse_overwrite(source: Path, dest: Path) -> None:
 
 def version() -> str:
     return __version__
+
+
+def _style_profile(taste: Taste) -> dict | None:
+    style = taste.extra.get("style") if isinstance(taste.extra, dict) else None
+    if isinstance(style, dict) and (style.get("bands") or style.get("profile")):
+        return style
+    return None
+
+
+def _applied_plan(document, words, deletions):
+    plan = plan_from_document(
+        document,
+        words=words,
+        cuts=[
+            {
+                "candidate_id": item.candidate_id,
+                "start": item.start,
+                "end": item.end,
+                "action": item.action,
+            }
+            for item in deletions
+        ],
+    )
+    plan.cut_edges = [moment for item in deletions for moment in (item.start, item.end)]
+    return plan
+
+
+def _lint_notes(review) -> list[str]:
+    """Soft findings and critic actions. Hard findings live on the lint payload."""
+    notes = [f"lint {finding.code}: {finding.message}" for finding in review.report.soft]
+    for turn in review.turns:
+        if turn.skipped:
+            break
+        if turn.action == "flag":
+            notes.append(f"critic flag: {turn.reason}")
+        elif turn.action == "veto":
+            notes.append(f"critic veto {turn.cut_id}: {turn.reason}")
+    return notes

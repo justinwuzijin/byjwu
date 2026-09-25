@@ -44,6 +44,7 @@ music_tail         opus    How should the cut end against a music bed that stops
 retake_pick        opus    Which existing complete take should be kept?
 retake_veto        opus    Should this retake cut be kept instead?
 filler_approve     opus    Is this ambiguous filler safe to cut?
+timeline_critic    opus    Approve, flag a span, or veto one cut on the edit plan?
 =================  ======  ==================================================
 
 Unknown kinds fall back to the pass default (``story`` and ``broll`` are
@@ -226,6 +227,14 @@ DECISION_TYPES: dict[str, DecisionType] = {
               _CREATIVE + "A veto is the only model action on a retake the rule has already marked."),
         _type("filler_approve", OPUS, "Is this ambiguous filler safe to cut?",
               _CREATIVE + "like, you know, so, and basically need a taste decision before they become a cut."),
+        _type(
+            "timeline_critic",
+            OPUS,
+            "Score this edit plan and approve it, flag one span, or veto one cut.",
+            _CREATIVE
+            + "Pacing, clip selection, visual-script fit, and story arc are a read of the plan. "
+            "The critic cannot add clips.",
+        ),
     )
 }
 

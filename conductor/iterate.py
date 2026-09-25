@@ -37,6 +37,7 @@ from .errors import ConductorError
 from .fcpxml import parse_fcpxml, write_document
 from .ingest import (
     file_hash,
+    gate_tree,
     inventory,
     load_duration_overrides,
     render_starter,
@@ -322,6 +323,7 @@ def _rounds(
             "next": str(report.out_applied or report.out_fcpxml or staged),
             "words": report.payload["files"].get("applied_words") or report.payload["files"].get("words"),
             "signals": _signal_summary(report),
+            "lint": report.payload.get("lint"),
         }
         rounds.append(row)
         applied.extend(cuts)
@@ -489,7 +491,9 @@ def _starter(
                 "choose a different --out-dir"
             )
     before = {clip.path: clip.blake2b for clip in found.clips}
-    write_document(render_starter(found.clips, name=name), starter)
+    tree = render_starter(found.clips, name=name)
+    gate_tree(tree)
+    write_document(tree, starter)
     for path, digest in before.items():
         if not path.is_file() or file_hash(path) != digest:
             raise ConductorError(f"refusing to finish: source media changed: {path}")

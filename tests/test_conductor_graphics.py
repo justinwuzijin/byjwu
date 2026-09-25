@@ -144,6 +144,21 @@ def test_missing_ffmpeg_skips_renders_and_keeps_subtitles(tmp_path, monkeypatch)
     assert source.read_text(encoding="utf-8") == FIXTURE
 
 
+def test_graphics_package_ships_no_private_material():
+    """SF Pro is a font name. No font file, home path, or real export is committed."""
+    root = Path("conductor/graphics")
+    home = "/Users/" + "justinwu"
+    for path in root.rglob("*.py"):
+        text = path.read_text(encoding="utf-8")
+        assert home not in text
+        assert "/Users/" not in text
+    assert home not in FIXTURE
+    assert "file:///tmp/interview.mov" in FIXTURE
+    assert "*.assets/" in Path(".gitignore").read_text(encoding="utf-8")
+    shipped = list(root.rglob("*.ttf")) + list(root.rglob("*.otf")) + list(root.rglob("*.ttc"))
+    assert shipped == []
+
+
 def test_graphics_stay_off_without_a_flag_or_profile(tmp_path):
     source = tmp_path / "cut.fcpxml"
     source.write_text(FIXTURE, encoding="utf-8")

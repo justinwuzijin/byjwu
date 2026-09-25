@@ -64,6 +64,7 @@ BLEND_MODES = {
 
 @dataclass(frozen=True)
 class Typography:
+    #: Family names only. SF Pro is not redistributable, so no font file is shipped.
     display_font: str = "SF Pro Display"
     text_font: str = "SF Pro Text"
     #: Tried in order when rendering on a machine without SF Pro. The XML still names SF Pro.

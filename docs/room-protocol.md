@@ -95,7 +95,9 @@ Stop after the round, on the first reason that holds:
 
 Configured targets: `--target-seconds` with `--tolerance` (default 1 second, a symmetric window), `--max-escalate`, `--max-review`, `--max-silence-seconds`, `--min-shot-seconds`, `--max-cuts-per-minute`.
 
-`metrics.silence_seconds` is still structural: explicit gaps and holes of at least 1.25s. It is not a waveform. Average shot length and cuts per minute are spine arithmetic: a cut is the join between two non-gap clips.
+`metrics.silence_seconds` is still structural: bare primary gaps, the uncovered stretches of a gap that also holds connected clips, and holes of at least 1.25s. A stretch with a connected clip on a lane is not silence. It is not a waveform. Average shot length and cuts per minute are spine arithmetic: a cut is the join between two non-gap clips.
+
+The room JSON may include `notes` (the same paragraphs as the markdown editor's notes) and `sequences[].pacing` (section averages). Bots that ignore those fields are unchanged.
 
 Dead air measured inside a clip is separate. When media signals run, that quiet range is also a `silence_gap` candidate (`signals.audio` true) and `iterate` may auto-apply it under the same mechanical gate. The measurement itself is on `signals` in the round JSON, not added again into `silence_seconds`.
 
@@ -215,7 +217,8 @@ Owns the transcript (SRT or WebVTT), subtitles, and text treatments. Times are s
 
 Owns pace preferences: `target_pace`, `jump_cut_tolerance`, `hold_seconds`.
 
-- Drives `pacing` (`--pass pacing`): a long hold, or a clip with very little speech.
+- Drives `pacing` (`--pass pacing`): a long hold, or a clip with very little speech. With no transcript, a hold is a shot at least 4× the shots around it, a hold/slate/b-roll name, or 45s when there are not enough neighbors to compare.
+- Also notes, still on `pacing`, that are not lifts: a primary gap sitting under connected clips, a later reuse of the same source range, a sudden change in average shot length, a run of clips conformed from another frame rate, a string-out of whole source clips, a silent generator card, and a music bed that ends before the picture. The mock marks these for review. `--accept` does not lift them.
 - Pacing is creative. Review unless a person accepts the id.
 - A `tighten` on a whole clip keeps the first `hold_seconds` (default 4) and lifts the tail. That number comes from taste, not from the model.
 - `target_pace: loose` is a hint in Jev state. The mock treats a long silence as a review-level tighten when pace is loose. Live Jev receives the same state; it does not get a rewritten prompt per preference.
@@ -224,7 +227,7 @@ Owns pace preferences: `target_pace`, `jump_cut_tolerance`, `hold_seconds`.
 
 Owns picture notes that can be read from the XML, and the honest limit where they cannot.
 
-- Drives `colour`: a spine clip with no role, an asset frame that badly mismatches the sequence (portrait against landscape, or a relative aspect gap of at least 0.15), and one placeholder per sequence for exposure, white balance, and skin.
+- Drives `colour`: a spine clip with no role, an asset frame that badly mismatches the sequence (portrait against landscape, or a relative aspect gap of at least 0.15, including a rotation or scale already in the XML), and one placeholder per sequence for exposure, white balance, and skin.
 - Does not decode media. The placeholder says so. A grade of the pixels is not this pass.
 - Colour is creative. Jev may answer `mark_review` or `escalate`. The mock escalates an extreme aspect mismatch and marks the role note and the exposure placeholder for review. The gate will not mark colour `auto`, and iterate will not apply it.
 - A person `--accept`s a colour id only when the raw action is already `tighten` or `remove`. That ripples a range. It does not change pixels. The mock does not return those actions.
@@ -244,9 +247,9 @@ A pass is a named slice. Omit `--pass` and the room runs `mechanical`, then `dia
 
 | pass | typical owner | creative | v1 |
 |---|---|---|---|
-| `mechanical` | Cut Conductor | no | silence gaps, clips under half a second. The only pass `iterate` auto-applies. |
+| `mechanical` | Cut Conductor | no | bare silence gaps, clips under half a second. The only pass `iterate` auto-applies. |
 | `dialogue` | Type & Subs | yes | transcript filler and the pauses around it |
-| `pacing` | Pacing | yes | long holds and low-speech stretches |
+| `pacing` | Pacing | yes | long holds, plus review notes for covered gaps, repeated source, rhythm, frame rates, untrimmed runs, silent cards, and a music bed that ends early |
 | `colour` | Colour | yes | missing roles, extreme aspect mismatches in the XML, placeholder for exposure and skin. Never an unattended cut. |
 | `story` | later | yes | reserved |
 | `audio` | later | yes | reserved |

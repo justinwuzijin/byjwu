@@ -18,7 +18,7 @@
             <asset-clip ref="r2" offset="0s" name="Cold open" start="12s" duration="8s" tcFormat="NDF" audioRole="dialogue">
               <marker start="14s" duration="1/24s" value="Keep this" note="human marker"/>
               <audio-role-source role="dialogue.dialogue-1"/>
-              <asset-clip ref="r3" lane="1" offset="1s" name="Lower third" start="0s" duration="4s" videoRole="titles"/>
+              <asset-clip ref="r3" lane="1" offset="13s" name="Lower third" start="0s" duration="4s" videoRole="titles"/>
             </asset-clip>
             <gap name="Gap" offset="8s" start="3600s" duration="5/2s"/>
             <asset-clip ref="r2" offset="21/2s" name="Flash frame" start="80s" duration="1/3s" audioRole="dialogue"/>

@@ -165,6 +165,20 @@ def test_typesafe_uses_the_versioned_model_id(monkeypatch):
     assert endpoint.url == "https://api.typesafe.ai/v1/systemone"
 
 
+@pytest.mark.parametrize("slug", ["x-ai/grok-4", "grok-4.7-high", "xai/grok-beta"])
+def test_a_grok_or_xai_model_override_is_refused(monkeypatch, slug):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-test")
+    monkeypatch.setenv("CONDUCTOR_JEV_MODEL", slug)
+    with pytest.raises(ConductorError, match="Grok/xAI"):
+        resolve_endpoint()
+
+
+def test_default_models_are_jev_not_grok(monkeypatch):
+    monkeypatch.delenv("CONDUCTOR_JEV_MODEL", raising=False)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-test")
+    assert resolve_endpoint().model == "typesafe/jev-1.13"
+
+
 def test_live_without_a_key_fails(monkeypatch):
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)

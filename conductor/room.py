@@ -57,7 +57,7 @@ from .timeutil import clock
 
 PROTOCOL = "cut-conductor.room-run"
 PROTOCOL_VERSION = 1
-SUPPORTED_FCPXML = ("1.8", "1.9", "1.10", "1.11")
+SUPPORTED_FCPXML = ("1.8", "1.9", "1.10", "1.11", "1.12", "1.13", "1.14")
 LEDGER_NAME = ".room-run.json"
 LOG_NAME = "room-run.log"
 

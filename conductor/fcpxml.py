@@ -2,8 +2,16 @@
 
 The parser keeps the ElementTree. Marker write-back appends ``<marker>``
 elements to those nodes and writes the same tree, so unknown effects, keywords,
-and roles survive. This is not a full DTD implementation — compound clips that
-live only inside a ``<media>`` resource are not walked.
+roles, filters, and keyframes survive. This is not a full DTD implementation —
+compound clips that live only inside a ``<media>`` resource are not walked.
+
+A connected item's ``offset`` is on its parent's local clock, which begins at
+the parent's ``start``. A lower third at the head of a clip whose ``start`` is
+``12s`` is ``offset="12s"``. Placement uses :func:`conductor.timing.anchor_time`,
+the same rule the apply and media paths use, including a gap's ``start``, a
+time-conformed parent, and a secondary storyline (``<spine lane=...>``), whose
+items follow each other from the storyline's own offset. ``enabled="0"`` items
+are parsed and flagged, not dropped.
 """
 
 from __future__ import annotations
@@ -33,6 +41,24 @@ CLIP_TAGS = frozenset(
         "video",
     }
 )
+
+#: A compound's lane-less story element is its media, not an anchored item.
+#: Same set as ``apply._component`` and ``timing._component``.
+COMPOUND_TAGS = frozenset({"clip", "sync-clip"})
+
+
+def is_primary_story(parent_tag: str, child: ET.Element) -> bool:
+    """True for the lane-less media inside a compound, including its container gap.
+
+    Final Cut stores that element at the full media duration. The compound's
+    own ``start`` and ``duration`` are the visible window. A child with a
+    ``lane`` is anchored and is not primary.
+    """
+    return (
+        parent_tag in COMPOUND_TAGS
+        and not child.get("lane")
+        and local(child.tag) in CLIP_TAGS
+    )
 
 
 def local(tag: str) -> str:
@@ -89,10 +115,23 @@ class Clip:
     element: ET.Element | None = None
     width: int | None = None
     height: int | None = None
+    #: Timeline seconds from the parent's in point. Spine items use the ``offset`` attribute.
+    local_offset: Fraction | None = None
+    #: An item inside a secondary storyline (``<spine lane=...>``) on the parent.
+    storyline: bool = False
+    #: ``enabled="0"`` in the XML. Still footage the editor kept.
+    enabled: bool = True
+    asset_id: str | None = None
+    conform: str | None = None
+    source_frame: Fraction | None = None
+    asset_start: Fraction | None = None
+    asset_duration: Fraction | None = None
+    asset_has_audio: bool | None = None
 
     @property
     def timeline_start(self) -> Fraction:
-        return self.parent_offset + self.offset
+        local = self.offset if self.local_offset is None else self.local_offset
+        return self.parent_offset + local
 
     @property
     def timeline_end(self) -> Fraction:
@@ -202,9 +241,11 @@ def _document(root: ET.Element, tree: ET.ElementTree, source: Path | None) -> Do
                     child,
                     clip_id=f"s{len(sequences)}c{index}",
                     parent_offset=Fraction(0),
+                    timeline_start=parse_time(child.get("offset"), Fraction(0)),
                     connected=False,
                     assets=assets,
                     formats=formats,
+                    frame=frame,
                 )
                 _index(clips, clip)
                 spine.append(clip)
@@ -302,17 +343,29 @@ def _clip(
     elem: ET.Element,
     clip_id: str,
     parent_offset: Fraction,
+    timeline_start: Fraction,
     connected: bool,
     assets: dict[str, Asset],
     formats: dict[str, FormatInfo],
+    frame: Fraction,
+    storyline_lane: int | None = None,
 ) -> Clip:
+    """``timeline_start`` is where ``elem`` begins on the sequence clock.
+
+    ``parent_offset`` is where the owning spine or connected item begins, so
+    ``local_offset`` is the distance from the parent's in point.
+    """
+    from .timing import anchor_time, sequence_fps
+
+    fps = sequence_fps(frame)
     offset = parse_time(elem.get("offset"), Fraction(0))
     start = parse_time(elem.get("start"), Fraction(0))
     duration = parse_time(elem.get("duration"), Fraction(0))
-    timeline_start = parent_offset + offset
+    local_offset = timeline_start - parent_offset if connected else offset
     roles: list[str] = []
     markers: list[XmlMarker] = []
     connected_clips: list[Clip] = []
+    conform = None
     child_index = 0
     for child in elem:
         tag = local(child.tag)
@@ -320,26 +373,64 @@ def _clip(
             roles.append(child.get("role") or "")
         elif tag == "marker":
             markers.append(_marker(child))
-        elif tag in CLIP_TAGS:
+        elif tag == "conform-rate" and conform is None:
+            conform = child.get("srcFrameRate")
+        elif tag in CLIP_TAGS and not is_primary_story(local(elem.tag), child):
+            child_offset = parse_time(child.get("offset"), Fraction(0))
             connected_clips.append(
                 _clip(
                     child,
                     clip_id=f"{clip_id}k{child_index}",
                     parent_offset=timeline_start,
+                    timeline_start=anchor_time(elem, timeline_start, child_offset, fps),
                     connected=True,
                     assets=assets,
                     formats=formats,
+                    frame=frame,
                 )
             )
             child_index += 1
+        elif tag == "spine" and child.get("lane"):
+            story = anchor_time(
+                elem, timeline_start, parse_time(child.get("offset"), Fraction(0)), fps
+            )
+            story_lane = _lane(child.get("lane"))
+            story_enabled = child.get("enabled") != "0"
+            for item in child:
+                if local(item.tag) not in CLIP_TAGS:
+                    continue
+                placed = _clip(
+                    item,
+                    clip_id=f"{clip_id}k{child_index}",
+                    parent_offset=timeline_start,
+                    timeline_start=story + parse_time(item.get("offset"), Fraction(0)),
+                    connected=True,
+                    assets=assets,
+                    formats=formats,
+                    frame=frame,
+                    storyline_lane=story_lane,
+                )
+                if not story_enabled:
+                    placed.enabled = False
+                connected_clips.append(placed)
+                child_index += 1
     name = elem.get("name") or elem.get("ref") or local(elem.tag)
     lane_raw = elem.get("lane")
-    width, height = _frame_size(elem.get("ref"), assets, formats)
+    ref = elem.get("ref")
+    width, height = _frame_size(ref, assets, formats)
+    asset_id = ref if ref in assets else None
+    if asset_id is None:
+        asset_id = _nested_asset_ref(elem, assets)
+    asset = assets.get(asset_id) if asset_id else None
+    format_id = elem.get("format")
+    source_frame = None
+    if format_id and format_id in formats:
+        source_frame = formats[format_id].frame_duration
     return Clip(
         id=clip_id,
         kind=local(elem.tag),
         name=name,
-        ref=elem.get("ref"),
+        ref=ref,
         offset=offset,
         start=start,
         duration=duration,
@@ -347,14 +438,46 @@ def _clip(
         audio_role=elem.get("audioRole"),
         video_role=elem.get("videoRole"),
         roles=tuple(roles),
-        lane=int(lane_raw) if lane_raw and lane_raw.lstrip("-").isdigit() else None,
+        lane=storyline_lane if storyline_lane is not None else _lane(lane_raw),
         connected=connected,
         markers=markers,
         connected_clips=connected_clips,
         element=elem,
         width=width,
         height=height,
+        local_offset=local_offset,
+        storyline=storyline_lane is not None,
+        enabled=elem.get("enabled") != "0",
+        asset_id=asset_id,
+        conform=conform,
+        source_frame=source_frame,
+        asset_start=None if asset is None else asset.start,
+        asset_duration=None if asset is None else asset.duration,
+        asset_has_audio=None if asset is None else asset.has_audio,
     )
+
+
+def _lane(value: str | None) -> int | None:
+    if value and value.lstrip("-").isdigit():
+        return int(value)
+    return None
+
+
+def _nested_asset_ref(elem: ET.Element, assets: dict[str, Asset]) -> str | None:
+    """Asset ref of a compound's primary media, not of a laned anchor."""
+    for child in elem:
+        if child.get("lane"):
+            continue
+        tag = local(child.tag)
+        if tag in {"video", "asset-clip", "audio"}:
+            child_ref = child.get("ref")
+            if child_ref in assets:
+                return child_ref
+        if tag in COMPOUND_TAGS or tag == "gap":
+            found = _nested_asset_ref(child, assets)
+            if found:
+                return found
+    return None
 
 
 def _frame_size(

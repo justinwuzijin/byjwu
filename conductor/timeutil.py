@@ -40,6 +40,33 @@ def format_time(value: Fraction) -> str:
     return f"{value.numerator}/{value.denominator}s"
 
 
+def rate_label(frame: Fraction) -> str:
+    """A short fps name for a frame duration. ``1001/24000s`` is ``23.976``."""
+    frame = Fraction(frame)
+    if frame <= 0:
+        return "unknown"
+    fps = Fraction(1) / frame
+    known = {
+        Fraction(24000, 1001): "23.976",
+        Fraction(30000, 1001): "29.97",
+        Fraction(60000, 1001): "59.94",
+        Fraction(24): "24",
+        Fraction(25): "25",
+        Fraction(30): "30",
+        Fraction(50): "50",
+        Fraction(60): "60",
+    }
+    if fps in known:
+        return known[fps]
+    return f"{float(fps):.3f}"
+
+
+def same_rate(left: str, right: str) -> bool:
+    """True when two fps labels are the same rate, including ``23.98`` and ``23.976``."""
+    aliases = {"23.98": "23.976", "23.976": "23.976", "29.97": "29.97", "59.94": "59.94"}
+    return aliases.get(left, left) == aliases.get(right, right)
+
+
 def seconds(value: Fraction) -> float:
     """A JSON-stable float. Six decimals is finer than a frame and exact for our fixtures."""
     return round(float(value), 6)

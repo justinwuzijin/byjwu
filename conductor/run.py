@@ -184,6 +184,16 @@ def analyze(
                 deletions = []
             else:
                 raise
+        if signal_report.words and sequences:
+            from .decide import word_cuts
+
+            extra, _markers = word_cuts(
+                [word for word in signal_report.words if word.sequence == sequences[0].name],
+                sequence=sequences[0].name,
+                frame_duration=sequences[0].frame_duration,
+                router=router,
+            )
+            deletions = [*deletions, *extra]
         if deletions:
             applied_doc = parse_fcpxml(source)
             result = apply_edits(applied_doc, deletions)
@@ -191,13 +201,20 @@ def analyze(
             apply_warnings = result.warnings
             by_candidate = {item.id: item for item in candidates}
             for cut in cuts:
-                proposal = by_proposal[cut["candidate_id"]]
+                proposal = by_proposal.get(cut["candidate_id"])
+                if proposal is None:
+                    cut["engine"] = "rules"
+                    cut["engine_source"] = "rules"
+                    cut["decision_type"] = "retake"
+                    continue
                 cut["engine"] = proposal.engine
                 cut["engine_source"] = proposal.engine_source
                 cut["decision_type"] = proposal.decision_type
             for deletion in deletions:
-                candidate = by_candidate[deletion.candidate_id]
-                proposal = by_proposal[deletion.candidate_id]
+                candidate = by_candidate.get(deletion.candidate_id)
+                proposal = by_proposal.get(deletion.candidate_id)
+                if candidate is None or proposal is None:
+                    continue
                 taste.append(
                     feedback_event(
                         event="accept",

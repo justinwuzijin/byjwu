@@ -16,6 +16,9 @@ Before the ripple, the stretch those items cover is taken out of the
 deletion, so a gap under B-roll keeps the B-roll and only its bare head and
 tail close. Connected offsets are on the parent's own clock
 (:func:`conductor.timing.anchor_time`) and are never rewritten.
+
+A dissolve on a deletion is the auto-editor minimum-cut idea, written only
+when word-boundary hygiene has already allowed it.
 """
 
 from __future__ import annotations
@@ -41,6 +44,7 @@ class Deletion:
     end: Fraction
     action: str
     pass_name: str
+    transition: str | None = None
 
     @property
     def duration(self) -> Fraction:
@@ -78,6 +82,7 @@ def apply_edits(document: Document, deletions: list[Deletion]) -> ApplyResult:
     for sequence, kept in planned:
         if kept:
             warnings.extend(_ripple(sequence, kept))
+            warnings.extend(_insert_dissolves(sequence, kept))
     return ApplyResult(cuts=[_cut_row(item) for item in adjusted], warnings=warnings)
 
 
@@ -129,6 +134,7 @@ def _shield_connected(sequence, deletions: list[Deletion]) -> tuple[list[Deletio
                     end=end,
                     action=deletion.action,
                     pass_name=deletion.pass_name,
+                    transition=deletion.transition,
                 )
             )
     return adjusted, warnings
@@ -374,4 +380,21 @@ def _cut_row(deletion: Deletion) -> dict:
         "pass": deletion.pass_name,
         "start_seconds": round(float(deletion.start), 6),
         "end_seconds": round(float(deletion.end), 6),
+        "transition": deletion.transition,
     }
+
+
+def _insert_dissolves(sequence, deletions: list[Deletion]) -> list[str]:
+    """Place a cross dissolve where a cut removed at least the profile minimum."""
+    dissolving = [item for item in deletions if item.transition == "dissolve"]
+    if not dissolving:
+        return []
+    spine = _spine(sequence)
+    for deletion in dissolving:
+        at = deletion.start - _deleted_before(deletion.start, deletions)
+        element = ET.Element("transition")
+        element.set("name", "Cross Dissolve")
+        element.set("offset", format_time(at))
+        element.set("duration", format_time(min(deletion.duration, Fraction(1, 2))))
+        spine.append(element)
+    return []

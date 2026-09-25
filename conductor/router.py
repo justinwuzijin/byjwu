@@ -37,6 +37,9 @@ montage            opus    Which shots make the montage, in what order?
 broll_selection    opus    Which coverage plays over this line?
 source_reuse       opus    Is this repeat of earlier footage a deliberate reprise?
 music_tail         opus    How should the cut end against a music bed that stops early?
+retake_pick        opus    Which existing complete take should be kept?
+retake_veto        opus    Should this retake cut be kept instead?
+filler_approve     opus    Is this ambiguous filler safe to cut?
 =================  ======  ==================================================
 
 Unknown kinds fall back to the pass default (``story`` and ``broll`` are
@@ -66,6 +69,9 @@ region did not change. The cache key includes the brief, the taste prefs, the
 question, the engine, the model, and live-vs-mock. It leaves out the taste
 feedback log: inside one run the only log growth is the loop's own accepts,
 for regions that no longer exist. A new router starts cold.
+
+Retake vetoes and close-take picks are taste calls on this router (Opus),
+the same idea as Descript, Gling, Selects, and ButterCut, with no new engine.
 
 Every run gets a :class:`Ledger`: calls per engine (live and mock), items,
 cache hits, fallbacks, and tokens and cost when the provider returns them.
@@ -201,6 +207,12 @@ DECISION_TYPES: dict[str, DecisionType] = {
               _CREATIVE + "Whether a recap earns its repeat is a montage call."),
         _type("music_tail", OPUS, "How should the cut end against a music bed that stops early?",
               _CREATIVE + "Ending on the song or on picture is a music call."),
+        _type("retake_pick", OPUS, "Which existing complete take should be kept?",
+              _CREATIVE + "Only when complete takes score too close for the rule. The choice is one of the takes already found."),
+        _type("retake_veto", OPUS, "Should this retake cut be kept instead?",
+              _CREATIVE + "A veto is the only model action on a retake the rule has already marked."),
+        _type("filler_approve", OPUS, "Is this ambiguous filler safe to cut?",
+              _CREATIVE + "like, you know, so, and basically need a taste decision before they become a cut."),
     )
 }
 

@@ -103,7 +103,7 @@ The 95.8 number is the sidecar run, where word times come from the SRT. Ducking 
 
 ## One song
 
-Justin usually drops one track. The two-song shoot above hides a hole: when the only file is shorter than the timeline, the next copy used to start at the current playhead, which was already past the file end. A 48 second bed left gaps after each copy. A 160 second bed left a gap from 160.0 to 161.04.
+Most drops have one track. The two-song shoot above hides a hole: when the only file is shorter than the timeline, the next copy used to start at the current playhead, which was already past the file end. A 48 second bed left gaps after each copy. A 160 second bed left a gap from 160.0 to 161.04.
 
 The bed now loops on the last downbeat within one bar of the file end, with a short crossfade, and the beat grid for the next copy is in place before a montage shot is drawn. Ducking is written on every copy. A song longer than the timeline is one clip and fades out at the end. A song about as long as the timeline covers it and fades out the same way.
 

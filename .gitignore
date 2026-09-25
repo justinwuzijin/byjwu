@@ -15,3 +15,7 @@ demo/
 
 # secrets
 .env
+
+# style-study inputs, outputs, and frame crops (never committed)
+styles/*/study/data/
+styles/*/ref/

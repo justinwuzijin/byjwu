@@ -1,0 +1,547 @@
+{
+  "schema": "jevid.style-profile/1",
+  "name": "byjustinwu",
+  "title": "byjustinwu: long-form video journals",
+  "summary": "Long-form (15-19 min) day-by-day vlogs in 4-7 lowercase chapters. Talking holds long (median 7.4 s, single takes up to 102 s), b-roll runs around 3.5 s, bursts drop to 0.4-1.8 s per shot. Music sits about 12 dB above dialogue and cuts to digital silence under chapter cards. Type is small lowercase sans over b-roll (never over to-camera talking), with huge vertically stretched titles over overlapping textured rectangles at chapter breaks. Graphics pop on and off in single frames and never move; only their fills animate.",
+  "status": "measured",
+  "study": {
+    "script": "styles/byjustinwu/study/analyze.py",
+    "measurements": "styles/byjustinwu/study/measurements.json",
+    "motion_script": "styles/byjustinwu/study/motion.py (reads the 90 s intro excerpts, not committed)",
+    "motion": "styles/byjustinwu/study/motion.json",
+    "evidence_key": "\"stat: a.b.c\" names a key path in measurements.json; \"<video_id> 12.8s\" is a source timestamp; \"frames\" means read off frame grabs and contact sheets by eye; \"excerpts\" means stepped through the 90 s intro excerpts frame by frame; \"motion.json <key>\" names a region in motion.json"
+  },
+  "sources": [
+    {"id": "newest", "duration_s": 910.1, "fps": 30, "weight": 0.35, "role": "newest long-form; date-stamp chapters, 4:3 monologue ending"},
+    {"id": "cards", "duration_s": 1144.4, "fps": 23.976, "weight": 0.35, "role": "clearest chapter-card system, wordmark bookends"},
+    {"id": "older", "duration_s": 1113.3, "fps": 23.976, "weight": 0.2, "role": "older serif card system, densest music, fastest bursts"},
+    {"id": "short", "duration_s": 61.8, "fps": 23.976, "weight": 0.1, "role": "short; only used for loudness and cut rate"}
+  ],
+  "params": {
+    "cut_rhythm": {
+      "cuts_per_minute": {
+        "value": 7.9, "unit": "cuts/min", "range": [5.9, 9.5], "confidence": 0.8,
+        "evidence": "stat: cut_rhythm.per_video.*.cuts_per_minute_thr0p3 = 7.91 (newest), 5.87 (cards), 9.54 (older); hard cuts only, scene score > 0.3"
+      },
+      "talking": {
+        "hold_median_s": {
+          "value": 7.4, "unit": "s", "range": [5.5, 9.6], "confidence": 0.7,
+          "evidence": "stat: cut_rhythm.pooled_long_form_shot_length_s_by_section.talking median 7.41 s, n=112; per video 5.63 / 9.57 / 5.46 s"
+        },
+        "hold_p90_s": {
+          "value": 38.7, "unit": "s", "confidence": 0.65,
+          "evidence": "stat: ...talking.p90 38.66 s. He lets a take run: cards 178.55s holds 53.8 s, longest talking shot 102.3 s"
+        },
+        "max_single_take_s": {
+          "value": 100, "unit": "s", "confidence": 0.6,
+          "evidence": "stat: ...talking.max 102.27 s (cards); older talking p90 43.8 s. Do not force a cut inside a good take"
+        },
+        "jump_cut_lead_in_s": {
+          "value": 0.3, "unit": "s", "range": [0.06, 1.46], "confidence": 0.5,
+          "evidence": "stat: talking_edits.lead_in_s median 0.32 s (cut to first caption word), p10 0.06, p90 1.46, n=113. ASR word timing is +-0.1 s"
+        },
+        "jump_cut_tail_s": {
+          "value": 0.2, "unit": "s", "confidence": 0.35,
+          "evidence": "stat: talking_edits.last_word_to_cut_s median 0.49 s from the last word's START; at 2.8 words/s (speech_rate) a word lasts ~0.3 s, leaving ~0.2 s after it ends"
+        },
+        "split_edit_share": {
+          "value": 0.3, "unit": "share of talking cuts", "confidence": 0.5,
+          "evidence": "stat: talking_edits.mid_speech_share 0.31: 31% of cuts next to talking land within 0.15 s of a word, so voice runs across the picture change (J/L cut or b-roll over voice)"
+        },
+        "speech_rate_wps": {
+          "value": 2.8, "unit": "words/s", "confidence": 0.75,
+          "evidence": "stat: speech_rate.*.words_per_speech_second 2.78 / 2.81 / 2.77"
+        }
+      },
+      "broll": {
+        "shot_median_s": {
+          "value": 3.5, "unit": "s", "range": [3.3, 4.0], "confidence": 0.75,
+          "evidence": "stat: ...by_section.broll median 3.47 s, n=231; per video 3.57 / 3.94 / 3.36 s"
+        },
+        "shot_p10_s": {
+          "value": 1.6, "unit": "s", "confidence": 0.7,
+          "evidence": "stat: ...broll.p10 1.63 s"
+        },
+        "shot_p90_s": {
+          "value": 9.7, "unit": "s", "confidence": 0.7,
+          "evidence": "stat: ...broll.p90 9.70 s"
+        }
+      },
+      "montage": {
+        "shot_median_s": {
+          "value": 2.3, "unit": "s", "confidence": 0.5,
+          "evidence": "stat: ...by_section.montage median 2.29 s, n=31, all in older (runs 409.9-431.8s, 433.8-443.4s, 473.7-523.9s at 1.50 s median). The 2026 videos have no run meeting the montage rule; their music sections stay at b-roll pace"
+        },
+        "burst_shot_median_s": {
+          "value": 1.8, "unit": "s", "range": [0.4, 1.9], "confidence": 0.55,
+          "evidence": "stat: fastest_broll_5_shots: 1.83 s (newest 542.4-553.5s), 1.75 s (cards 11.9-21.8s, cold open), 0.42 s (older 605.3-612.5s, just before a hard stop). Default to the 2026 pace; 0.4 s is a one-off before a hard stop"
+        },
+        "min_shot_s": {
+          "value": 0.33, "unit": "s", "confidence": 0.45,
+          "evidence": "stat: ...montage.min 0.334 s (8 frames at 23.976); shorter 0.3-threshold shots are wipe frames, not picture"
+        }
+      },
+      "intro_shot_median_s": {
+        "value": 3.2, "unit": "s", "confidence": 0.5,
+        "evidence": "stat: ...by_section.intro median 3.17 s (first 30 s), n=19; newest is the exception, a 12.9 s-median dorm talking-head open"
+      },
+      "outro_shot_median_s": {
+        "value": 3.1, "unit": "s", "confidence": 0.5,
+        "evidence": "stat: ...by_section.outro median 3.13 s (last 30 s), n=19"
+      },
+      "beat_snap": {
+        "value": "prefer", "unit": "mode", "confidence": 0.4,
+        "evidence": "stat: beat_alignment.pooled: 13.0% of 269 music-section cuts sit within +-100 ms of a loudness onset vs 6.2% chance (lift 2.1x; per video 1.9-2.2x). He favours accents but does not cut on a beat grid"
+      },
+      "beat_snap_window_s": {
+        "value": 0.1, "unit": "s", "confidence": 0.4,
+        "evidence": "stat: beat_alignment window +-0.1 s; move a music-section cut to an onset only when one is this close (2-3 frames)"
+      }
+    },
+    "music": {
+      "fade_in_s": {
+        "value": 0.0, "unit": "s", "confidence": 0.7,
+        "evidence": "stat: fades_and_levels.*.head_ramp_s 0.2 / 0.0 / 0.1 s: every long-form video starts at full level on frame 0 (short, the short, ramps 4 s). Later entries are hard too: momentary loudness jumps 12 dB in 0.3 s at cards 5.45s and 35 dB in 0.4 s at older 36.95s"
+      },
+      "intro_entry": {
+        "value": "hard cut-in 0.5-0.7 s after the spoken hook ends, mid-shot; none while he talks to camera", "confidence": 0.55,
+        "evidence": "excerpts + loudness: cards spoken hook ends 4.8s, music in at ~5.45s (-34 to -20 LUFS momentary) with no picture cut (cuts 3.34, 9.76s); older music from frame 0 under a silent window shot; newest talking-head open stays dry until ~106s"
+      },
+      "intro_lift_db": {
+        "value": 12, "unit": "dB", "confidence": 0.4,
+        "evidence": "loudness: cards music steps from -22 to -11 LUFS momentary exactly on the 13.60s cut, ~8 s after it entered and 2.1 s before the first written-narration line (15.72s cut). One instance"
+      },
+      "track_change": {
+        "value": "fade the outgoing track ~5.5 s into room tone, then slam the next one in on a wide establishing cut", "confidence": 0.4,
+        "evidence": "loudness + excerpts: older fades -14 to -37 LUFS over 23.6-29.2s during an errand walk, ~7.5 s of room sound, then -41 to -6 LUFS in 0.4 s on the 36.95s cut to a wide campus window shot"
+      },
+      "track_change_fade_out_s": {
+        "value": 5.5, "unit": "s", "confidence": 0.35,
+        "evidence": "loudness: older 23.6-29.2s, roughly linear. One instance"
+      },
+      "fade_out_s": {
+        "value": 1.1, "unit": "s", "range": [0.8, 15.8], "confidence": 0.5,
+        "evidence": "stat: fades_and_levels.*.tail_ramp_s 0.8 (newest), 1.4 (cards); older fades 15.8 s into its orange end card. Short tail after a spoken or card ending"
+      },
+      "fade_out_over_montage_ending_s": {
+        "value": 15.8, "unit": "s", "confidence": 0.35,
+        "evidence": "stat: fades_and_levels.older.tail_ramp_s 15.8 s; frames 1053-1113s: party footage drifts purple to orange while music fades"
+      },
+      "music_over_dialogue_db": {
+        "value": 12.0, "unit": "dB", "range": [8.8, 12.9], "confidence": 0.6,
+        "evidence": "stat: music_under_speech.pooled.music_minus_speech_mid_db median 12.4 dB (8.8-12.9): music-only stretches play ~12 dB hotter than talking stretches"
+      },
+      "duck_depth_db": {
+        "value": 12.0, "unit": "dB", "range": [11.3, 13.2], "confidence": 0.45,
+        "evidence": "stat: music_under_speech.pooled.side_drop_under_speech_db median 12.0 dB: the stereo side channel (music; voice is near-mono) is 11.3-13.2 dB lower in speech windows. Part of that gap is talking with no bed at all (see bed_under_talking)"
+      },
+      "duck_lead_s": {
+        "value": 2.0, "unit": "s before first word", "range": [1.1, 2.5], "confidence": 0.4,
+        "evidence": "stat: music_under_speech.pooled.duck_half_step_s_rel_first_word -2.5 / -2.4 / -1.1 s (0.5 s resolution). Clean 100 ms example: cards drops 8 LU in 0.3 s at 30.1s, 2.1 s before the first word (32.2s), then sags another ~3 LU into the speech. A step then a sag, not a sidechain pump"
+      },
+      "release_lead_s": {
+        "value": 1.5, "unit": "s before last word", "range": [0.9, 2.4], "confidence": 0.3,
+        "evidence": "stat: music_under_speech.pooled.release_half_step_s_rel_last_word -1.5 s median (-2.4 to -0.9): music comes back under the final phrase"
+      },
+      "bed_under_talking": {
+        "dry_share": {
+          "value": 0.22, "unit": "share of talking shots", "range": [0.03, 0.25], "confidence": 0.5, "decided_by": "jev",
+          "evidence": "stat: music_under_speech.*.talking_shots_with_a_-40dB_silence 10/42 (newest), 8/40 (cards), 1/30 (older). About a fifth of talking in 2026 plays dry; newest 0-90s dorm open has 16 sub -40 dB pauses. Per passage: jev question music_under_talk"
+        }
+      },
+      "dialogue_shortterm_lufs": {
+        "value": -24.5, "unit": "LUFS (3 s)", "range": [-25.2, -18.6], "confidence": 0.6,
+        "evidence": "stat: fades_and_levels.*.speech_shortterm_lufs_median -24.1 / -25.2 (2026), -18.6 (older)"
+      },
+      "music_only_shortterm_lufs": {
+        "value": -14.5, "unit": "LUFS (3 s)", "range": [-16.7, -7.8], "confidence": 0.55,
+        "evidence": "stat: fades_and_levels.*.music_only_shortterm_lufs_median -12.3 / -16.7 (2026), -7.8 (older), -14.5 (short)"
+      },
+      "integrated_lufs": {
+        "value": -12.0, "unit": "LUFS", "range": [-15.0, -7.8], "confidence": 0.55,
+        "evidence": "stat: fades_and_levels.*.integrated_lufs -11.7 / -15.0 / -7.8 / -12.6; LRA 17.6-22.7 LU (wide: loud music, quiet talk)"
+      },
+      "true_peak_ceiling_dbtp": {
+        "value": -1.0, "unit": "dBTP", "confidence": 0.8,
+        "evidence": "stat: true peaks +1.4 / +1.5 / +2.3 / +0.2 dBFS, i.e. his masters clip. Not a taste to copy; the engine limits to -1 dBTP"
+      },
+      "card_silence": {
+        "value": true, "unit": "bool", "confidence": 0.75,
+        "evidence": "stat: chapter_cards.cards: digital silence inside all 5 mid-video chapter cards (173.8-178.3, 370.0-371.7, 465.2-470.0, 875.2-878.5, 1075.8-1080.0s); older 629.9-631.8s on one mid-video card. newest uses no cards and no card silences"
+      },
+      "card_silence_s": {
+        "value": 4.2, "unit": "s", "range": [1.7, 4.8], "confidence": 0.6,
+        "evidence": "stat: cards card silences 4.5 / 1.7 / 4.8 / 3.3 / 4.2 s"
+      },
+      "card_silence_starts_after_card_s": {
+        "value": 0.8, "unit": "s", "range": [0.7, 1.3], "confidence": 0.45,
+        "evidence": "stat: silence begins 0.8 s (173.0->173.8), 0.7 s (464.5->465.2), 0.8 s (874.5->875.2), 1.3 s (1074.5->1075.8) after the card frame: a short hit or glitch tail, then nothing"
+      },
+      "chapter_change_through_silence_share": {
+        "value": 0.45, "unit": "share", "confidence": 0.4,
+        "evidence": "stat: silences.*.chapter_starts_within_3s_of_silence 2/5, 3/6, 0/3 (-40 dB for >= 0.5 s)"
+      }
+    },
+    "typography": {
+      "casing": {
+        "value": "lowercase", "confidence": 0.9,
+        "evidence": "frames: every subtitle, date stamp, chapter title and sign-off seen is lowercase (cards 18s, newest 6s, older 16-28s, all 5 cards cards). Caps only for the @JUSTINWU wordmark and one manifesto title"
+      },
+      "subtitles": {
+        "mode": {
+          "value": "over b-roll only: written narration or voice-over captions; to-camera talking is not subtitled", "confidence": 0.7,
+          "evidence": "excerpts: no text over to-camera talking in newest 8-90s, cards 32-90s, older 51-90s. Lines over b-roll are either written only (cards 15.7-~26s has no speech in the captions from 4.8 to 32.2s; newest 175s captions are song lyrics; older 403.9s sits over on-location dialogue) or caption his voice-over (newest 850-910s monologue)"
+        },
+        "font": {
+          "value": "SF Pro Text Regular", "confidence": 0.4,
+          "evidence": "frames: neutral grotesque with SF-style a/g/t at 640 px; weight regular or medium. Exact face needs his project file"
+        },
+        "color": {
+          "value": "#ffffff", "confidence": 0.8,
+          "evidence": "frames: white, no box, no visible stroke or shadow (cards 18s on bright snow still unboxed)"
+        },
+        "position": {
+          "value": {"x": 0.5, "baseline_y": 0.86, "align": "center"}, "unit": "fraction of frame", "confidence": 0.65,
+          "evidence": "frames: baseline at 0.86 of height in cards 18s (y 310/360), newest 175.4s, older 403.9s (0.87 in 4:3)"
+        },
+        "cap_height_pct": {
+          "value": 2.6, "unit": "% of frame height", "range": [2.3, 3.0], "confidence": 0.45,
+          "evidence": "frames: ~9 px caps in 360 px frames (cards 18s). Roughly 36-40 pt at 1080p"
+        },
+        "lines": {
+          "value": 1, "confidence": 0.65,
+          "evidence": "frames: always one line; never saw a two-line subtitle"
+        },
+        "max_chars_per_line": {
+          "value": 90, "unit": "chars", "confidence": 0.45,
+          "evidence": "frames: measured lines of 88 chars (newest 175.4s), 48 chars (cards 18s) and 45 chars (older 403.9s)"
+        },
+        "punctuation": {
+          "value": "usually none at line end; commas kept; digits for numbers", "confidence": 0.5,
+          "evidence": "frames: most lines end bare; one line ends with a period (cards 24s); numbers are digits"
+        },
+        "timing": {
+          "value": "one sentence per line, switched on a single frame, carried across picture cuts", "confidence": 0.55,
+          "evidence": "excerpts: cards lines at 15.7s (on the 15.72s cut), ~19.0s and 24.0s; switches are one-frame hard changes with no fade; the 19-24s line spans cuts at 20.35, 21.81 and 23.90s"
+        },
+        "hold_s": {
+          "value": 4.0, "unit": "s", "range": [3.3, 5.0], "confidence": 0.45,
+          "evidence": "excerpts: cards 15.7-19.0s (3.3 s, 48 chars), 19.0-24.0s (5.0 s, 76 chars): roughly 14-15 characters per second of hold"
+        }
+      },
+      "written_narration": {
+        "value": "lowercase subtitle-style lines that tell the story over music-only b-roll instead of voice-over", "confidence": 0.6, "decided_by": "taste_model",
+        "evidence": "excerpts + captions: cards 15.7-26s, three written lines over b-roll with no speech in the auto-captions; newest 175s over song lyrics. Same look as subtitles. the taste model writes the lines; Jev cannot write"
+      },
+      "date_stamp": {
+        "format_2026a": {
+          "value": "{weekday} {month} {day_ordinal};\\n{time_word}", "confidence": 0.75,
+          "evidence": "frames: weekday-month-day plus a time word, two lines, semicolon on line one (newest 6s and 361.5s)"
+        },
+        "format_2026b": {
+          "value": "{mon} {d} {yyyy};\\n{h}:{mm}{am_pm}", "confidence": 0.75,
+          "evidence": "frames: numeric month day year, then h:mmam/pm, on cards 10, 172.8, 366.1, 464.5, 874.5 and 1074.5s"
+        },
+        "align": {
+          "value": "right", "confidence": 0.8,
+          "evidence": "frames: both lines right-aligned in all eight stamps above; the semicolon ends line one"
+        },
+        "anchor": {
+          "value": {"right_edge_x": 0.88, "y": [0.44, 0.92]}, "unit": "fraction of frame", "range": [0.86, 0.95], "confidence": 0.55,
+          "evidence": "frames: right edge 0.86 (newest 6s), 0.90 (cards 10s), ~0.95 on cards (cards 366.1s, bottom right). Text overhangs the left edge of its rectangle"
+        },
+        "cap_height_pct": {
+          "value": 3.2, "unit": "% of frame height", "confidence": 0.4,
+          "evidence": "frames: a touch larger than subtitles (~11-12 px in 360 px, newest 6s)"
+        },
+        "hold_s": {
+          "value": 3.0, "unit": "s", "range": [2.0, 3.9], "confidence": 0.5,
+          "evidence": "excerpts: newest 2.80-6.67s (3.9 s), cards 9.76-11.80s (2.0 s)"
+        },
+        "sync": {
+          "value": "may enter on a cut or mid-shot; ignores cuts once up", "confidence": 0.45,
+          "evidence": "excerpts: cards enters on the 9.76s cut and leaves 2 frames before the 11.85s cut; newest enters mid-shot at 2.80s, stays over the 3.40s cut and leaves mid-shot at 6.67s"
+        },
+        "time_source": {
+          "value": "clip creation time", "confidence": 0.5,
+          "evidence": "frames: stamps name the day and clock of the scene that follows (6:32am on a dark morning, cards 10s). The engine reads the clip's metadata; the time word ('noon', 'late evening') maps from the hour in code"
+        },
+        "when": {
+          "value": "first clip of a new day or chapter", "confidence": 0.6, "decided_by": "jev",
+          "evidence": "frames: newest uses a stamp as the chapter marker (6s, 361.5s); cards puts one in the open (10s) and on every card. Per clip: jev question chapter_break"
+        }
+      },
+      "chapter_title": {
+        "style_2026": {
+          "value": "lowercase sans, stretched vertically, spaces dropped, trailing ';' or '*'", "confidence": 0.7,
+          "evidence": "frames: lowercase, spaces dropped, trailing ';' or '*', sometimes split on a slash (cards 172.8, 366.1, 464.5, 874.5, 1074.5s)"
+        },
+        "font": {
+          "value": "SF Pro Display, non-uniform scale ~1.0x wide, ~1.8x tall", "confidence": 0.35,
+          "evidence": "frames: tall narrow letterforms whose stroke contrast matches a stretched grotesque, not a condensed cut. Weight regular-medium before stretch. Exact face and scale need the project"
+        },
+        "cap_height_pct": {
+          "value": 25, "unit": "% of frame height", "range": [20, 30], "confidence": 0.45,
+          "evidence": "frames: title letters span ~25% of the height (cards 366.1s, 1074.5s)"
+        },
+        "color": {
+          "value": "#ffffff", "confidence": 0.7,
+          "evidence": "frames: white on all five cards cards; overlaps rectangle edges instead of sitting inside them"
+        },
+        "style_2025": {
+          "value": "lowercase serif, '(a)' '(b)' letter enumerators, '//' comment subline, '#month dd' date", "confidence": 0.6,
+          "evidence": "frames: parenthesized letter, a #month-day line, and a // comment subline (older 16.0-18.0s and 795-802s, the later one on flat orange). Older look; weight 0.2"
+        },
+        "motion": {
+          "value": "title text static; the layers behind it animate in place", "confidence": 0.5,
+          "evidence": "excerpts: older serif title card 12.79-15.97s holds the title still while the manga line art is re-cropped every frame (motion.json older_title_card_art, 24 updates/s) and the magenta block leaves ~1.6 s in. 2026 cards come after the excerpts"
+        },
+        "hold_s": {
+          "value": 5.71, "unit": "s", "range": [3.2, 7.6], "confidence": 0.65,
+          "evidence": "stat: chapter_cards.cards: card shot is 137 frames (5.714 s) at 464.5, 874.5 and 1074.5s; 3.5 s (173.0s), 4.7 s (366.1s); older cards 3.18 s (12.79s) and 7.63 s (795.0s)"
+        },
+        "writer": {
+          "value": "taste_model", "confidence": 0.9, "decided_by": "taste_model",
+          "evidence": "Jev cannot write text. Titles are casual and personal; the taste model writes them from the chapter's footage and the brief"
+        }
+      },
+      "wordmark": {
+        "text": {
+          "value": "@JUSTINWU", "confidence": 0.7,
+          "evidence": "frames: '@JUSTINWU' full-frame at cards 0s and tiled at 1136-1144s; '@BYJUSTINWU' at older 12s; pixel 'BYJUSTINWU' at older 1105-1111s"
+        },
+        "treatment": {
+          "value": "all caps heavy grotesque stretched to full frame height; static over moving footage; tiled rows on the end card", "confidence": 0.65,
+          "evidence": "excerpts: cards 0-3.25s the white wordmark does not move, scale or scroll while the handheld shot moves under it, then disappears in one frame; frames: black on white, three tiled rows under textured rectangles at the end (1138-1144s, motion unknown)"
+        }
+      },
+      "manifesto_title": {
+        "value": "stacked all-caps, stretched, full-bleed red", "confidence": 0.4,
+        "evidence": "frames: stacked all-caps red on white fills the frame (newest ~852s) before the closing monologue. One instance"
+      },
+      "signoff": {
+        "format": {
+          "value": "a {noun phrase} byjustinwu", "confidence": 0.65,
+          "evidence": "frames: 'a video journal byjustinwu' (older 16-28s), 'a summer experienced byjustinwu' (newest 906-908s)"
+        },
+        "position": {
+          "value": {"x": [0.61, 0.92], "y": 0.75, "align": "left"}, "unit": "fraction of frame", "confidence": 0.5,
+          "evidence": "frames: lower right, starts x 0.61, baseline 0.75 (older 16s, 20s); lower right in newest outro"
+        },
+        "placement": {
+          "value": "after the cold open or on the final shot", "confidence": 0.5,
+          "evidence": "frames: older puts it at 16-28s right after the brand beat; newest puts it on the last hazy window shot"
+        }
+      }
+    },
+    "background_layer": {
+      "shape": {
+        "value": "axis-aligned rectangles, square corners, overlapping with offsets, often bleeding off frame", "confidence": 0.75,
+        "evidence": "frames: cards 10s (two overlapping, one bleeds off the right edge), all five cards, newest 6s and 361.5s, older 12s and 403.9s. No rotation or skew seen; the 'contortion' is in the fills, not the outlines"
+      },
+      "count": {
+        "date_stamp": {
+          "value": [1, 2], "unit": "rectangles", "confidence": 0.6,
+          "evidence": "frames: 1 (newest 6s), 2 (cards 10s; newest 361.5s blue + checkerboard)"
+        },
+        "chapter_card": {
+          "value": [3, 4], "unit": "rectangles", "confidence": 0.6,
+          "evidence": "frames: 4 (cards 172.8s), 3 (366.1s), 4 (464.5s), 4 (874.5s), 4 (1074.5s)"
+        }
+      },
+      "size": {
+        "value": {"w": [0.15, 0.45], "h": [0.15, 0.45]}, "unit": "fraction of frame", "confidence": 0.5,
+        "evidence": "frames: date-stamp rectangle 0.21 x 0.34 (newest 6s), 0.30 x 0.40 (cards 10s); manga rectangle 0.36 x 0.31 (older 12s); card blocks 0.15-0.45 wide"
+      },
+      "placement": {
+        "value": "right third for date stamps; clustered around the title for cards", "confidence": 0.6,
+        "evidence": "frames: newest 6s x 0.72-0.93; cards 10s x 0.58-1.0; cards cluster centre-left under the title (cards 366.1s, 874.5s)"
+      },
+      "fills": {
+        "value": ["liquid iridescent gradient", "pixel-sorted glitch crop", "fire / lava texture", "wavy stripe or topographic line pattern", "halftone dots", "perspective checkerboard", "b/w manga or map line art", "8-bit pixel sprites", "flat solid"], "confidence": 0.65,
+        "evidence": "frames: gradient newest 6s; glitch + lava cards 10s; wavy cards 172.8s; topographic 874.5s; halftone 366.1s; checkerboard newest 361.5s; manga map older 12s; pixel sprites newest ~882-884s; solids on every card"
+      },
+      "palette": {
+        "value": ["#390ee8", "#f659a4", "#cd3253", "#c00dcc", "#d9fb07", "#08e413", "#98cdff", "#512f49", "#404143", "#ec4302"], "confidence": 0.5,
+        "evidence": "frames: median-cut dominant colours of cards cards 366.1s (#cd3253 #f5b9c8 #cd33d1), 464.5s (#390ee8 #c00dcc #404143), 874.5s (#f659a4 #d9fb07 #08e413), 1074.5s (#512f49 #98cdff); older 795.0s flat #ec4302. Saturated digital, one hue family per card plus a complementary accent"
+      },
+      "card_background": {
+        "value": "full-frame pixel mosaic in the card's hue family", "confidence": 0.6,
+        "evidence": "frames: green/lime (cards 172.8s), pink/red (366.1s), violet (463.7s), yellow (873.4s), pale blue (1074.2s). 2025 look: flat orange #ec4302 (older 795.0s)"
+      },
+      "source_of_texture": {
+        "value": "footage-derived where possible", "confidence": 0.35, "decided_by": "taste_model",
+        "evidence": "frames: cards 10s rectangles carry the orange of his jacket in the shot behind (pixel-sorted crop). the taste model builds these as generated graphics in code; it does not generate video"
+      },
+      "motion": {
+        "position": {
+          "value": "static: no drift, scale, rotation or tracking", "confidence": 0.7,
+          "evidence": "excerpts: rectangles keep their bounds for their whole life at newest 2.80-6.67s, cards 9.76-11.80s and older 9.69-10.36s and 12.79-15.97s, while handheld footage moves under them"
+        },
+        "entry": {
+          "value": "pop on at full size in one frame", "confidence": 0.7,
+          "evidence": "excerpts: newest 2.80s (region brightness steps in one frame, motion.json newest_date_stamp_on_off), cards 9.76s (both rectangles and the stamp together, on a cut), older 9.69s and 11.99s. No fades, wipes or scale-ups seen"
+        },
+        "exit": {
+          "value": "pop off; stacked layers leave one at a time a few frames apart, text last", "confidence": 0.55,
+          "evidence": "excerpts: cards red rectangle off at 11.68s, yellow at 11.76s, stamp text alone for 2 frames, cut at 11.85s; older lime rectangle off at 10.36s leaving the orange text, magenta block off ~1.6 s into the title card; newest single rectangle pops off at 6.67s"
+        },
+        "exit_stagger_frames": {
+          "value": 2, "unit": "frames", "range": [2, 3], "confidence": 0.4,
+          "evidence": "excerpts: cards 11.68 -> 11.76 -> 11.80s at 23.976 fps"
+        },
+        "entry_stagger_frames": {
+          "value": 3, "unit": "frames", "confidence": 0.35,
+          "evidence": "excerpts: older lime rectangle at 9.69s, orange 'BYJUSTINWU' inside it at 9.81s; sign-off at 15.98s, 'FILM' sticker rectangle at 16.23s (6 frames). cards brings everything in on one frame"
+        },
+        "texture": {
+          "value": "fills animate inside fixed bounds", "confidence": 0.7,
+          "evidence": "stat: motion.json diff medians 8.1 (cards glitch), 3.5 (lava), 27.4 (older line art) grey levels per frame inside static rectangles"
+        },
+        "texture_updates_per_s": {
+          "glitch_and_line_art": {
+            "value": 24, "unit": "updates/s", "confidence": 0.65,
+            "evidence": "stat: motion.json cards_glitch_rect 39/39 holds of 1 frame; cards_lava_rect 28/30; older_title_card_art 53/62: a new state every frame at 23.976"
+          },
+          "liquid_gradient": {
+            "value": 7.5, "unit": "updates/s", "range": [6, 10], "confidence": 0.55,
+            "evidence": "stat: motion.json newest_date_stamp_texture holds of 3-5 frames at 30 fps (counts 3:6, 4:8, 5:8): stepped like stop-motion, not a smooth flow"
+          }
+        },
+        "type_glitch": {
+          "value": "logo type breaks into pixel blocks for ~0.25 s before its rectangle drops away", "confidence": 0.4,
+          "evidence": "excerpts: older 10.1-10.35s 'BYJUSTINWU' and the lime rectangle pixelate, then the rectangle is gone at 10.36s; the text blinks off one frame before the 12.79s cut"
+        },
+        "card_wipe": {
+          "value": "stepped pixel mosaic", "confidence": 0.3,
+          "evidence": "frames: two different mosaic frames 0.17-0.29 s apart at cards 172.4-172.8s. 2026 cards come after the excerpts, so their motion is still unseen"
+        }
+      },
+      "when": {
+        "value": ["opening brand beat", "date stamps", "chapter cards", "occasional accent over b-roll", "end card"], "confidence": 0.65,
+        "evidence": "frames: older 12s (brand), newest 6s (stamp), cards cards, older 403.9s (orange pixel block over a streetcar shot with subtitle), cards 1136-1144s (end card)"
+      }
+    },
+    "structure": {
+      "cold_open": {
+        "starts": {
+          "value": "mid-action on frame 0, full level, no logo first", "confidence": 0.7,
+          "evidence": "stat: head_ramp_s <= 0.2 s in all long-form; frames: newest 0s talking to camera, older 0s opening blinds, cards 0s packing (with @JUSTINWU over it)"
+        },
+        "brand_beat_by_s": {
+          "value": 20, "unit": "s", "range": [0, 28], "confidence": 0.6,
+          "evidence": "frames: @JUSTINWU 0-3.3s and stamp at 10s (cards); stamp at ~4-6s (newest); @BYJUSTINWU 12.8s, title card 16.0-18.0s, sign-off 16-28s (older)"
+        },
+        "hook": {
+          "value": "a spoken line that sets the scene, then written narration over music says what the period was like", "confidence": 0.5, "decided_by": "jev",
+          "evidence": "excerpts + captions: cards speaks a scene-setting line (1.1-4.8s), music enters, then a written line carries the period (15.7s); newest opens spoken (3.5s) and stays spoken. Spoken line per project: jev question cold_open_line; written lines: the taste model"
+        },
+        "brand_build": {
+          "value": ["flat rectangle pops on", "logo type pops on inside it (+3 frames)", "both pixel-glitch ~0.25 s", "rectangle drops, type holds alone ~1.6 s", "textured rectangle pops in behind the type", "type blinks off one frame before the cut", "cut to the title card", "sign-off lands on the next cut"], "confidence": 0.5,
+          "evidence": "excerpts: older 9.69 (lime), 9.81 (orange 'BYJUSTINWU'), 10.1-10.35 (glitch), 10.36 (lime off), 11.99 (manga line art in, re-cropped every frame), 12.75 (type off), 12.79 (cut to the serif title card), 15.98s (sign-off). The 2026 opens compress this to the wordmark 0-3.25s (cards) or a date stamp (newest)"
+        },
+        "wordmark_hold_s": {
+          "value": 3.25, "unit": "s", "confidence": 0.5,
+          "evidence": "excerpts: cards @JUSTINWU from frame 0 to 3.25s, gone just before the 3.34s cut"
+        }
+      },
+      "chapters": {
+        "count": {
+          "value": [4, 7], "unit": "chapters per 15-19 min", "confidence": 0.75,
+          "evidence": "stat: 6 (newest), 7 (cards), 4 (older)"
+        },
+        "length_median_s": {
+          "value": 172, "unit": "s", "range": [75, 350], "confidence": 0.6,
+          "evidence": "stat: chapter_cards.chapter_length_s median 172 s, p10 75, p90 350, n=17"
+        },
+        "naming": {
+          "value": "lowercase, a day/place/event, casual asides allowed", "confidence": 0.7, "decided_by": "taste_model",
+          "evidence": "metadata: lowercase day, place, or event names, with casual asides; the words themselves are not stored"
+        },
+        "transition_2026": {
+          "value": ["pixel-mosaic wipe 0.3-1.1 s", "title card 5.71 s over mosaic", "card audio drops to silence", "hard cut into the chapter"], "confidence": 0.65,
+          "evidence": "stat: chapter_cards.cards wipe shots 8-26 frames (172.4, 365.4, 463.7, 873.4, 1074.2s) then 137-frame cards; music.card_silence"
+        },
+        "transition_light": {
+          "value": "date stamp over the first shot, no card", "confidence": 0.55,
+          "evidence": "frames: newest chapters at 0s and 360s open on a stamp (6s, 361.5s); others cut straight in"
+        },
+        "transition_choice": {
+          "value": "card for a new place or phase, stamp for a new day in the same place", "confidence": 0.3, "decided_by": "jev",
+          "evidence": "interpretation: cards (term with trips) uses cards, newest (one summer, one city) mostly stamps. Per break: jev question chapter_transition"
+        }
+      },
+      "aspect_inserts": {
+        "value": "4:3 pillarboxed passages for reflective or archival material", "confidence": 0.5,
+        "evidence": "frames: newest 850-910s (outro grabs) closing monologue in 4:3 with black bars inside a 16:9 frame; older is a 4:3 file throughout (960x720)"
+      },
+      "outro": {
+        "shape": {
+          "value": "reflective monologue or recap, then a brand end beat", "confidence": 0.6,
+          "evidence": "frames: newest reflective chapter (824s) + manifesto title + sign-off; cards end card + wordmark marquee (1134-1144s); older party montage fading to orange + pixel logo (1053-1113s)"
+        },
+        "end_card_s": {
+          "value": 8, "unit": "s", "range": [6, 10], "confidence": 0.45,
+          "evidence": "stat: cards chapter 1134.7s: 3.0 s white card + 6.7 s marquee; older orange-card tail ~6-8 s (frames 1105-1111s)"
+        },
+        "bookend": {
+          "value": true, "confidence": 0.55,
+          "evidence": "frames: cards opens and closes on @JUSTINWU; older brand at 12s and 1105s; no subscribe prompt seen in any outro"
+        }
+      }
+    }
+  },
+  "jev_questions": [
+    {
+      "key": "section_role", "primitive": "choice", "add_none": false,
+      "instructions": "Given this clip's transcript excerpt, speech share, loudness and shot length, which role does it play in a byjustinwu video journal?",
+      "options": {
+        "talking": "he speaks to camera or narrates; hold long, cut on pauses",
+        "broll": "scene or action without him addressing the camera; ~3.5 s shots",
+        "burst": "short fragments of one outing that belong in a fast run under music",
+        "establishing": "a wide, exterior or room shot that could open a day or chapter"
+      },
+      "feeds": "cut_rhythm.broll.shot_median_s"
+    },
+    {
+      "key": "chapter_break", "primitive": "noul",
+      "instructions": "Does a new day, place, or phase of the term start at this clip, compared with the previous clip?",
+      "true": "a new chapter or date stamp belongs here",
+      "false": "same day and place as before",
+      "feeds": "typography.date_stamp.when"
+    },
+    {
+      "key": "chapter_transition", "primitive": "choice", "add_none": false,
+      "instructions": "At this chapter break, which transition fits: a full card, or a date stamp over the first shot?",
+      "options": {
+        "card": "a new city, job, event or phase; the chapter deserves a title",
+        "stamp": "a new day in the same place or thread"
+      },
+      "feeds": "structure.chapters.transition_choice"
+    },
+    {
+      "key": "music_under_talk", "primitive": "noul",
+      "instructions": "Should the music bed keep playing under this talking passage?",
+      "true": "light, walking-and-talking, or banter; keep a ducked bed",
+      "false": "reflective, confessional or detailed; let it play dry",
+      "feeds": "music.bed_under_talking.dry_share"
+    },
+    {
+      "key": "cold_open_line", "primitive": "choice",
+      "instructions": "Which spoken line best opens the video by saying what this period was like? Options are the candidate lines, keyed by clip and time.",
+      "options_from": "transcript_lines",
+      "feeds": "structure.cold_open.hook"
+    }
+  ],
+  "unknowns": [
+    {"topic": "exact fonts", "why": "frames at 360-720 px only show a neutral grotesque and a Times-like serif", "needs": "his Final Cut project or Motion titles (font names, sizes, tracking, scale)"},
+    {"topic": "2026 chapter-card and end-card motion", "why": "the intro excerpts end at 90 s and the 2026 cards start at 172 s; the 2025 card and the intro layers are measured", "needs": "excerpts around cards 172, 365, 463, 872, 1074 and 1134 s, or the project"},
+    {"topic": "music tempo and beat grid", "why": "400 ms momentary loudness smooths out beats; autocorrelation only hits its search limit", "needs": "the music stems or a full-rate audio pass with onset detection"},
+    {"topic": "music selection", "why": "the data has levels, not genres or tracks", "needs": "track list from his project or descriptions"},
+    {"topic": "duck curve shape", "why": "handoffs are measured at 0.5 s resolution through a side-channel proxy; camera audio is also stereo", "needs": "separate dialogue and music tracks from the project"},
+    {"topic": "J vs L cuts", "why": "captions show voice crossing 31% of talking cuts but not which side leads", "needs": "the timeline's audio/video in and out points"},
+    {"topic": "colour grade", "why": "not in scope of the bundle; footage varies by camera", "needs": "LUTs or grade settings"},
+    {"topic": "subtitle timing and animation", "why": "YouTube auto-captions are not his burned-in lines", "needs": "his caption track or project"},
+    {"topic": "4:3 inserts source", "why": "cannot tell a camcorder from a crop", "needs": "clip metadata"}
+  ]
+}

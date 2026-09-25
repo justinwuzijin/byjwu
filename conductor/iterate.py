@@ -59,6 +59,7 @@ class IterateResult:
     out_json: Path | None = None
     source: Path | None = None
     decision_usage: dict = field(default_factory=dict)
+    ledger: Ledger | None = None
 
 
 def iterate(
@@ -191,6 +192,7 @@ def iterate(
         starter=starter,
         source=Path(fcpxml) if fcpxml else starter,
         decision_usage=usage,
+        ledger=total,
     )
     payload = {
         "protocol": PROTOCOL,

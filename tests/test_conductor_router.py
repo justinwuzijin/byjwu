@@ -503,6 +503,43 @@ def test_generic_asks_are_checked(env):
         router.decide([Ask(id="x", type="cut_gate", subject={}, options={"clean": ""}, rule=lambda a: ("dirty", 1))])
 
 
+def test_room_run_hands_the_assembler_the_same_router(env, tmp_path):
+    import shutil
+
+    from conductor.room import register_assembler, room_run
+
+    seen: list[Router] = []
+
+    def assemble(*, media, music, out_dir, router):
+        seen.append(router)
+        decisions, _receipts = router.decide(
+            [
+                Ask(id="track", type="music", subject={"music": [path.name for path in music]},
+                    options={path.name: "use this track" for path in music}),
+                Ask(id="open_cut", type="cut_gate", subject={"clips_word": False},
+                    options={"clean": "lands clean", "clipped": "clips a word"},
+                    rule=lambda ask: ("clean", 0.95)),
+            ]
+        )
+        assert [item.engine for item in decisions] == ["opus", "jev"]
+        timeline = Path(out_dir) / "assembled.fcpxml"
+        shutil.copy(FIXTURE, timeline)
+        return timeline
+
+    folder = tmp_path / "selects"
+    shutil.copytree("fixtures/selects", folder)
+    (folder / "track.mp3").write_bytes(b"ID3")
+    register_assembler(assemble)
+    try:
+        result = room_run(folder, out_root=tmp_path / "out", brief=BRIEF)
+    finally:
+        register_assembler(None)
+    assert len(seen) == 1 and isinstance(seen[0], Router)
+    usage = result.payload["decision_usage"]["engines"]
+    assert usage["opus"]["items"] >= 2 and usage["jev"]["items"] >= 2
+    assert "Decisions: jev" in result.markdown
+
+
 # --------------------------------------------------------------------------
 # schema subset and redaction
 # --------------------------------------------------------------------------

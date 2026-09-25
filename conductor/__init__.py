@@ -7,7 +7,8 @@ auto-applies only mechanical cuts. An explicit apply writes another FCPXML
 with accepted trims. The file you hand in, and the source clips, are never
 modified.
 
-``analyze``, ``ingest``, and ``iterate`` are the library boundary. The CLI is
+``analyze``, ``ingest``, and ``iterate`` are the library boundary. ``room_run``
+is the bot entry point: it detects a drop and calls ``iterate``. The CLI is
 ``python -m conductor``.
 """
 
@@ -20,6 +21,7 @@ from .errors import ConductorError
 # function; the module object remains ``sys.modules["conductor.ingest"]``.
 from .ingest import ingest
 from .iterate import iterate
+from .room import room_run
 from .router import Ask, Decision, Router, classify, register_decision
 from .run import analyze
 
@@ -33,5 +35,6 @@ __all__ = [
     "ingest",
     "iterate",
     "register_decision",
+    "room_run",
     "__version__",
 ]

@@ -1,13 +1,19 @@
 # AGENTS.md
 
-The product in this repo is **jevid**: an editorial co-pilot for Final Cut.
-Human docs are `README.md` and `docs/room-protocol.md`. The package you edit
-for that product is `conductor/`.
+The product in this repo is **byjwu-editor** (formerly jevid / Cut
+Conductor). It edits Justin's (@byjustinwu) YouTube videos: raw footage and
+music in, a finished FCPXML out that he opens in Final Cut Pro himself. Jev
+makes bounded, logical decisions. Claude Opus 5.5 makes open-ended taste
+decisions and builds graphics through code. A Grok Bot room coordinates, and
+no Grok model makes editorial decisions. Human docs are `README.md` and
+`docs/room-protocol.md`. The package you edit for that product is
+`conductor/`. Do not rename it, `python -m conductor`, or the
+`~/Desktop/jevid-in` / `jevid-out` folders. Other work depends on those names.
 
 What follows is the design rule for **cutmcp**, the older raw-footage MCP
 cutter that still lives here. `conductor/` does not follow that tier rule.
-Read the Cut Conductor section at the bottom of this file before changing
-Final Cut behavior.
+Read the byjwu-editor engine section at the bottom of this file before
+changing Final Cut behavior.
 
 Works as-is for Cursor and Codex; `cp AGENTS.md CLAUDE.md` for Claude Code.
 
@@ -196,9 +202,10 @@ text plus question text would make brief edits nearly free.
 
 ---
 
-## Cut Conductor (`conductor/`)
+## byjwu-editor engine (`conductor/`)
 
-A second package in this repo. It is an FCPXML co-pilot: named passes,
+A second package in this repo, historically called Cut Conductor (Cut
+Conductor is now the room bot that runs it). It is an FCPXML co-pilot: named passes,
 Jev decisions, proposal markers, and an explicit apply that writes a new
 file. Human docs are `README.md` and `docs/room-protocol.md`.
 
@@ -210,7 +217,7 @@ placeholder when the file cannot be probed. `python -m conductor ui` is a
 localhost page that posts a folder path to that command. It does not upload
 media.
 
-Cut Conductor does **not** follow the tier rule above, and it is not a sixth MCP tool.
+The engine does **not** follow the tier rule above, and it is not a sixth MCP tool.
 Do not fold its pipeline into `cutmcp/decide.py` or `cutmcp/assemble.py`.
 Do not route its Jev calls through `cutmcp/jev.py`'s `ask` — the Decisions
 client, the mock, and the action set live in `conductor/jev.py`. The one

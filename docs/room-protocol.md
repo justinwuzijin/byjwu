@@ -1,24 +1,28 @@
 # Room protocol
 
-How a Grok bot room drives Cut Conductor. v1 is the library and the CLI. No bot is implemented here, and nothing in this repo talks to Final Cut or to a bot API. This file is the contract those bots call.
+How the byjwu-editor Grok Bot room drives the editing engine (the `conductor` package, `python -m conductor`). The repo holds the engine and the CLI. No bot is implemented here, and nothing in this repo talks to Final Cut or to a bot API. This file is the contract those bots call.
+
+The bots coordinate. They do not make editorial decisions. Bounded, logical calls come from Jev (`conductor/jev.py`). Open-ended creative and taste calls come from Claude Opus 5.5 through the Jev/Opus decision router, which is in progress. No Grok model makes an editing decision.
+
+Justin, the owner, does not use the command line. He drops footage, music, or an FCPXML in the room or in `~/Desktop/jevid-in`, and opens the FCPXML that lands in `~/Desktop/jevid-out` in Final Cut Pro himself. The CLI below is what the bots run for him. The drop folders keep their `jevid-*` names for now.
 
 The shared object is one timeline plus one brief. The timeline is a Final Cut export, or a starter sequence built from a selects folder. The shared artifact is the JSON report (`protocol` `cut-conductor.room`, `protocol_version` 1).
 
 ```text
 editor export, or a selects folder via ingest
-    → Transcript supplies SRT/VTT (optional)
-    → Conductor runs named passes (shadow)
-    → Pacing / Transcript may re-run their own pass
+    → Type & Subs supplies SRT/VTT (optional)
+    → Cut Conductor runs named passes (shadow)
+    → Pacing / Type & Subs may re-run their own pass
     → human reads the ranked list
     → human accepts ids, or a mechanical auto gate
-    → Conductor apply writes a new FCPXML
+    → Cut Conductor apply writes a new FCPXML
     → accept/reject events land in taste.json
     → the next decide call sees that taste
 ```
 
 ## Selects folder
 
-A Conductor bot can start from a folder of clips, not only from an export.
+The Cut Conductor bot can start from a folder of clips, not only from an export.
 
 ```bash
 python -m conductor ingest --media selects/ \
@@ -47,7 +51,18 @@ Order is filename, case-insensitive, and only the folder itself is scanned. Dura
 
 ## Roles
 
-### Conductor
+| bot | owns |
+|---|---|
+| jevid | the build: orchestrates code work and merges it into this repo |
+| Cut Conductor | runs edits: the brief, which passes run, taste, shadow vs apply |
+| Pacing | pace preferences and the `pacing` pass |
+| Colour | colour |
+| Style | the byjustinwu style profile |
+| Type & Subs | transcripts, SF Pro subtitles, text treatments, and the `dialogue` pass |
+
+Colour and Style have no pass in the engine yet. The sections below cover the roles the engine already serves.
+
+### Cut Conductor
 
 Owns the brief, which passes run, the taste file, and whether the run is shadow or apply.
 
@@ -58,14 +73,14 @@ Owns the brief, which passes run, the taste file, and whether the run is shadow 
 - Applies a review call only when a person named that candidate id with `--accept`.
 - Writes `*.conductor.json`. That file is the room state. Do not invent a second schema.
 
-### Transcript
+### Type & Subs
 
-Owns the SRT or WebVTT. Times are sequence time, the same clock as the spine, not source-clip time.
+Owns the transcript (SRT or WebVTT), subtitles, and text treatments. Times are sequence time, the same clock as the spine, not source-clip time.
 
 - Drives `dialogue` (`--pass dialogue`): a whole filler cue, or a pause of at least 0.80s sitting next to filler.
 - Filler is the same whole-cue list cutmcp uses (`um`, `you know`, `i mean`, and their spelling variants). `like`, `yeah`, and `okay` are not filler.
-- Dialogue is creative. A confident `tighten` still lands in review. Transcript does not auto-apply it.
-- When a person keeps a breath or a filler, Transcript appends a `reject` (or the Conductor does, on the person's behalf). The next dialogue pass sees that event in taste state.
+- Dialogue is creative. A confident `tighten` still lands in review. Type & Subs does not auto-apply it.
+- When a person keeps a breath or a filler, Type & Subs appends a `reject` (or Cut Conductor does, on the person's behalf). The next dialogue pass sees that event in taste state.
 
 ### Pacing
 
@@ -91,8 +106,8 @@ A pass is a named slice. Omit `--pass` and the room runs `mechanical`, then `dia
 
 | pass | typical owner | creative | v1 |
 |---|---|---|---|
-| `mechanical` | Conductor | no | silence gaps, clips under half a second |
-| `dialogue` | Transcript | yes | transcript filler and the pauses around it |
+| `mechanical` | Cut Conductor | no | silence gaps, clips under half a second |
+| `dialogue` | Type & Subs | yes | transcript filler and the pauses around it |
 | `pacing` | Pacing | yes | long holds and low-speech stretches |
 | `story` | later | yes | reserved |
 | `audio` | later | yes | reserved |
@@ -219,8 +234,8 @@ Who appends what:
 
 | event | who writes it | when |
 |---|---|---|
-| `accept` | Conductor, during `apply` | after the new FCPXML is built, one event per cut |
-| `accept` | Transcript, Pacing, or Conductor via `feedback` | a person agreed and wants it logged before the next pass |
+| `accept` | Cut Conductor, during `apply` | after the new FCPXML is built, one event per cut |
+| `accept` | Type & Subs, Pacing, or Cut Conductor via `feedback` | a person agreed and wants it logged before the next pass |
 | `reject` | the bot that owns the pass, via `feedback` | a person declined the proposal |
 
 The next analyze/apply that points `--taste` at the updated file puts those events in front of Jev.
@@ -251,6 +266,6 @@ The next analyze/apply that points `--taste` at the updated file puts those even
 ## What this room does not do
 
 - No Final Cut plugin, Apple Events, or watch-folder rewrite of the open library.
-- No sixth tool on the cutmcp MCP server. Conductor is a sibling package.
+- No sixth tool on the cutmcp MCP server. `conductor` is a sibling package.
 - No story, audio, or b-roll judgments until a generator is registered.
 - No training step on the taste log.

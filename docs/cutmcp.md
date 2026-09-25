@@ -1,6 +1,6 @@
 # cutmcp
 
-Secondary tool in the jevid repo. The product is [jevid](../README.md). This page is the raw-footage MCP cutter: interview media in, an EDL out.
+Secondary tool in the byjwu-editor repo. The product is [byjwu-editor](../README.md). This page is the raw-footage MCP cutter: interview media in, an EDL out.
 
 An agent calls five intent-level tools. Underneath, thousands of small typed
 judgments are made by [Jev](https://typesafe.ai) — TypeSafe's System One

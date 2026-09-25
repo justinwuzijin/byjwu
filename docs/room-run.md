@@ -25,7 +25,9 @@ The drop is only read. Each run creates `~/Desktop/byjwu-out/<name>-<YYYYMMDD-HH
 
 `room.md` is the chat text: input kind, flow, duration before and after, cuts with timecodes, rows flagged for the editor, stop reason, signals (`transcript`, `media`, `music`, `audio` when ffmpeg read the clips, `words` when a local transcript ran, or `none`), an `Audio and words:` line with the media-signal summary, and the absolute path to open in Final Cut. `room.json` is the same object (`protocol` `cut-conductor.room-run`). It also carries `media_signals` (the last round's `signals` summary and skip reasons) and `words` (the words file for the FCPXML to open, or null). `room-run` runs media signals with the `auto` defaults; see [Media signals](room-protocol.md#media-signals). Paste `room.md`. Do not re-sort the flagged list; it follows the round report. Cut timecodes are positions on the timeline before that cut. Flagged times are positions on the file to open.
 
-A shadow FCPXML is always written. The path in the summary is the timeline to import (the last round's cut when that round cut something, otherwise the shadow, which already includes earlier cuts and the markers).
+A shadow FCPXML is always written. The path in the summary is the timeline to import (the last round's cut when that round cut something, otherwise the shadow, which already includes earlier cuts and the markers). `Cuts applied` and `Rules fired` in `room.md` are totals across every round.
+
+Set `BYJWU_OUT_DISPLAY_ROOT` (for example `~/Desktop/byjwu-out`) when conductor runs somewhere else and the editor opens the file on their Mac. The `Open in Final Cut` line, and the shadow line, then use that root plus the run folder. Leave it unset and those lines stay the path on the machine that ran the command. `room.json` keeps the machine path either way. Each applied project is renamed `<name> v<N> (byjwu)` and each marked project `<name> v<N> marked (byjwu)`, with a new project uid, so Final Cut does not treat the output as the project that was dropped.
 
 Dry-run is the default. No API key is read. `--live` calls Jev and needs `OPENROUTER_API_KEY` or `TYPESAFE_API_KEY` in the environment. Do not put those keys in a plist, a shell script you commit, or the chat.
 
@@ -42,7 +44,9 @@ A drop that carries music goes through an assembler before the loop, when one is
 
 room-run looks for `conductor.assemble.assemble`, or a callable passed to `conductor.room.register_assembler`. It passes only the keywords the callable's signature names, from: `media`, `fcpxml`, `music`, `style`, `brief`, `out_dir` (`<run>/assemble/`), `live`, `transcript_path`, `taste_path`, `durations_path`, `router`. The callable returns the FCPXML it wrote, as a path, a mapping, or an object with `fcpxml`, `out_fcpxml`, `timeline`, or `path`. The drop is still only read, and the summary still names the file to open.
 
-`router` is the `conductor.router.Router` the whole run shares. An assembler makes its calls with `router.decide([Ask(...)])`: linear ones (take comparison, cut gates, subtitle breaks) go to Jev, creative ones (story, key moments, music, type, montage) go to Claude Opus 5.5, with the same fallbacks, cache, and counter as the passes. `room.json` has `decision_usage` for the assembler and the loop together, and `room.md` has a `Decisions:` line.
+`--graphics` runs the type and graphics stage on the timeline the summary names: SF Pro subtitles from the words file, distorted section titles, and the rectangle layer. It also runs when the style profile sets `graphics.enabled`. Rendered movies land in `<name>.assets/` beside that FCPXML, with relative paths. A missing ffmpeg or font is a warning in `room.md`, not a failed run. `--beats` is an optional JSON list of music-beat seconds. The stage is `conductor.graphics.apply_graphics`, which an assembler calls with the same `router`.
+
+`router` is the `conductor.router.Router` the whole run shares. An assembler makes its calls with `router.decide([Ask(...)])`: linear ones (take comparison, cut gates, subtitle breaks) go to Jev, creative ones (story, key moments, music, type, montage) go to Grok 4.7, with the same fallbacks, cache, and counter as the passes. `room.json` has `decision_usage` for the assembler and the loop together, and `room.md` has a `Decisions:` line.
 
 ## Failures the bot can paste
 
@@ -76,7 +80,7 @@ Stop with Ctrl-C. A launchd job exits when the process is stopped and, with `Kee
 
 ## launchd
 
-`docs/com.byjwu.room-run.plist` is an example. Replace every `CHANGE_ME` path. `/Users/CHANGE_ME/byjwu` stands for your checkout of this repo. Install it for the macOS user who owns `~/Desktop`, so the paths resolve as that person:
+`docs/com.byjwu.room-run.plist` is an example. Replace every `CHANGE_ME` path. `~/byjwu` stands for your checkout of this repo. Install it for the macOS user who owns `~/Desktop`, so the paths resolve as that person:
 
 ```bash
 cp docs/com.byjwu.room-run.plist ~/Library/LaunchAgents/com.byjwu.room-run.plist

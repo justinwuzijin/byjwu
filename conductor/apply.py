@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import copy
 import xml.etree.ElementTree as ET
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from fractions import Fraction
 
 from .errors import ConductorError
@@ -55,6 +55,7 @@ class Deletion:
 class ApplyResult:
     cuts: list[dict]
     warnings: list[str]
+    deletions: list[Deletion] = field(default_factory=list)
 
 
 def apply_edits(document: Document, deletions: list[Deletion]) -> ApplyResult:
@@ -83,7 +84,11 @@ def apply_edits(document: Document, deletions: list[Deletion]) -> ApplyResult:
         if kept:
             warnings.extend(_ripple(sequence, kept))
             warnings.extend(_insert_dissolves(sequence, kept))
-    return ApplyResult(cuts=[_cut_row(item) for item in adjusted], warnings=warnings)
+    return ApplyResult(
+        cuts=[_cut_row(item) for item in adjusted],
+        warnings=warnings,
+        deletions=adjusted,
+    )
 
 
 def _shield_connected(sequence, deletions: list[Deletion]) -> tuple[list[Deletion], list[str]]:

@@ -85,7 +85,7 @@ DEFAULT_PREFS = {
 _PACES = frozenset({"tight", "measured", "loose"})
 _BIASES = frozenset({"keep", "neutral", "cut"})
 _EVENTS = frozenset({"accept", "reject", "modify", "extra", "observe"})
-_KNOWN_KEYS = frozenset({"version", "prefs", "gates", "log", "rules", "pending"})
+_KNOWN_KEYS = frozenset({"version", "prefs", "gates", "log", "rules", "pending", "rule_thresholds"})
 #: Accepts the gate made unattended. Logged for the record, never a prior.
 MACHINE_SOURCES = frozenset({"auto"})
 
@@ -118,6 +118,8 @@ class Taste:
     supplied_prefs: dict = field(default_factory=dict)
     supplied_gates: dict = field(default_factory=dict)
     extra: dict = field(default_factory=dict)
+    rule_thresholds: dict = field(default_factory=dict)
+    rule_overrides: dict = field(default_factory=dict)
     project_prefs: dict | None = None
     project_gates: Gates | None = None
 
@@ -237,6 +239,8 @@ class Taste:
             payload["rules"] = self.rules
         if self.pending:
             payload["pending"] = self.pending
+        if self.rule_thresholds:
+            payload["rule_thresholds"] = self.rule_thresholds
         return payload
 
     def _events(self) -> list[dict]:
@@ -413,6 +417,9 @@ def _read_taste(path: str | Path) -> Taste:
             raise ConductorError("an observe event needs a param")
     rules = [normalize_rule(item) for item in _object_list(data.get("rules") or [], "taste rules")]
     pending = _object_list(data.get("pending") or [], "taste pending")
+    stored_thresholds = data.get("rule_thresholds") or {}
+    if not isinstance(stored_thresholds, dict):
+        raise ConductorError("rule_thresholds must be an object")
     return Taste(
         prefs,
         gates,
@@ -423,6 +430,7 @@ def _read_taste(path: str | Path) -> Taste:
         supplied_prefs=dict(supplied),
         supplied_gates=dict(supplied_gates),
         extra={key: value for key, value in data.items() if key not in _KNOWN_KEYS},
+        rule_thresholds={key: value for key, value in stored_thresholds.items()},
     )
 
 

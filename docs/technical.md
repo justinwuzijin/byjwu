@@ -2,17 +2,17 @@
 
 Everything about how byjwu works and how to run it. The short version is in the [README](../README.md).
 
-byjwu helps Justin ([@byjustinwu](https://www.youtube.com/@byjustinwu) on YouTube) edit his YouTube videos using TypeSafe Jev and Claude Opus 5.5. A full Grok Bot orchestration, a room of specialist bots, works out everything stylistic and taste-related about his editing: typography, pacing, style, colours, subtitles, digital assets (the abstract rectangle background layer), and music fades and ducking.
+byjwu helps the editor ([@byjustinwu](https://www.youtube.com/@byjustinwu) on YouTube) edit his YouTube videos using TypeSafe Jev and Grok 4.7. A full Grok Bot orchestration, a room of specialist bots, works out everything stylistic and taste-related about his editing: typography, pacing, style, colours, subtitles, digital assets (the abstract rectangle background layer), and music fades and ducking.
 
 The goal is raw footage and music in, and a finished FCPXML out that imports into Final Cut Pro and feels like a byjustinwu video. The style is learned from his published YouTube videos and gets better each time he re-exports a corrected cut.
 
 Every Jev call has a confidence and a receipt. Nothing here is remote control of the Final Cut window. The handoff is FCPXML.
 
-The engine module is still called `conductor` and still runs as `python -m conductor`, and the `cutmcp` / `cut-conductor` console scripts are unchanged. Those names stay so work already in flight keeps merging. Cut Conductor is now the name of the room bot that runs edits. Links to the GitHub repo still use `github.com/justinwuzijin/jevid` until Justin renames it.
+The engine module is still called `conductor` and still runs as `python -m conductor`, and the `cutmcp` / `cut-conductor` console scripts are unchanged. Those names stay so work already in flight keeps merging. Cut Conductor is now the name of the room bot that runs edits.
 
-## How Justin uses it
+## How the editor uses it
 
-Justin does not use the command line. The room bots do.
+The editor does not use the command line. The room bots do.
 
 1. He drops a selects folder, a Final Cut **File → Export XML…** file, a `.fcpxmld` bundle, or a zip of either, in the Grok Bot room or in `~/Desktop/byjwu-in`.
 2. The Cut Conductor bot runs `python -m conductor room-run` on that drop. That is the one command the bots use.
@@ -24,16 +24,55 @@ FCPXML goes in and FCPXML comes out. `~/Desktop/byjwu-in` and `~/Desktop/byjwu-o
 
 A folder of clips becomes a starter sequence first (filename order, absolute `file://` paths), then the same loop. An export is iterated as it stands. Source clips and the file he dropped are only read.
 
+## What changes in the FCPXML
+
+The short version is in the [README](../README.md). This is the same behaviour, with the file names the code writes.
+
+The run folder is `~/Desktop/byjwu-out/<name>-<YYYYMMDD-HHMMSS>/`. A clip folder also writes `starter.fcpxml` there. Each round is `vN/`:
+
+- `timeline.fcpxml` is a byte copy of the timeline that round reads.
+- `timeline.conductor.fcpxml` is the marked copy. `apply_markers` adds `<marker>` elements and refuses the write if a clip's offset, start, duration, ref, or roles change, or if an existing marker's start, value, note, or completed flag changes. The file is still re-serialized, so whitespace and the XML declaration can differ from the export.
+- `timeline.conductor.applied.fcpxml` is written only when at least one deletion is applied. It is a fresh parse of that round's timeline, then the deletions, with no proposal markers added.
+- `timeline.conductor.md`, `timeline.conductor.json`, and `timeline.taste.json` are the round report. `room.md` and `room.json` are the chat summary. `iterate.json` is the stop record. `timeline.words.json` appears when word timings were read.
+
+Marker `start` is the clip's source time (the same clock as the clip's `start`), at the candidate's timeline position, clamped inside the clip and nudged one frame if that time is already used. `duration` is one sequence frame. The value is `CC {tighten|remove|review|escalate} · {label} @ {timecode}`. The note begins `Cut Conductor shadow proposal. No edit was applied.` Review and escalate set `completed="0"` (a to-do). An `auto` disposition omits `completed` (a standard marker). `keep` writes nothing. FCPXML has no marker colour attribute; `color=` is text inside the note.
+
+`iterate` auto-applies only the mechanical pass, at `--min-confidence` 0.80, and only rows whose disposition is `auto` (confidence at least 0.80, risk at most 0.35, and not a rules fallback). A `remove` lifts the candidate range. A `tighten` on a whole clip lifts everything after `hold_seconds` (default 4). The ripple rewrites spine `offset` values after the cut, and `start` / `duration` (and `audioStart` / `audioDuration` when those attributes exist and the clip has no time map) on a split piece. Sequence `duration` shrinks by the removed time. Connected items and secondary storylines keep their offsets. Coverage under a laned item is punched out of a wholesale removal. A connected item that crosses a cut is dropped and named in the warnings. A non-clip spine item (a transition) aborts the ripple. Audio volume keyframes are not authored. Colour does not grade pixels.
+
+Graphics (`conductor/graphics`) stay off unless `--graphics` is set or the style profile sets `graphics.enabled` (the shipped `byjustinwu` profile leaves it false). The stage then writes onto the file the summary names, on a free lane, and does not change existing clip timing. Subtitles and `none` / `scale_warp` titles are Basic Title elements. Other title treatments are alpha movies in `<stem>.assets/`. Rectangles are Shapes generators with transform keyframes, Gaussian blur, and Hue/Saturation. A second pass leaves a timeline that already has a `byjwu ` asset.
+
+A logic-first decision mode is not on this branch. Measured rules such as uncovered black and dead air cutting by default, with models only able to veto, are still in progress.
+
 ## Who decides what
 
 | Piece | Decides | Does not |
 |---|---|---|
 | **Jev** (TypeSafe) | Every linear, logical call: is this gap removable, is this a flash frame, keep or cut a take under rules, does a cut meet the gate. Typed decisions only: keep, tighten, remove, mark for review, or escalate, each with a confidence and a risk. It picks from options the code defines (`conductor/jev.py`). | Write text, or make open-ended taste calls. |
-| **Claude Opus 5.5** (Anthropic) | Every open-ended creative and taste call: story shape, which moments carry the video, music feel, type and visual treatment, montage, and graphics built through code (text treatments, the rectangle background layer). Answers are JSON checked against a schema. Nothing it says is cut without a gate or a person (`conductor/opus.py`). | Generate video. Opus does not generate video natively. |
-| **Grok Bot room** | Coordination: routes work, runs the engine, posts paths and reports, and asks Justin when a call needs him. | Editorial work. No Grok model makes an editing decision. |
-| **Final Cut Pro** | The timeline is the truth. Justin imports the FCPXML byjwu writes, and exports XML when he already has a cut. | — |
+| **Grok 4.7** | Every open-ended creative and taste call: story shape, which moments carry the video, music feel, type and visual treatment, montage, and graphics. Default model `grok-4.7-medium` (`CONDUCTOR_TASTE_MODEL`). Answers are JSON checked against a schema. Nothing it says is cut without a gate or a person (`conductor/opus.py`). Claude Opus stays selectable by setting that env var to a Claude id. | Generate video. |
+| **Grok Bot room** | Coordination: routes work, runs the engine, posts paths and reports, and asks the editor when a call needs him. | The taste-model calls themselves. Those go through the decision router. |
+| **Final Cut Pro** | The timeline is the truth. the editor imports the FCPXML byjwu writes, and exports XML when he already has a cut. | — |
 
 The note on a marker is assembled afterwards from the action, the confidence, and the reason. No model writes it.
+
+### How decisions are made
+
+Measured facts are decided by rules in `conductor/rules.py`. A model does not have to score them above 0.80 before they cut. `CONDUCTOR_DECISION_MODE` defaults to `logic-first`. `model-gated` restores the old gate.
+
+In `logic-first`, a rule that clears its threshold is the cut. Confidence starts at 0.80 once the measurement is past the line and rises toward 0.99 as the margin grows. The model sees the proposed cut and the evidence, and may only veto with a named reason. A veto is logged and becomes a review marker. Fuzzy taste calls (story, music, type, montage, colour) still go to Jev or Opus exactly as before, and the creative passes still do not auto-apply.
+
+The rules and their placeholder defaults:
+
+| rule | what it measures | default |
+|---|---|---|
+| `bare_uncovered_gap` | bare primary gap with no connected picture | `bare_gap_seconds` 1.25 |
+| `dead_air` | audio silence, or a word-timing pause | `max_pause_seconds` 0.5, plus Diffusion Studio's `silence_rms_threshold` 0.02, `silence_padding_seconds` 0.5, `silence_min_gap_seconds` 0.5 |
+| `flash_frame` | spine clip shorter than K frames | `flash_frames` 5 |
+| `exact_duplicate` | a later take whose source in and out match an earlier one | identical range |
+| `untrimmed_hold` | a hold with no dialogue, longer than the style's max shot | `max_shot_seconds` 45 until a style profile sets it |
+
+Thresholds resolve in order: those defaults, then `styles/<name>/profile` when the file is present, then learned `rule_thresholds` on the taste file, then per-run overrides. A re-export or an accepted/rejected marker nudges the matching threshold by a bounded step and writes it back. Silence defaults are seeded from Diffusion Studio core's `removeSilences` (RMS hop, 0.5 s minimum gap, 0.5 s padding). It is not a dependency.
+
+A rule cut keeps covered b-roll, because apply still refuses to drop a connected clip that covers the range. The shadow FCPXML is the undo: every applied rule cut has a marker naming the rule, the measurement, and the threshold. The run writes the same tally to `DECISIONS.md` and to the room summary: which rules fired, how many cuts applied, and which vetoes, with why.
 
 ### The decision router
 
@@ -41,23 +80,25 @@ The note on a marker is assembled afterwards from the action, the confidence, an
 
 | Engine | Decision types | When the engine is not there |
 |---|---|---|
-| Jev | `silence_gap`, `short_clip`, `filler_pause`, `long_static`, `colour_role`, `colour_aspect`, `take_keep`, `take_compare`, `cut_gate`, `pacing_violation`, `subtitle_break`, `audio_check` | The deterministic rules answer instead, at 0.85× confidence (`engine_source` `rules`). Never another model. A rules call is never `auto`. |
+| Jev | `silence_gap`, `short_clip`, `filler_pause`, `long_static`, `colour_role`, `colour_aspect`, `take_keep`, `take_compare`, `cut_gate`, `pacing_violation`, `subtitle_break`, `audio_check` | When Jev is down and no measured rule applies, the deterministic policy answers at 0.85× confidence (`engine_source` `rules`). Never another model. That fallback is never `auto`. A measured rule in `logic-first` still cuts. |
 | Opus | `colour_unseen`, `story_structure`, `key_moments`, `music`, `typography`, `visual_treatment`, `montage`, `broll_selection` | The call becomes a review marker with no action (`engine_source` `unavailable`). Nothing is auto-applied. |
 
 The engine decides. The gate still decides who may act: dialogue filler is a Jev call, and it stays in review because the pass is creative. Threshold comparisons inside the gate are arithmetic, so they stay code.
 
-No Grok or xAI model is in the decision path. The room bots run commands and post reports. They do not make the calls. A Grok or xAI model id or URL in `CONDUCTOR_JEV_MODEL`, `CONDUCTOR_OPUS_MODEL`, or the host overrides is refused.
+Linear calls stay on Jev. Creative calls use `CONDUCTOR_TASTE_MODEL`, default `grok-4.7-medium`. Set it to a Claude id to use Opus instead. The room bots run commands and post reports.
 
 Calls are batched: one Jev request per 24 candidates (48 questions), one Opus request per 12. Answers are cached by content, not by id or position. So `iterate` round 2 only asks about regions that changed, and identical regions are asked once. The first failed request marks that engine down for the rest of the run. Every report has a `decision_usage` counter: calls per engine (live and mock), items, cache hits, fallbacks, and tokens and cost when the host returns them. The CLI prints it as a `decisions` line.
 
 The assembly engine and future passes call the same router: `Router.decide([Ask(...)])`. See the docstring in `conductor/router.py`. A new decision type is a `register_decision(name, engine=..., question=..., why=...)`.
+
+Subtitle line breaks (`subtitle_break`), how long a cue stays up (`subtitle_timing`), and whether a word an edit cut in half is shown (`subtitle_partial`) are Jev calls. Which section titles appear (`title_placement`) and which distortion each uses (`title_treatment`) are Opus calls. With no Opus answer the title is still placed, on the profile's default treatment, and the clip gets a review marker.
 
 ## The bot roster
 
 | Bot | Job |
 |---|---|
 | **byjwu** | Build orchestrator. Merges code into this repo. |
-| **Cut Conductor** | Runs edits. Runs `room-run` on each drop (which calls the `iterate` loop), posts `room.md`, and applies only cuts that passed the gate or that Justin accepted. |
+| **Cut Conductor** | Runs edits. Runs `room-run` on each drop (which calls the `iterate` loop), posts `room.md`, and applies only cuts that passed the gate or that the editor accepted. |
 | **Pacing** | Pace preferences and the `pacing` pass. |
 | **Colour** | Colour, and the review-only `colour` pass. |
 | **Style** | Owns the byjustinwu style profile. |
@@ -97,7 +138,7 @@ python -m conductor room-run ~/Desktop/byjwu-in/cut.fcpxml \
 
 The same command takes a `.fcpxml`, a `.fcpxmld` bundle, a `.zip` of either, or a folder of clips. It detects which, and it does not modify the drop. Dry-run is the default. `--live` is how a bot calls Jev. An SRT or WebVTT sitting next to the timeline is picked up; `--transcript` overrides that. A `durations.json` in a clip folder is picked up the same way.
 
-When the drop also carries music (`.mp3`, `.wav`, `.aif`, `.m4a`, and similar), room-run hands it to a style assembler first (`--style`, default `byjustinwu`) if one is installed, then runs the loop on what it built. Without one, the clips are handled as above and the summary says the music was not placed.
+When the drop also carries music (`.mp3`, `.wav`, `.aif`, `.m4a`, and similar), room-run hands it to `conductor.assemble.assemble` (`--style`, default `byjustinwu`), then runs the loop on the FCPXML it wrote. Creative calls go through the shared router to Grok 4.7. The style profile is data under `styles/`; `byjustinwu` is the measured profile. See [style-profile.md](style-profile.md). Subtitles, titles, and the rectangle layer on that timeline come from `conductor.graphics`.
 
 Each run writes a new folder, `~/Desktop/byjwu-out/<name>-<timestamp>/`, so repeating it is safe. `room.md` in that folder is the chat summary (input kind, duration before and after, cuts with timecodes, rows flagged for the editor, stop reason, which signals were available, and the file to open). `room.json` is the same summary. The shadow FCPXML is always there.
 
@@ -236,11 +277,12 @@ To call live engines, copy `.env.example` and pass `--live`. Dry-run stays the d
 |---|---|---|---|
 | `OPENROUTER_API_KEY` | Jev | `POST https://openrouter.ai/api/alpha/decisions` | `typesafe/jev-1.13` |
 | `TYPESAFE_API_KEY` | Jev | `POST https://api.typesafe.ai/v1/systemone` | `jev-1.13.0` |
-| `ANTHROPIC_API_KEY` | Opus | `POST https://api.anthropic.com/v1/messages` | `claude-opus-5-5` (`CONDUCTOR_OPUS_MODEL`) |
+| `XAI_API_KEY` or `CONDUCTOR_TASTE_KEY` | Taste (default) | `POST https://api.x.ai/v1/chat/completions` | `grok-4.7-medium` (`CONDUCTOR_TASTE_MODEL`) |
+| `ANTHROPIC_API_KEY` | Opus, when `CONDUCTOR_TASTE_MODEL` is a Claude id | `POST https://api.anthropic.com/v1/messages` | `claude-opus-5-5` (`CONDUCTOR_OPUS_MODEL`) |
 
 OpenRouter wins when both Jev keys are set. `CONDUCTOR_JEV_PROVIDER=typesafe` forces the other. The TypeSafe host rejects the slug `jev-1.13`, so the client sends `jev-1.13.0` there.
 
-`--live` needs at least one engine key. With only a Jev key, creative calls become review markers. With only an Anthropic key, linear calls use the rules. Both cases are warnings on stderr and in the report. Opus requests use `output_config.format` (JSON schema) and `output_config.effort` (`CONDUCTOR_OPUS_EFFORT`, default `medium`). Opus 5.5 rejects forced tool use and disabled thinking, so neither is sent.
+`--live` needs at least one engine key. With only a Jev key, creative calls become review markers. With only a taste-model key, linear calls use the rules. The default taste model is `grok-4.7-medium`. Set `CONDUCTOR_TASTE_MODEL` to a Claude id to use Opus instead. Opus requests use `output_config.format` (JSON schema) and `output_config.effort` (`CONDUCTOR_OPUS_EFFORT`, default `medium`).
 
 `python -m conductor` is the command to use from the repo. A `cut-conductor` script is installed with the package and may land outside your `PATH`.
 
@@ -312,7 +354,7 @@ Roles, the accept loop, and the payload fields are in [docs/room-protocol.md](ro
 
 ## The Grok Bot room
 
-The room bots (see [the bot roster](#the-bot-roster)) are how a cut moves. Justin drops a path in `~/Desktop/byjwu-in` and opens whatever lands in `~/Desktop/byjwu-out` when the room asks. The software in this repo is the engine and the CLI those bots call. The contract is [docs/room-protocol.md](room-protocol.md): who owns which pass, how `iterate` stops, and how a re-export or a chat note becomes a prior on the next gate.
+The room bots (see [the bot roster](#the-bot-roster)) are how a cut moves. the editor drops a path in `~/Desktop/byjwu-in` and opens whatever lands in `~/Desktop/byjwu-out` when the room asks. The software in this repo is the engine and the CLI those bots call. The contract is [docs/room-protocol.md](room-protocol.md): who owns which pass, how `iterate` stops, and how a re-export or a chat note becomes a prior on the next gate.
 
 The Cut Conductor bot runs `python -m conductor room-run`. That command detects the drop and calls `iterate` (a clip folder is ingested as the starter sequence, then iterated). It does not invent a sixth action. It does not apply a cut the gate did not allow unless a person accepted that id. Unattended cuts are mechanical only. Paste `room.md` into the room. The per-round JSON report (`protocol` `cut-conductor.room`) is still the state behind each round. `iterate.json` (`protocol` `cut-conductor.iterate`) is the stop record. `room.json` (`protocol` `cut-conductor.room-run`) is the chat summary. Bots do not re-sort those lists.
 
@@ -326,16 +368,47 @@ In progress:
 
 - **Real-export hardening.** Parse and write back real Final Cut exports, not only the checked-in fixtures.
 - **Media signals.** Quiet audio inside a clip, local transcripts, and word timings are read when the bot machine can open the media (see the [room protocol](room-protocol.md#media-signals)). Picture signals are not built: the `colour` pass still has an honest placeholder where exposure and skin would need the picture.
-- **Taste learning.** Per-kind priors already shift later confidence from rejections, accepts, and editor re-exports. They do not train a model, and they do not loosen mechanical auto-apply unless a rule opts in. Learning from Justin's published videos belongs to the style profile below.
+- **Taste learning.** Per-kind priors already shift later confidence from rejections, accepts, and editor re-exports. They do not train a model, and they do not loosen mechanical auto-apply unless a rule opts in. Learning from the editor's published videos belongs to the style profile below.
 - **Room run and watcher.** `room-run` and `room-run --watch` are built. With the launchd example in [room-run.md](room-run.md), an operator keeps the `~/Desktop/byjwu-in` inbox running. The editor still does not run a command. Still FCPXML out, still no plugin.
-- **Style-driven assembly.** Build the sequence from raw footage and music according to the style profile. Today ingest is filename order, and a brief does not reorder clips.
-- **Jev/Opus decision router.** Built: bounded, logical calls go to Jev, and open-ended creative and taste calls go to Opus 5.5 (see [The decision router](#the-decision-router)). The Opus decision types beyond the colour placeholder wait on style-driven assembly and future passes to ask them.
-- **byjustinwu style profile.** Typography, pacing, colour, SF Pro subtitles, the rectangle background layer, and music fades and ducking, learned from his YouTube videos. The Style bot owns it.
+- **Style-driven assembly.** `python -m conductor assemble` and room-run's music path build the sequence from raw footage and music according to the style profile. Ingest without music is still filename order. Before FCPXML is written, the spine is a sequential layer and connected lanes are parallel layers (`conductor/assembly/layers.py`). That packing, the RMS silence trim (threshold 0.02, hop 1024, minimum 0.5 s, 0.5 s tail padding), the log-linear music ramp, and the dissolve window are borrowed from [@diffusionstudio/core](https://github.com/diffusionstudio/core) 4.0.3 and reimplemented. The library is not a dependency and nothing is rendered through it (unlicensed output is watermarked). Silence on real media still uses ffmpeg `silencedetect` at -35 dB and 0.35 s, which is close to their amplitude threshold and a shorter minimum gap; their padding is applied only by the comparison helper. Music fades and ducking are `adjust-volume` keyframes from the profile floor (-96 dB), not their 0.001 linear gain. A cross dissolve is written only where `cuts.dissolve.sections` names the outgoing section. The base profile lists none, so the default cut is unchanged.
+- **Jev/Opus decision router.** Built: bounded, logical calls go to Jev, and open-ended creative and taste calls go to Grok 4.7 (`grok-4.7-medium`, see [The decision router](#the-decision-router)). Set `CONDUCTOR_TASTE_MODEL` to a Claude id to use Opus instead. The taste decision types beyond the colour placeholder wait on style-driven assembly and future passes to ask them.
+- **byjustinwu style profile.** Typography, pacing, colour, SF Pro subtitles, the rectangle background layer, and music fades and ducking, learned from his YouTube videos. The Style bot owns it. The graphics stage reads it. The numbers that stage ships with today are placeholders.
 
 Later:
 
 - **More passes.** `colour` is a review-only scaffold: roles and aspect from the XML. `story`, `audio`, and `broll` are still reserved. A new check is a `register_pass`, not a new product.
 - **Renames.** The GitHub repo may move to the byjwu name. The legacy drop-folder fallback can go once no machine still uses the old folders.
+
+## Type and graphics
+
+`conductor.graphics.apply_graphics` is the stage `iterate`, `room-run`, and a future `conductor.assemble` call. It is off unless `--graphics` is passed or the style profile sets `graphics.enabled`. It writes onto the output FCPXML only. The drop is not modified.
+
+Three layers, all generated by code:
+
+| layer | what it is | who decides |
+|---|---|---|
+| Subtitles | `cut-conductor.words` grouped into phrases, as Final Cut Basic Title elements on a lane above the primary storyline. The active word is a bolder run in the same title | Jev: line break, on-screen time, and words an edit cut part way through. Group size follows Diffusion Studio's caption `groupBy` |
+| Titles | Section cards. `none` and `scale_warp` are Basic Titles. `scale_warp` is `keyframeAnimation` on the title's scale. Glitch slice, RGB split, wave, and blur-in stay transparent movies, because Final Cut cannot do that distortion | Opus: whether the title appears, and which treatment |
+| Rectangles | A seeded Shapes generator on a connected lane: position and scale keyframes, Gaussian blur, and a hue shift. The same seed still drives `rect_schedule` | The profile. Placement and blend come from `rect_layer` |
+
+Rendered movies go in `<name>.assets/` next to the output FCPXML. Each `media-rep` `src` is a relative path, so it resolves when the folder is at `~/Desktop/byjwu-out/<name>/` on the editor's Mac. The rectangle blend mode and opacity are `adjust-blend` on the connected clip (Final Cut's numeric modes: Screen is 10, Add is 8).
+
+The schema and the placeholder defaults live in `conductor/graphics/profile.py`: `typography`, `subtitles`, `text_fx`, and `rect_layer`. **Those defaults were not measured from the editor's videos.** They are SF Pro Display and SF Pro Text, clean white, with a subtle shadow, so the stage can run before the style study fills the profile in. A profile file overrides a field by a `graphics` object or by a measured `params` path listed in `PARAM_MAP`. `GraphicsResult.placeholder_fields` names whatever is still a placeholder, and that note is written into `room.md`.
+
+SF Pro is not on Linux. Rendered titles use the first installed face in the fallback list, and the title XML still names SF Pro, so Final Cut uses it on the Mac. If ffmpeg or Pillow is missing, that render is skipped and the run continues. Subtitles do not need either. `CONDUCTOR_FFMPEG=off` forces the skip. HEVC with alpha is only written where macOS VideoToolbox exists; everywhere else the movie is ProRes 4444.
+
+`--beats` is a JSON list of seconds, or `{"beats": [...]}`. Nothing in the media-signal stage produces a beat grid yet. Without one, and with `beat_sync` on, the layer still places shapes and the note says it did not cut to a beat.
+
+### Borrowed from Diffusion Studio
+
+[diffusionstudio/core](https://github.com/diffusionstudio/core) is a TypeScript, browser-only WebCodecs compositor. Unlicensed builds watermark the picture, so it is not a dependency and nothing is rendered through it. `conductor/graphics/diffusion.py` copies two algorithms, credited in that file:
+
+- Caption `groupBy`: pack words by count, by the sum of each word's spoken duration, or by character length. A word that would pass the limit opens the next group. Subtitles use the character limit (`max_chars_per_line * max_lines`) and then the spoken-duration limit (`max_seconds`). A spine cut or a phrase pause still splits a group, so a line never crosses an edit. The active word is a separate `text-style` run (Diffusion Studio's WHISPER preset dims the words that are not the one being said).
+- Keyframe lerp: before the first frame and after the last, the value clamps; between frames it is a linear mix, with a smoothstep when the interpolation is `smooth`. Title `scale_warp` and the rectangle position/scale tracks are that lerp, written as FCPXML `keyframeAnimation`.
+
+Rectangle blur and hue-rotate are the same two effects Diffusion Studio applies as CSS filters on `RectangleClip`. Here they are a Gaussian filter and a Hue/Saturation filter on the Shapes generator, so the layer stays editable in Final Cut.
+
+`iterate --graphics` and `room-run --graphics` call the stage once, on the timeline the summary names. `assemble` calls `apply_graphics` itself on the timeline it writes, passing the run's `router`. A timeline that already has a `byjwu ` asset is left alone.
 
 ## Tests
 
@@ -346,7 +419,7 @@ python scripts/ingest_dry_run.py
 python scripts/iterate_dry_run.py
 ```
 
-No API key. Engine tests cover the parser, marker write-back, the mock client, the gates, apply, ingest (including the fixture folder and the local page), the colour pass, iterate (two rounds, the round cap, and a duration window), `room-run` (an FCPXML, a `.fcpxmld` bundle, a zip, a clip folder, bad drops, and the watcher), and the byjwu drop folders with their legacy fallback. The placeholder clips under `fixtures/selects/` are a few bytes each.
+No API key. Engine tests cover the parser, marker write-back, the mock client, the gates, apply, ingest (including the fixture folder and the local page), the colour pass, iterate (two rounds, the round cap, and a duration window), `room-run` (an FCPXML, a `.fcpxmld` bundle, a zip, a clip folder, bad drops, and the watcher), the byjwu drop folders with their legacy fallback, and the graphics stage (subtitles that stay inside a clip and do not overlap, a deterministic rectangle layer, and a clean skip when ffmpeg is missing). The placeholder clips under `fixtures/selects/` are a few bytes each.
 
 `tests/test_conductor_router.py` covers the decision router against fake Jev and Anthropic hosts (`httpx.MockTransport`). It checks the classification, attribution on rows and markers, the rules fallback and the review fallback, bad or refused Opus answers, batching, the cache across runs and iterate rounds, the call counter, and that no key reaches a report.
 

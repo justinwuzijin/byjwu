@@ -2,8 +2,8 @@
 
 The product rule: a decision that is linear and logical — a bounded choice
 with clear criteria — goes to **Jev**. An open-ended creative or taste
-decision goes to **Claude Opus 5.5**. No Grok or xAI model is anywhere in
-this path; :func:`conductor.jev.refuse_xai` rejects one if configured.
+decision goes through this router. The default taste model is
+``grok-4.7-medium`` (``CONDUCTOR_TASTE_MODEL``). A Claude id selects Opus.
 
 Classification (``DECISION_TYPES``):
 
@@ -21,6 +21,8 @@ take_compare       jev     Which of two takes is better on objective signals?
 cut_gate           jev     Does this cut point meet the cut rules?
 pacing_violation   jev     Which of these candidates breaks the pacing target?
 subtitle_break     jev     Where does this subtitle line break, by the rules?
+subtitle_timing    jev     How long does this subtitle stay up, by the rules?
+subtitle_partial   jev     Is a word an edit cut part way through still shown?
 audio_check        jev     Is this breath, room tone, or clipped word a fault?
 covered_gap        jev     Does this gap under connected clips need a person?
 rhythm_shift       jev     Does this jump in average shot length need a look?
@@ -32,6 +34,8 @@ story_structure    opus    What order and shape does the story take?
 key_moments        opus    Which moments carry the video?
 music              opus    Which track, and where does it sit and breathe?
 typography         opus    How is on-screen text set and treated?
+title_placement    opus    Which section titles go on screen, and where?
+title_treatment    opus    Which text-distortion treatment does this title use?
 visual_treatment   opus    What grade, look, or effect does this shot want?
 montage            opus    Which shots make the montage, in what order?
 broll_selection    opus    Which coverage plays over this line?
@@ -91,6 +95,7 @@ from cutmcp.jev import MAX_OPTIONS, USD_PER_M_INPUT_TOKENS, choice, noul
 
 from . import jev, opus
 from .errors import ConductorError
+from .rules import VETO_OPTIONS, RuleHit, decision_mode as resolve_decision_mode, evaluate
 from .schema import SchemaError, example, validate
 
 JEV = "jev"
@@ -175,6 +180,10 @@ DECISION_TYPES: dict[str, DecisionType] = {
               _LINEAR + "One pick among N against a numeric pacing target."),
         _type("subtitle_break", JEV, "Where does this subtitle line break, by the rules?",
               _LINEAR + "Line-length and phrase-boundary rules over listed break points."),
+        _type("subtitle_timing", JEV, "How long does this subtitle stay up, by the rules?",
+              _LINEAR + "Minimum and maximum on-screen time, flashes, and gaps, against the profile."),
+        _type("subtitle_partial", JEV, "Is a word an edit cut part way through still shown?",
+              _LINEAR + "The heard share of the word against the profile's keep threshold."),
         _type("audio_check", JEV, "Is this breath, room tone, or clipped word a fault?",
               _LINEAR + "Audio faults are defined by level and duration rules."),
         _type("covered_gap", JEV, "Does this gap under connected clips need a person?",
@@ -197,6 +206,10 @@ DECISION_TYPES: dict[str, DecisionType] = {
               _CREATIVE + "Music choice and placement are feel."),
         _type("typography", OPUS, "How is on-screen text set and treated?",
               _CREATIVE + "Type and on-screen treatment are design."),
+        _type("title_placement", OPUS, "Which section titles go on screen, and where?",
+              _CREATIVE + "Which sections earn a title card is a taste call."),
+        _type("title_treatment", OPUS, "Which text-distortion treatment does this title use?",
+              _CREATIVE + "Glitch, split, warp, or a plain fade is a look."),
         _type("visual_treatment", OPUS, "What grade, look, or effect does this shot want?",
               _CREATIVE + "Grade and effects are a look."),
         _type("montage", OPUS, "Which shots make the montage, in what order?",
@@ -312,6 +325,7 @@ class Verdict:
     model: str | None = None
     rationale: str = ""
     cached: bool = False
+    rule: dict | None = None
 
 
 @dataclass
@@ -510,6 +524,8 @@ class Router:
         jev_window: int = JEV_WINDOW,
         opus_window: int = OPUS_WINDOW,
         fallback_discount: float = FALLBACK_DISCOUNT,
+        decision_mode: str | None = None,
+        mock_veto: str | None = None,
     ) -> None:
         if jev_window < 1 or opus_window < 1:
             raise ConductorError("router windows must be at least 1")
@@ -519,6 +535,9 @@ class Router:
         self.jev_window = jev_window
         self.opus_window = opus_window
         self.fallback_discount = fallback_discount
+        self.decision_mode = decision_mode if decision_mode is not None else resolve_decision_mode()
+        self.mock_veto = mock_veto
+        self.thresholds: dict[str, float] = {}
         self.ledger = Ledger()
         self._clients: dict[str, Any] = {JEV: jev_client, OPUS: opus_client}
         self._owned: list[Any] = []
@@ -544,7 +563,7 @@ class Router:
             self._opus_endpoint = opus.resolve_endpoint()
             self._models[OPUS] = self._opus_endpoint.model
         else:
-            self._down[OPUS] = "ANTHROPIC_API_KEY is unset"
+            self._down[OPUS] = "no taste-model key (XAI_API_KEY, CONDUCTOR_TASTE_KEY, or ANTHROPIC_API_KEY when CONDUCTOR_TASTE_MODEL is Claude)"
 
     def __enter__(self) -> Router:
         return self
@@ -580,8 +599,11 @@ class Router:
         brief: str,
         taste: Mapping[str, Any],
         ledger: Ledger | None = None,
+        thresholds: Mapping[str, float] | None = None,
     ) -> tuple[dict[str, Verdict], list[dict]]:
         """Verdicts keyed by candidate id, plus one receipt per batch."""
+        if thresholds is not None:
+            self.thresholds = dict(thresholds)
         ledger = ledger or self.ledger
         verdicts: dict[str, Verdict] = {}
         receipts: list[dict] = []
@@ -607,7 +629,10 @@ class Router:
         pending: dict[str, list[tuple[Any, DecisionType]]] = {}
         for item, dtype in pairs:
             usage.items += 1
-            key = self._key(JEV, dtype.name, _content(item.to_state()), brief, prefs, "candidate-v1")
+            key = self._key(
+                JEV, dtype.name, _content(item.to_state()), brief, prefs,
+                ["candidate-v2", self.decision_mode],
+            )
             hit = self._cache.get(key)
             if hit is not None:
                 usage.cache_hits += 1
@@ -619,21 +644,48 @@ class Router:
         heads = [(key, group[0]) for key, group in pending.items()]
         for window in _windows(heads, self.jev_window, lambda entry: entry[1][0].to_state()):
             items = [item for _key, (item, _dtype) in window]
+            hits = {
+                item.id: hit
+                for item in items
+                if (hit := _rule_hit(self, item)) is not None
+            }
             state = {"brief": brief, "taste": dict(taste), "candidates": [item.to_state() for item in items]}
+            if hits:
+                state["proposed_cuts"] = {
+                    item_id: {
+                        "action": hit.action,
+                        "evidence": hit.evidence,
+                        "rule": hit.name,
+                        "measurement": hit.measurement,
+                        "threshold": hit.threshold,
+                        "threshold_name": hit.threshold_name,
+                    }
+                    for item_id, hit in hits.items()
+                }
             questions: dict = {}
             for item in items:
-                questions.update(questions_for(item.id))
-            fresh = self._ask_jev(state, questions, usage)
-            if fresh is None:
-                reason = self._down[JEV]
+                if item.id in hits:
+                    questions[f"{item.id}_veto"] = _veto_question(item.id, hits[item.id])
+                else:
+                    questions.update(questions_for(item.id))
+            open_questions = {
+                key: spec for key, spec in questions.items() if not str(key).endswith("_veto")
+            }
+            asked = questions if self.live else open_questions
+            fresh = self._ask_jev(state, asked, usage) if asked else None
+            answers: dict[str, Verdict] = {}
+            if fresh is None and open_questions:
+                reason = self._down.get(JEV) or "Jev unavailable"
                 usage.down_reason = usage.down_reason or reason
-                usage.fallback_items += len(window)
+                missed = [item for item in items if item.id not in hits]
+                usage.fallback_items += len(missed)
                 ledger.warn(
                     f"Jev unavailable ({reason}). Linear calls used the deterministic rules "
                     f"at confidence x{self.fallback_discount}."
                 )
-                answers = {}
                 for _key, (item, dtype) in window:
+                    if item.id in hits:
+                        continue
                     action, confidence, risk = jev.policy(item.to_state(), taste)
                     answers[item.id] = Verdict(
                         action=action,
@@ -650,10 +702,11 @@ class Router:
                     key: {"action": verdict.action, "confidence": verdict.confidence, "risk": verdict.risk}
                     for key, verdict in answers.items()
                 }, error=reason))
-            else:
+            elif fresh is not None:
                 receipts.append(_jev_receipt(fresh, state, questions))
-                answers = {}
                 for key, (item, dtype) in window:
+                    if item.id in hits:
+                        continue
                     action_answer = fresh.answers[f"{item.id}_action"]
                     risk_answer = fresh.answers[f"{item.id}_risk"]
                     raw = str(action_answer.value)
@@ -668,6 +721,23 @@ class Router:
                         model=fresh.model,
                     )
                     self._cache[key] = _cacheable(answers[item.id])
+            for key, (item, dtype) in window:
+                if item.id not in hits:
+                    continue
+                veto_value, veto_confidence = _veto_answer(self, fresh, item.id)
+                answers[item.id] = _rule_verdict(
+                    dtype, hits[item.id], veto=veto_value, model_confidence=veto_confidence,
+                    detail=_rule_detail(self, fresh),
+                )
+                self._cache[key] = _cacheable(answers[item.id])
+            if hits and fresh is None and not open_questions:
+                receipts.append(_receipt(
+                    JEV, "logic", None, state, questions,
+                    {
+                        item_id: {"action": verdict.action, "confidence": verdict.confidence, "rule": verdict.rule}
+                        for item_id, verdict in answers.items()
+                    },
+                ))
             for key, (head, _dtype) in window:
                 verdict = answers[head.id]
                 for index, (item, _dt) in enumerate(pending[key]):
@@ -953,6 +1023,77 @@ class Router:
         return hashlib.blake2b(blob.encode("utf-8"), digest_size=16).hexdigest()
 
 
+def _rule_hit(router: Router, item) -> RuleHit | None:
+    if router.decision_mode != "logic-first" or not router.thresholds:
+        return None
+    hit = evaluate(item, router.thresholds)
+    if hit is None or not hit.applies:
+        return None
+    return hit
+
+
+def _veto_question(item_id: str, hit: RuleHit):
+    return choice(
+        f"Candidate {item_id} already has a measured cut: {hit.action}. {hit.evidence}. "
+        "You may allow that cut or veto it. You do not choose a different action.",
+        VETO_OPTIONS,
+        add_none=False,
+    )
+
+
+def _veto_answer(router: Router, fresh, item_id: str) -> tuple[str, float]:
+    if fresh is not None:
+        answer = fresh.answers.get(f"{item_id}_veto")
+        if answer is not None:
+            return str(answer.value), float(answer.confidence)
+    if router.mock_veto:
+        return router.mock_veto, 0.9
+    return "allow", 0.5
+
+
+def _rule_detail(router: Router, fresh) -> str:
+    if fresh is None and router.live:
+        return f"Jev unavailable: {router._down.get(JEV, '')}. Measured rule applied with no veto."
+    if not router.live:
+        return "logic-first. The mock model is advisory at 0.5 and does not gate the cut."
+    return "logic-first. The model may veto this measured cut. It does not set the score."
+
+
+def _rule_verdict(dtype: DecisionType, hit: RuleHit, *, veto: str, model_confidence: float, detail: str) -> Verdict:
+    vetoed = bool(veto) and veto != "allow"
+    reason = VETO_OPTIONS.get(veto, "") if vetoed else ""
+    if vetoed and not reason:
+        reason = veto
+    rule = hit.to_dict()
+    rule["vetoed"] = vetoed
+    rule["veto_reason"] = reason
+    rule["model_confidence"] = model_confidence
+    if vetoed:
+        return Verdict(
+            action="mark_review",
+            confidence=hit.confidence,
+            risk=0.0,
+            engine="rules",
+            source="veto",
+            decision_type=dtype.name,
+            why=dtype.why,
+            detail=detail,
+            rationale=reason,
+            rule=rule,
+        )
+    return Verdict(
+        action=hit.action,
+        confidence=hit.confidence,
+        risk=0.1,
+        engine="rules",
+        source="logic",
+        decision_type=dtype.name,
+        why=dtype.why,
+        detail=detail,
+        rule=rule,
+    )
+
+
 def questions_for(candidate_id: str) -> dict:
     """The two Jev questions for one candidate. ``none`` is not an option."""
     action = choice(
@@ -1090,9 +1231,20 @@ def _check_ask(ask: Ask, seen: set[str]) -> None:
         raise ConductorError(f"{ask.id}: an Opus decision needs options or a schema")
 
 
+_STAMP_RE = re.compile(r" v\d+(?: marked)? \(byjwu\)$")
+
+
 def _content(state: Mapping[str, Any]) -> dict:
-    """The part of a candidate that decides its answer: no id, no position."""
-    return {key: value for key, value in state.items() if key not in _POSITIONAL}
+    """The part of a candidate that decides its answer: no id, no position.
+
+    A byjwu version suffix on the project name is not an editorial change, so
+    round 2 still hits the cache for a region the previous round already judged.
+    """
+    row = {key: value for key, value in state.items() if key not in _POSITIONAL}
+    sequence = row.get("sequence")
+    if isinstance(sequence, str):
+        row["sequence"] = _STAMP_RE.sub("", sequence)
+    return row
 
 
 def _cacheable(item: Verdict | Decision) -> dict:

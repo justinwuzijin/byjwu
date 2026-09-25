@@ -2,9 +2,9 @@
 
 How the byjwu Grok Bot room drives the editing engine (the `conductor` package, `python -m conductor`). The repo holds the engine and the CLI. No bot is implemented here, and nothing in this repo talks to Final Cut or to a bot API. This file is the contract those bots call.
 
-The bots coordinate. They do not make editorial decisions. Bounded, logical calls come from Jev (`conductor/jev.py`). Open-ended creative and taste calls come from Claude Opus 5.5 through the Jev/Opus decision router, which is in progress. No Grok model makes an editing decision.
+The bots coordinate. They do not make editorial decisions. Bounded, logical calls come from Jev (`conductor/jev.py`). Open-ended creative and taste calls come from Grok 4.7 through the decision router (`CONDUCTOR_TASTE_MODEL`, default `grok-4.7-medium`). Opus stays selectable.
 
-Justin, the owner, does not use the command line. He drops a selects folder, an FCPXML export, a `.fcpxmld` bundle, or a zip in the room or in `~/Desktop/byjwu-in`, and opens the FCPXML that lands in `~/Desktop/byjwu-out` in Final Cut Pro himself. The CLI below is what the bots run for him. The legacy-folder fallback is described under [Desktop folders](#desktop-folders).
+the editor, the owner, does not use the command line. He drops a selects folder, an FCPXML export, a `.fcpxmld` bundle, or a zip in the room or in `~/Desktop/byjwu-in`, and opens the FCPXML that lands in `~/Desktop/byjwu-out` in Final Cut Pro himself. The CLI below is what the bots run for him. The legacy-folder fallback is described under [Desktop folders](#desktop-folders).
 
 The shared object is one timeline plus one brief. The timeline is a Final Cut export, or a starter sequence built from a selects folder. The shared artifact is the JSON report (`protocol` `cut-conductor.room`, `protocol_version` 1).
 
@@ -212,6 +212,7 @@ Owns the transcript (SRT or WebVTT), subtitles, and text treatments. Times are s
 - Filler is the same whole-cue list cutmcp uses (`um`, `you know`, `i mean`, and their spelling variants). `like`, `yeah`, and `okay` are not filler.
 - Dialogue is creative. A confident `tighten` still lands in review. Type & Subs does not auto-apply it.
 - When a person keeps a breath or a filler, Type & Subs appends a `reject` (or Cut Conductor does, on the person's behalf). The next dialogue pass sees that event in taste state.
+- Subtitles, section titles, and the rectangle layer are the graphics stage (`conductor.graphics.apply_graphics`), off unless `--graphics` or the style profile enables it. Line breaks and cue timing are Jev calls. Which titles appear, and which distortion they use, are Opus calls. With no Opus answer the title is still placed and marked for review.
 
 ### Pacing
 
@@ -261,7 +262,7 @@ Candidate ids (`c0001`, …) are assigned after the passes that actually ran, in
 
 ## Who decides
 
-`conductor.router` sends each candidate to one engine by its decision type. Linear, logical calls go to Jev. Open-ended creative calls go to Claude Opus 5.5. The list and the reason for each entry are `router.DECISION_TYPES`. No Grok or xAI model is in the decision path. Bots in this room run the commands and relay the payload. They do not make the call themselves.
+`conductor.router` sends each candidate to one engine by its decision type. Linear, logical calls go to Jev. Open-ended creative calls go to the taste model, Grok 4.7 by default. The list and the reason for each entry are `router.DECISION_TYPES`. Bots in this room run the commands and relay the payload. They do not make the call themselves.
 
 | pass | kinds | engine |
 |---|---|---|

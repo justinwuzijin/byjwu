@@ -24,7 +24,7 @@ SELECTS = Path("fixtures/selects")
 BRIEF = "A tight interview. Keep the guest's story, lose dead air."
 
 
-def _xml(version: str = "1.11", src: str = "file:///Volumes/Media/interview.mov") -> str:
+def _xml(version: str = "1.11", src: str = "file:///media/library/interview.mov") -> str:
     return f"""<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE fcpxml>
 <fcpxml version="{version}">
@@ -170,11 +170,11 @@ def test_unsupported_fcpxml_version(tmp_path):
     assert "1.8" in message
 
 
-def test_a_real_fcpxml_1_14_export_runs_and_keeps_its_broll(tmp_path):
+def test_a_real_fcpxml_1_14_export_runs_and_keeps_its_broll(tmp_path, no_assembler):
     drop = tmp_path / "drop"
     drop.mkdir()
-    xml = drop / "swiss-italy.fcpxml"
-    shutil.copy(Path("fixtures/swiss-italy.fcpxml"), xml)
+    xml = drop / "synthetic-export.fcpxml"
+    shutil.copy(Path("fixtures/real_export_shape.fcpxml"), xml)
     result = room_run(xml, out_root=tmp_path / "out", brief="A travel vlog.")
     payload = _assert_summary(result, kind="fcpxml")
     assert "transcript" not in payload["signals"]
@@ -184,7 +184,7 @@ def test_a_real_fcpxml_1_14_export_runs_and_keeps_its_broll(tmp_path):
     opened = Path(payload["open_in_final_cut"])
     assert marker_order_violations(ET.parse(opened).getroot()) == []
     gap = next(clip for clip in parse_fcpxml(opened).sequences[0].spine if clip.kind == "gap")
-    assert sum(1 for clip in gap.connected_clips if clip.lane is not None) == 8
+    assert sum(1 for clip in gap.connected_clips if clip.lane is not None) == 4
 
 
 def test_local_media_missing(tmp_path):
@@ -366,10 +366,10 @@ def test_style_flag_reaches_the_assembler(tmp_path, assembler):
 def test_timeline_music_assets_are_detected(tmp_path, assembler):
     xml = tmp_path / "in" / "cut.fcpxml"
     xml.parent.mkdir()
-    xml.write_text(_xml(src="file:///Volumes/Media/score.wav"), encoding="utf-8")
+    xml.write_text(_xml(src="file:///media/library/score.wav"), encoding="utf-8")
     result = room_run(xml, out_root=tmp_path / "out", brief=BRIEF)
     assert result.payload["flow"] == "assemble+iterate"
-    assert result.payload["music"] == ["/Volumes/Media/score.wav"]
+    assert result.payload["music"] == ["/media/library/score.wav"]
     assert assembler[0]["fcpxml"] == xml.resolve()
     assert assembler[0]["media"] is None
 

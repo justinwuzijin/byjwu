@@ -4,10 +4,10 @@
   <resources>
     <format id="r8" name="FFVideoFormat1080p24" frameDuration="1/24s" width="1920" height="1080"/>
     <asset id="r9" name="interview" uid="A-INTERVIEW" start="0s" duration="600s" hasVideo="1" hasAudio="1" format="r8">
-      <media-rep kind="original-media" src="file:///Volumes/Media/interview.mov"/>
+      <media-rep kind="original-media" src="file:///media/library/interview.mov"/>
     </asset>
   </resources>
-  <library location="file:///Volumes/Media/Interview.fcpbundle">
+  <library location="file:///media/library/Interview.fcpbundle">
     <event name="Interview" uid="E-INTERVIEW">
       <project name="Rough Cut" uid="P-ROUGH">
         <sequence format="r8" duration="65/2s" tcStart="0s" tcFormat="NDF">

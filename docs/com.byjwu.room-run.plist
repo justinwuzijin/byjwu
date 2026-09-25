@@ -5,17 +5,17 @@
 	<key>Label</key>
 	<string>com.byjwu.room-run</string>
 	<key>WorkingDirectory</key>
-	<string>/Users/CHANGE_ME/byjwu</string>
+	<string>/home/CHANGE_ME/byjwu</string>
 	<key>ProgramArguments</key>
 	<array>
-		<string>/Users/CHANGE_ME/byjwu/.venv/bin/python</string>
+		<string>/home/CHANGE_ME/byjwu/.venv/bin/python</string>
 		<string>-m</string>
 		<string>conductor</string>
 		<string>room-run</string>
 		<string>--watch</string>
-		<string>/Users/CHANGE_ME/Desktop/byjwu-in</string>
+		<string>/home/CHANGE_ME/Desktop/byjwu-in</string>
 		<string>--out-root</string>
-		<string>/Users/CHANGE_ME/Desktop/byjwu-out</string>
+		<string>/home/CHANGE_ME/Desktop/byjwu-out</string>
 		<string>--brief</string>
 		<string>A tight interview. Keep the guest's story, lose dead air.</string>
 	</array>
@@ -24,9 +24,9 @@
 	<key>KeepAlive</key>
 	<true/>
 	<key>StandardOutPath</key>
-	<string>/Users/CHANGE_ME/Library/Logs/byjwu/room-run.log</string>
+	<string>/home/CHANGE_ME/Library/Logs/byjwu/room-run.log</string>
 	<key>StandardErrorPath</key>
-	<string>/Users/CHANGE_ME/Library/Logs/byjwu/room-run.err</string>
+	<string>/home/CHANGE_ME/Library/Logs/byjwu/room-run.err</string>
 	<key>EnvironmentVariables</key>
 	<dict>
 		<key>PATH</key>

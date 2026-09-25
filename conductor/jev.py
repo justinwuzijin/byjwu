@@ -81,12 +81,8 @@ def dry_run_forced(environ: Mapping[str, str] | None = None) -> bool:
 
 
 def refuse_xai(model: str, url: str) -> None:
-    """No Grok or xAI model is allowed anywhere in the decision path."""
-    for value in (model, url):
-        if _XAI.search(value or ""):
-            raise ConductorError(
-                f"refusing {value!r}: Grok/xAI models are not allowed in the decision path"
-            )
+    """Kept so older callers import. Grok is allowed; this does not reject."""
+    return None
 
 
 def has_key(environ: Mapping[str, str] | None = None) -> bool:
@@ -119,7 +115,6 @@ def resolve_endpoint(environ: Mapping[str, str] | None = None) -> Endpoint:
             )
         model = env.get("CONDUCTOR_JEV_MODEL", "").strip() or TYPESAFE_MODEL
         url = env.get("CONDUCTOR_TYPESAFE_URL", "").strip() or TYPESAFE_URL
-        refuse_xai(model, url)
         return Endpoint(
             provider="typesafe",
             url=url,
@@ -136,7 +131,6 @@ def resolve_endpoint(environ: Mapping[str, str] | None = None) -> Endpoint:
         )
     model = env.get("CONDUCTOR_JEV_MODEL", "").strip() or OPENROUTER_MODEL
     url = env.get("CONDUCTOR_OPENROUTER_URL", "").strip() or OPENROUTER_URL
-    refuse_xai(model, url)
     return Endpoint(
         provider="openrouter",
         url=url,
@@ -144,7 +138,7 @@ def resolve_endpoint(environ: Mapping[str, str] | None = None) -> Endpoint:
         headers={
             "Authorization": f"Bearer {openrouter_key}",
             "Content-Type": "application/json",
-            "HTTP-Referer": "https://github.com/justinwuzijin/jevid",
+            "HTTP-Referer": "https://github.com/byjwu/byjwu",
             "X-OpenRouter-Title": "Cut Conductor",
         },
     )
@@ -363,8 +357,10 @@ def policy(candidate: Mapping[str, Any], taste: Mapping[str, Any] | None = None)
             return "remove", 0.91, 0.14
         return "mark_review", 0.61, 0.42
     if kind == "long_static":
-        wps = signals.get("words_per_second")
-        if wps is None or float(wps) < 0.15:
+        dialogue = _no_dialogue(signals)
+        if dialogue is None:
+            return "mark_review", 0.62, 0.48
+        if dialogue:
             return "tighten", 0.73, 0.33
         return "mark_review", 0.57, 0.49
     if kind == "filler_pause":
@@ -386,6 +382,17 @@ def _distribution(winner: str, mass: float) -> dict[str, float]:
     drift = round(1.0 - sum(rounded.values()), 4)
     rounded[winner] = round(rounded[winner] + drift, 4)
     return {action: rounded[action] for action in ACTIONS}
+
+
+def _no_dialogue(signals: Mapping[str, Any]) -> bool | None:
+    """Whether a clip has no speech.
+
+    ``None`` means unknown. A missing ``words_per_second`` is a missing
+    transcript, not silence, so it must not become an automatic cut.
+    """
+    if "words_per_second" not in signals or signals.get("words_per_second") is None:
+        return None
+    return float(signals["words_per_second"]) < 0.15
 
 
 def _clamp(value: float) -> float:

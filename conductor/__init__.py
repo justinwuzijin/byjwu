@@ -20,6 +20,18 @@ from .errors import ConductorError
 # function; the module object remains ``sys.modules["conductor.ingest"]``.
 from .ingest import ingest
 from .iterate import iterate
+from .router import Ask, Decision, Router, classify, register_decision
 from .run import analyze
 
-__all__ = ["ConductorError", "analyze", "ingest", "iterate", "__version__"]
+__all__ = [
+    "Ask",
+    "ConductorError",
+    "Decision",
+    "Router",
+    "analyze",
+    "classify",
+    "ingest",
+    "iterate",
+    "register_decision",
+    "__version__",
+]

@@ -1,10 +1,13 @@
 """Map each candidate to one typed action, then run it through the gate.
 
-No durations are computed here. The choice is the edit Jev would consider.
-The noul is the probability that acting would damage the story. Confidence
-is the choice's own confidence. ``gates.route`` decides whether that call is
-an unattended proposal, a review, or an escalation. The raw action stays on
-the proposal either way.
+No durations are computed here. :class:`conductor.router.Router` decides who
+answers: Jev for linear kinds (a choice plus a risk noul), Opus for creative
+ones (the same action and risk, as a validated JSON object). Confidence is
+the engine's own. ``gates.route`` decides whether that call is an unattended
+proposal, a review, or an escalation. The raw action stays on the proposal
+either way, and so does the engine that made it.
+
+A creative call Opus could not make is a review marker with no action.
 """
 
 from __future__ import annotations
@@ -12,18 +15,16 @@ from __future__ import annotations
 from dataclasses import dataclass
 from fractions import Fraction
 
-from cutmcp.jev import choice, noul
-
 from .apply import Deletion
 from .candidates import Candidate
 from .errors import ConductorError
 from .gates import Gates, route
-from .jev import ACTIONS, BatchResult, ask
 from .passes import is_creative
+from .router import Ledger, Router, Verdict, questions_for
 from .taste import Taste
 from .timeutil import short_clock
 
-WINDOW = 8
+__all__ = ["Proposal", "deletions_for", "judge", "questions_for"]
 
 ACTION_COLOR = {
     "keep": "green",
@@ -56,31 +57,26 @@ class Proposal:
     eligible: bool
     marker_name: str | None
     marker_note: str | None
+    engine: str = "jev"
+    engine_source: str = "mock"
+    decision_type: str = ""
+    engine_why: str = ""
+    engine_detail: str = ""
+    engine_model: str | None = None
+    rationale: str = ""
+    cached: bool = False
 
-
-def questions_for(candidate_id: str) -> dict:
-    """The two questions for one candidate. ``none`` is not an option."""
-    action = choice(
-        f"Candidate {candidate_id} is one object in state.candidates. "
-        "Which edit should the editor consider for that candidate, given the brief "
-        "and state.taste? A person will see this as a marker. "
-        "Nothing is applied automatically.",
-        {
-            "keep": "Leave the timeline alone. The moment earns its length.",
-            "tighten": "Trim the dead air or filler but keep the surrounding thought.",
-            "remove": "Lift this region out. It does not earn its time.",
-            "mark_review": "A human should look. The signal is real but the call is not safe to trust.",
-            "escalate": "Stop and discuss. The moment may be load-bearing, or the risk is high.",
-        },
-        add_none=False,
-    )
-    risk = noul(
-        f"Candidate {candidate_id}: would cutting or tightening this region "
-        "damage the story or clip off a thought the brief still needs?",
-        true="Cutting risks losing meaning, a reaction, or a breath the edit needs.",
-        false="Cutting is safe. The region is dead air, a flash frame, or disposable filler.",
-    )
-    return {f"{candidate_id}_action": action, f"{candidate_id}_risk": risk}
+    def attribution(self) -> dict:
+        return {
+            "engine": self.engine,
+            "engine_source": self.engine_source,
+            "decision_type": self.decision_type,
+            "engine_why": self.engine_why,
+            "engine_detail": self.engine_detail,
+            "engine_model": self.engine_model,
+            "rationale": self.rationale,
+            "cached": self.cached,
+        }
 
 
 def judge(
@@ -90,25 +86,26 @@ def judge(
     live: bool,
     taste: Taste,
     gates: Gates | None = None,
+    router: Router | None = None,
+    ledger: Ledger | None = None,
 ) -> tuple[list[Proposal], list[dict]]:
-    """Judge candidates in windows. Returns proposals (input order) and receipts."""
+    """Judge candidates through the router. Returns proposals (input order) and receipts.
+
+    Pass a ``router`` to share its cache and engine health (``iterate`` does).
+    Otherwise one is opened for this call with ``live`` and closed after.
+    """
     gates = gates or taste.gates
-    proposals: list[Proposal] = []
-    receipts: list[dict] = []
-    for window in _windows(candidates, WINDOW):
-        state = {
-            "brief": brief,
-            "taste": taste.to_state(),
-            "candidates": [item.to_state() for item in window],
-        }
-        questions: dict = {}
-        for item in window:
-            questions.update(questions_for(item.id))
-        batch = ask(state, questions, live=live)
-        receipts.append(_receipt(batch, state, questions))
-        for item in window:
-            proposals.append(_proposal(item, batch, gates))
-    return proposals, receipts
+    owned = router is None
+    if router is None:
+        router = Router(live=live)
+    try:
+        verdicts, receipts = router.judge_candidates(
+            candidates, brief=brief, taste=taste.to_state(), ledger=ledger
+        )
+    finally:
+        if owned:
+            router.close()
+    return [_proposal(item, verdicts[item.id], gates) for item in candidates], receipts
 
 
 def deletions_for(
@@ -190,21 +187,20 @@ def _deletion(candidate: Candidate, action: str, hold: Fraction) -> Deletion:
     )
 
 
-def _proposal(candidate: Candidate, batch: BatchResult, gates: Gates) -> Proposal:
-    action_answer = batch.answers[f"{candidate.id}_action"]
-    risk_answer = batch.answers[f"{candidate.id}_risk"]
-    raw = str(action_answer.value)
-    if raw not in ACTIONS:
-        raw = "mark_review"
-    confidence = float(action_answer.confidence)
-    risk = float(risk_answer.value)
-    action, disposition = route(
-        raw,
-        confidence,
-        risk,
-        creative=is_creative(candidate.pass_name or "mechanical"),
-        gates=gates,
-    )
+def _proposal(candidate: Candidate, verdict: Verdict, gates: Gates) -> Proposal:
+    raw = verdict.action
+    confidence = float(verdict.confidence)
+    risk = float(verdict.risk)
+    if verdict.source == "unavailable":
+        action, disposition = "mark_review", "review"
+    else:
+        action, disposition = route(
+            raw,
+            confidence,
+            risk,
+            creative=is_creative(candidate.pass_name or "mechanical"),
+            gates=gates,
+        )
     human = disposition in {"review", "escalate"}
     name = None
     note = None
@@ -213,7 +209,7 @@ def _proposal(candidate: Candidate, batch: BatchResult, gates: Gates) -> Proposa
             f"CC {ACTION_TITLE[action]} · {candidate.label} @ "
             f"{short_clock(candidate.timeline_start)}"
         )
-        note = _note(candidate, raw, action, disposition, confidence, risk)
+        note = _note(candidate, raw, action, disposition, confidence, risk, verdict)
     return Proposal(
         candidate_id=candidate.id,
         raw_action=raw,
@@ -227,6 +223,14 @@ def _proposal(candidate: Candidate, batch: BatchResult, gates: Gates) -> Proposa
         eligible=disposition == "auto",
         marker_name=name,
         marker_note=note,
+        engine=verdict.engine,
+        engine_source=verdict.source,
+        decision_type=verdict.decision_type,
+        engine_why=verdict.why,
+        engine_detail=verdict.detail,
+        engine_model=verdict.model,
+        rationale=verdict.rationale,
+        cached=verdict.cached,
     )
 
 
@@ -237,6 +241,7 @@ def _note(
     disposition: str,
     confidence: float,
     risk: float,
+    verdict: Verdict,
 ) -> str:
     from .timeutil import clock
 
@@ -253,29 +258,17 @@ def _note(
         f"kind={candidate.kind}",
         f"range={clock(candidate.timeline_start)}-{clock(candidate.timeline_end)}",
         f"why={_trim(candidate.reason, 160)}",
+        f"engine={verdict.engine}/{verdict.source}{'/cached' if verdict.cached else ''}",
+        f"decision={verdict.decision_type}",
+        f"routed={_trim(verdict.why, 120)}",
     ]
+    if verdict.rationale:
+        parts.append(f"{verdict.engine}_says={_trim(verdict.rationale, 160)}")
+    if verdict.detail:
+        parts.append(f"engine_note={_trim(verdict.detail, 160)}")
     if disposition in {"review", "escalate"}:
         parts.append("needs_human=yes")
     return " | ".join(parts)
-
-
-def _receipt(batch: BatchResult, state: dict, questions: dict) -> dict:
-    return {
-        "dry_run": batch.dry_run,
-        "provider": batch.provider,
-        "model": batch.model,
-        "endpoint": batch.endpoint,
-        "request_id": batch.request_id,
-        "usage": batch.usage,
-        "state": state,
-        "questions": questions,
-        "answers": {key: answer.to_dict() for key, answer in batch.answers.items()},
-    }
-
-
-def _windows(items: list[Candidate], size: int):
-    for start in range(0, len(items), size):
-        yield items[start : start + size]
 
 
 def _trim(text: str, limit: int) -> str:

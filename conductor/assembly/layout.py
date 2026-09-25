@@ -100,6 +100,8 @@ class Layout:
         target: float,
         adjustments: Adjustments,
         name: str,
+        router=None,
+        brief: str = "",
     ):
         self.material = material
         self.profile = profile
@@ -115,6 +117,9 @@ class Layout:
         self.segments: list[MusicSegment] = []
         self.song_cursor = -1
         self.warnings: list[str] = []
+        self.router = router
+        self.brief = brief
+        self.receipts: list[dict] = []
         self.seed = int(profile.get("background.art.seed"))
         self.min_shot = self._f(profile.get("cuts.min_shot_seconds"))
         self.snap_tol = self._f(float(profile.get("cuts.beat_snap_tolerance_seconds")) * adjustments.snap_scale)
@@ -197,7 +202,8 @@ class Layout:
             self._place_speech(unit, section, mode)
         self._split_edits(section)
         self._punch_ins(section)
-        self._cover(section, cutaways)
+        if self._keyword_cover(section, cutaways) is None:
+            self._cover(section, cutaways)
 
     def _speech_run(self, section: Section, units: list[Unit], kind: str) -> None:
         mode = self.profile.pacing(kind)["cut_on_beat"]
@@ -324,6 +330,36 @@ class Layout:
         self.timeline.spine.append(item)
         self.used.add(unit.id)
         self.t += duration
+
+    def _keyword_cover(self, section: Section, pool: list[Unit]):
+        """Keyword slots over talking. None means the pacing cover should run."""
+        from .broll import cover_speech
+
+        hosts = [item for item in self.timeline.spine if item.offset >= section.start and item.tags.get("speech")]
+        if not hosts or not pool:
+            return None
+        result = cover_speech(
+            hosts,
+            self.units,
+            pool,
+            profile=self.profile,
+            frame=self.frame,
+            beats=self.beats,
+            snap_tolerance=self.snap_tol,
+            beat_mode=self.profile.pacing("talking")["cut_on_beat"],
+            router=self.router,
+            brief=self.brief,
+            media_for=self._clip_media,
+        )
+        if not result.applied:
+            return None
+        self.cutaways.extend(result.items)
+        self.decisions.update(result.decisions)
+        self.receipts.extend(result.receipts)
+        for item in result.items:
+            if item.tags.get("unit"):
+                self.used.add(item.tags["unit"])
+        return result
 
     def _cover(self, section: Section, pool: list[Unit]) -> None:
         cover = float(self.profile.pacing("talking").get("broll_cover", 0.0)) * self.adj.cover_scale

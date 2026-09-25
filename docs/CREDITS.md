@@ -42,6 +42,22 @@ descriptions:
 The critic is a taste call (`timeline_critic`) on the router. The default
 taste model is `grok-4.7-medium`. A Claude id selects Opus.
 
+## Transcript-keyword B-roll
+
+`conductor/assembly/broll.py` slots cutaways from transcript keywords and
+matches them with caption text. Ideas only; no code was copied.
+
+- **B-Script** — keyword anchors, a 0.5–8 s cutaway, about 9 s between
+  cutaways, and a cap on how long A-roll holds with no cutaway.
+- **LAVE** — a short visual narration (title and summary) per B-roll clip,
+  embedded as text and ranked against the words around the slot.
+- **EditDuet** — the taste model may only veto. Here it vetoes a slot or
+  picks among the top three descriptions. It cannot add a slot or a time.
+- **Mosaic** — `coverage_level` presets (low, moderate, high) that change
+  how often a cutaway is allowed.
+- **Descript** — sample fewer frames on a static shot and more when the
+  frame is full of text. The mock backend does not decode frames.
+
 ## Diffusion Studio audit
 
 Searched the tree for Diffusion Studio names (`diffusion`, `DiffusionStudio`,

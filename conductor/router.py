@@ -40,6 +40,7 @@ title_treatment    opus    Which text-distortion treatment does this title use?
 visual_treatment   opus    What grade, look, or effect does this shot want?
 montage            opus    Which shots make the montage, in what order?
 broll_selection    opus    Which coverage plays over this line?
+broll_slot         opus    Which listed description fills this slot, or veto it?
 source_reuse       opus    Is this repeat of earlier footage a deliberate reprise?
 music_tail         opus    How should the cut end against a music bed that stops early?
 retake_pick        opus    Which existing complete take should be kept?
@@ -231,6 +232,14 @@ DECISION_TYPES: dict[str, DecisionType] = {
               _CREATIVE + "Montage selection and rhythm are taste."),
         _type("broll_selection", OPUS, "Which coverage plays over this line?",
               _CREATIVE + "Which image illustrates a line is an editorial read."),
+        _type(
+            "broll_slot",
+            OPUS,
+            "Which listed description fills this slot, or should the slot be vetoed?",
+            _CREATIVE
+            + "The model may only pick among the offered descriptions or veto the slot. "
+            "It cannot add a slot or invent a time.",
+        ),
         _type("source_reuse", OPUS, "Is this repeat of earlier footage a deliberate reprise?",
               _CREATIVE + "Whether a recap earns its repeat is a montage call."),
         _type("music_tail", OPUS, "How should the cut end against a music bed that stops early?",

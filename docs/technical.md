@@ -79,7 +79,7 @@ A rule cut keeps covered b-roll, because apply still refuses to drop a connected
 | Engine | Decision types | When the engine is not there |
 |---|---|---|
 | Jev | `silence_gap`, `short_clip`, `filler_pause`, `long_static`, `colour_role`, `colour_aspect`, `take_keep`, `take_compare`, `cut_gate`, `pacing_violation`, `subtitle_break`, `audio_check` | When Jev is down and no measured rule applies, the deterministic policy answers at 0.85× confidence (`engine_source` `rules`). Never another model. That fallback is never `auto`. A measured rule in `logic-first` still cuts. |
-| Opus | `colour_unseen`, `story_structure`, `key_moments`, `music`, `typography`, `visual_treatment`, `montage`, `broll_selection`, `timeline_critic` | The call becomes a review marker with no action (`engine_source` `unavailable`). Nothing is auto-applied. The timeline critic is skipped entirely when the taste model is down or the run is a dry-run. |
+| Opus | `colour_unseen`, `story_structure`, `key_moments`, `music`, `typography`, `visual_treatment`, `montage`, `broll_selection`, `broll_slot`, `timeline_critic` | The call becomes a review marker with no action (`engine_source` `unavailable`). Nothing is auto-applied. The timeline critic is skipped entirely when the taste model is down or the run is a dry-run. A `broll_slot` veto drops that cutaway; an unavailable taste call keeps the logical match. |
 
 The engine decides. The gate still decides who may act: dialogue filler is a Jev call, and it stays in review because the pass is creative. Threshold comparisons inside the gate are arithmetic, so they stay code.
 

@@ -200,6 +200,8 @@ def assemble(
         target=target,
         adjustments=adjustments,
         name=title,
+        router=router,
+        brief=brief,
     )
     timeline = layout.run()
     warnings.extend(layout.warnings)
@@ -275,7 +277,7 @@ def assemble(
         segments=layout.segments,
         decisions=decisions,
         dress_decisions=dress_decisions,
-        receipts=receipts + dress_receipts,
+        receipts=receipts + layout.receipts + dress_receipts,
         metrics=metrics,
         failures=failures,
         targets=targets.to_dict(),

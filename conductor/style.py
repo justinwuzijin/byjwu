@@ -452,6 +452,20 @@ def validate(data: Mapping[str, Any]) -> list[str]:
     v.number("cuts.cutaway.min_seconds", low=0.1)
     v.number("cuts.cutaway.max_seconds", low=0.1)
     v.number("cuts.broll_nat_sound_db", low=-96, high=12)
+    broll = v.get("cuts.broll", None)
+    if isinstance(broll, Mapping):
+        v.number("cuts.broll.min_seconds", low=0.5, high=8, optional=True)
+        v.number("cuts.broll.max_seconds", low=0.5, high=8, optional=True)
+        v.number("cuts.broll.target_seconds", low=0.5, high=8, optional=True)
+        v.number("cuts.broll.spacing_seconds", low=0, optional=True)
+        v.number("cuts.broll.max_hold_seconds", low=0, optional=True)
+        v.number("cuts.broll.lead_seconds", low=1, high=2, optional=True)
+        level = broll.get("coverage_level")
+        if level is not None and level not in {"low", "moderate", "high"}:
+            errors.append("cuts.broll.coverage_level must be low, moderate, or high")
+        phrases = broll.get("punchlines", [])
+        if not isinstance(phrases, list) or not all(isinstance(phrase, str) for phrase in phrases):
+            errors.append("cuts.broll.punchlines must be a list of strings")
     dissolve = v.get("cuts.dissolve")
     if not isinstance(dissolve, Mapping):
         errors.append("cuts.dissolve must be an object")

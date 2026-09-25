@@ -62,6 +62,8 @@ Section kinds are `intro`, `title_card`, `talking`, `montage`, `outro`, and `end
 
 `beat_snap_tolerance_seconds`, `min_shot_seconds`, `j_cut {probability, lead_seconds}`, `l_cut {probability, tail_seconds}` (written as `audioStart`/`audioDuration` on the clip), `punch_in {enabled, scale, every}` (alternating scale-ups on jump cuts), `cutaway {min_seconds, max_seconds}`, `broll_nat_sound_db`, `dissolve {sections, duration_seconds}`. `sections` lists the outgoing section kinds that get an FCPXML cross dissolve of `duration_seconds` at the cut. An empty list writes no transitions.
 
+`cuts.broll` is the keyword-slot density: `min_seconds` / `max_seconds` (hard-clamped to 0.5–8), `target_seconds` (default 3, inside 2–4), `lead_seconds` (1–2, the uncovered head of a new on-camera shot), `punchlines` (lines that stay face-to-camera), and `coverage_level` (`low` / `moderate` / `high` map to 14 s / 9 s / 5 s spacing and a 30 s / 20 s / 12 s max hold). `moderate` is the 9 s median spacing. `spacing_seconds` and `max_hold_seconds` apply when `coverage_level` is omitted.
+
 ### `music`
 
 | key | meaning |

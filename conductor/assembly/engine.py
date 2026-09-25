@@ -202,6 +202,8 @@ def assemble(
         target=target,
         adjustments=adjustments,
         name=title,
+        router=router,
+        brief=brief,
     )
     if material.songs and material.songs[0].beats and profile.get("music.start_on_downbeat"):
         choice = choose_music_offset(material.songs[0].beats, [], router=router, brief=brief)
@@ -281,7 +283,7 @@ def assemble(
         segments=layout.segments,
         decisions=decisions,
         dress_decisions=dress_decisions,
-        receipts=receipts + dress_receipts,
+        receipts=receipts + layout.receipts + dress_receipts,
         metrics=metrics,
         failures=failures,
         targets=targets.to_dict(),

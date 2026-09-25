@@ -2,8 +2,14 @@
 
 The parser keeps the ElementTree. Marker write-back appends ``<marker>``
 elements to those nodes and writes the same tree, so unknown effects, keywords,
-and roles survive. This is not a full DTD implementation — compound clips that
-live only inside a ``<media>`` resource are not walked.
+roles, filters, and keyframes survive. This is not a full DTD implementation —
+compound clips that live only inside a ``<media>`` resource are not walked.
+
+Anchored items in a real Final Cut export store ``offset`` in the parent
+clip's timebase (the same numbers as the parent's ``start``). A lower third
+at the head of a clip whose ``start`` is ``12s`` is ``offset="12s"``, not
+``offset="0s"``. Hand-built XML in this repo uses seconds from the in point.
+:func:`anchored_local` picks the reading that actually lands on the parent.
 """
 
 from __future__ import annotations
@@ -89,10 +95,18 @@ class Clip:
     element: ET.Element | None = None
     width: int | None = None
     height: int | None = None
+    #: Seconds from the parent's in point. Spine items use the ``offset`` attribute.
+    local_offset: Fraction | None = None
+    #: ``spine`` for primary items, ``media`` for Final Cut's timebase, ``edit`` for seconds-from-in-point.
+    anchor: str = "spine"
+    asset_id: str | None = None
+    conform: str | None = None
+    source_frame: Fraction | None = None
 
     @property
     def timeline_start(self) -> Fraction:
-        return self.parent_offset + self.offset
+        local = self.offset if self.local_offset is None else self.local_offset
+        return self.parent_offset + local
 
     @property
     def timeline_end(self) -> Fraction:
@@ -202,9 +216,12 @@ def _document(root: ET.Element, tree: ET.ElementTree, source: Path | None) -> Do
                     child,
                     clip_id=f"s{len(sequences)}c{index}",
                     parent_offset=Fraction(0),
+                    parent_start=Fraction(0),
+                    parent_duration=Fraction(0),
                     connected=False,
                     assets=assets,
                     formats=formats,
+                    frame=frame,
                 )
                 _index(clips, clip)
                 spine.append(clip)
@@ -298,21 +315,74 @@ def _assets(root: ET.Element) -> dict[str, Asset]:
     return found
 
 
+def anchored_local(
+    parent_start: Fraction,
+    parent_duration: Fraction,
+    offset: Fraction,
+    duration: Fraction,
+    *,
+    frame: Fraction = Fraction(1, 24),
+) -> tuple[Fraction, str]:
+    """Seconds from the parent's in point, and which offset convention that was.
+
+    ``media`` means ``offset`` lives in the parent's timebase, so the local
+    position is ``offset - parent_start``. ``edit`` means ``offset`` is already
+    seconds from the in point. A few frames of overhang still count as landing
+    on the parent, which is how a J-cut is stored.
+    """
+    if parent_duration <= 0:
+        return offset, "edit"
+    slop = frame * 12 if frame > 0 else Fraction(1, 2)
+    media = offset - parent_start
+    edit = offset
+    media_hit = _window_overlap(media, duration, parent_duration, slop)
+    edit_hit = _window_overlap(edit, duration, parent_duration, slop)
+    if media_hit > edit_hit:
+        return media, "media"
+    if edit_hit > media_hit:
+        return edit, "edit"
+    if parent_start == 0 or media == edit:
+        return edit, "edit"
+    if abs(offset - parent_start) <= abs(offset):
+        return media, "media"
+    return edit, "edit"
+
+
+def _window_overlap(
+    local: Fraction, duration: Fraction, parent_duration: Fraction, slop: Fraction
+) -> Fraction:
+    left = max(local, -slop)
+    right = min(local + duration, parent_duration + slop)
+    if right <= left:
+        return Fraction(0)
+    return right - left
+
+
 def _clip(
     elem: ET.Element,
     clip_id: str,
     parent_offset: Fraction,
+    parent_start: Fraction,
+    parent_duration: Fraction,
     connected: bool,
     assets: dict[str, Asset],
     formats: dict[str, FormatInfo],
+    frame: Fraction,
 ) -> Clip:
     offset = parse_time(elem.get("offset"), Fraction(0))
     start = parse_time(elem.get("start"), Fraction(0))
     duration = parse_time(elem.get("duration"), Fraction(0))
-    timeline_start = parent_offset + offset
+    if connected:
+        local_offset, anchor = anchored_local(
+            parent_start, parent_duration, offset, duration, frame=frame
+        )
+    else:
+        local_offset, anchor = offset, "spine"
+    timeline_start = parent_offset + local_offset
     roles: list[str] = []
     markers: list[XmlMarker] = []
     connected_clips: list[Clip] = []
+    conform = None
     child_index = 0
     for child in elem:
         tag = local(child.tag)
@@ -320,26 +390,47 @@ def _clip(
             roles.append(child.get("role") or "")
         elif tag == "marker":
             markers.append(_marker(child))
+        elif tag == "conform-rate" and conform is None:
+            conform = child.get("srcFrameRate")
         elif tag in CLIP_TAGS:
             connected_clips.append(
                 _clip(
                     child,
                     clip_id=f"{clip_id}k{child_index}",
                     parent_offset=timeline_start,
+                    parent_start=start,
+                    parent_duration=duration,
                     connected=True,
                     assets=assets,
                     formats=formats,
+                    frame=frame,
                 )
             )
             child_index += 1
     name = elem.get("name") or elem.get("ref") or local(elem.tag)
     lane_raw = elem.get("lane")
-    width, height = _frame_size(elem.get("ref"), assets, formats)
+    ref = elem.get("ref")
+    width, height = _frame_size(ref, assets, formats)
+    asset_id = ref if ref in assets else None
+    if asset_id is None:
+        for child in elem:
+            if child.get("lane"):
+                continue
+            if local(child.tag) not in {"video", "asset-clip", "audio"}:
+                continue
+            child_ref = child.get("ref")
+            if child_ref in assets:
+                asset_id = child_ref
+                break
+    format_id = elem.get("format")
+    source_frame = None
+    if format_id and format_id in formats:
+        source_frame = formats[format_id].frame_duration
     return Clip(
         id=clip_id,
         kind=local(elem.tag),
         name=name,
-        ref=elem.get("ref"),
+        ref=ref,
         offset=offset,
         start=start,
         duration=duration,
@@ -354,6 +445,11 @@ def _clip(
         element=elem,
         width=width,
         height=height,
+        local_offset=local_offset,
+        anchor=anchor,
+        asset_id=asset_id,
+        conform=conform,
+        source_frame=source_frame,
     )
 
 

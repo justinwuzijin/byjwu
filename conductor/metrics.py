@@ -1,9 +1,11 @@
 """Stop metrics for ``iterate``. All of these are counts the timeline already has.
 
-Silence is the sum of ``silence_gap`` candidates (explicit gaps and timeline
-holes of at least 1.25s). It is not a decoded quiet measurement, and it does
-not include filler words. Shot length and cuts per minute come from the spine:
-a cut is the join between two non-gap clips.
+Silence is the sum of ``silence_gap`` candidates: bare primary gaps, the
+uncovered stretches of a gap that also holds connected clips, and timeline
+holes of at least 1.25s. A stretch that sits under a connected clip is not
+silence. It is not a decoded quiet measurement, and it does not include
+filler words. Shot length and cuts per minute come from the spine: a cut is
+the join between two non-gap clips.
 """
 
 from __future__ import annotations
@@ -90,6 +92,51 @@ class Targets:
             "min_shot_seconds": self.min_shot_seconds,
             "max_cuts_per_minute": self.max_cuts_per_minute,
         }
+
+
+def section_pacing(sequence: Timeline, *, target_seconds: float = 300.0) -> list[dict]:
+    """Average shot length and cuts per minute in a handful of stretches.
+
+    A timeline under three minutes is one stretch. Longer timelines split
+    into sections of about five minutes, and never more than eight.
+    """
+    duration = _duration(sequence)
+    if duration <= 0:
+        return []
+    if float(duration) < 180:
+        count = 1
+    else:
+        count = max(1, min(8, int(round(float(duration) / target_seconds))))
+    edges = [duration * index / count for index in range(count + 1)]
+    shots = [clip for clip in sequence.spine if clip.kind != "gap" and clip.duration > 0]
+    sections = []
+    for index in range(count):
+        start, end = edges[index], edges[index + 1]
+        group = []
+        for clip in shots:
+            mid = clip.timeline_start + clip.duration / 2
+            if start <= mid < end or (index == count - 1 and mid == end):
+                group.append(clip)
+        span = end - start
+        if group:
+            average = sum((clip.duration for clip in group), Fraction(0)) / len(group)
+            if len(group) > 1 and span > 0:
+                cuts_per_minute = (len(group) - 1) / (float(span) / 60.0)
+            else:
+                cuts_per_minute = 0.0
+        else:
+            average = Fraction(0)
+            cuts_per_minute = 0.0
+        sections.append(
+            {
+                "start_seconds": seconds(start),
+                "end_seconds": seconds(end),
+                "shot_count": len(group),
+                "average_shot_seconds": seconds(average) if group else 0.0,
+                "cuts_per_minute": round(cuts_per_minute, 4),
+            }
+        )
+    return sections
 
 
 def measure(sequences: Sequence[Timeline], proposals=None, changes=None) -> dict:

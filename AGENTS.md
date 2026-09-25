@@ -230,3 +230,12 @@ bot-owned loop: each round auto-applies only mechanical gate cuts, writes
 `out/vN/`, and stops on metrics, no progress, or `--max-rounds`. Confidence
 gates live in `conductor/gates.py`. Creative passes never take the `auto`
 disposition. Apply never overwrites the input FCPXML.
+
+XML-only signals, for a timeline with no transcript, live in
+`conductor/candidates.py`. A spine gap counts as silence only where no
+connected clip covers it. Holds are judged against the local average shot.
+Repeated source ranges, rhythm shifts, and mixed frame rates are pacing
+notes (`span="note"`); the mock will not lift them. Real Final Cut exports
+store an anchored `offset` in the parent clip's timebase.
+`fcpxml.anchored_local` also accepts the hand-built seconds-from-in-point
+fixtures in this repo.

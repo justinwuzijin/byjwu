@@ -124,6 +124,136 @@ def test_long_clip_without_transcript_needs_a_name_or_45_seconds():
     assert plain == []
 
 
+def test_a_gap_under_a_connected_clip_is_not_silence():
+    found = _collect(
+        """
+        <fcpxml version="1.11">
+          <resources><format id="r1" frameDuration="1/24s" width="1920" height="1080"/></resources>
+          <project name="Title">
+            <sequence format="r1" duration="6s" tcStart="0s">
+              <spine>
+                <gap name="Gap" offset="0s" start="100s" duration="6s">
+                  <title lane="1" offset="100s" name="Chapter" start="0s" duration="6s"/>
+                </gap>
+              </spine>
+            </sequence>
+          </project>
+        </fcpxml>
+        """,
+        transcript=False,
+    )
+    assert [item.kind for item in found if item.pass_name == "mechanical"] == []
+    covered = [item for item in found if item.kind == "covered_gap"]
+    assert len(covered) == 1
+    assert covered[0].span == "note"
+    assert covered[0].pass_name == "pacing"
+    assert covered[0].signals["do_not_cut"] is True
+
+
+def test_uncovered_head_of_a_real_gap_is_silence_and_the_covered_stretch_is_not():
+    found = _collect(
+        """
+        <fcpxml version="1.11">
+          <resources><format id="r1" frameDuration="1/24s"/></resources>
+          <project name="Gap">
+            <sequence format="r1" duration="20s" tcStart="0s">
+              <spine>
+                <gap name="Gap" offset="0s" start="3600s" duration="20s">
+                  <asset-clip ref="r2" lane="1" offset="3610s" name="B-roll" start="0s" duration="5s"/>
+                </gap>
+              </spine>
+            </sequence>
+          </project>
+        </fcpxml>
+        """,
+        transcript=False,
+        passes=["mechanical", "pacing"],
+    )
+    silence = [item for item in found if item.kind == "silence_gap"]
+    covered = [item for item in found if item.kind == "covered_gap"]
+    assert [item.duration for item in silence] == [10, 5]
+    assert all(item.pass_name == "mechanical" and item.span == "subrange" for item in silence)
+    assert len(covered) == 1 and covered[0].duration == 5 and covered[0].span == "note"
+
+
+def test_forty_five_seconds_among_similar_shots_is_not_a_hold():
+    clips = "\n".join(
+        f'<asset-clip ref="r2" offset="{index * 40}s" name="Shot {index}" start="0s" duration="40s"/>'
+        for index in range(5)
+    )
+    found = _collect(
+        f"""
+        <fcpxml version="1.11">
+          <resources><format id="r1" frameDuration="1/24s"/></resources>
+          <project name="Even">
+            <sequence format="r1" duration="200s" tcStart="0s">
+              <spine>{clips}</spine>
+            </sequence>
+          </project>
+        </fcpxml>
+        """,
+        transcript=False,
+        passes=["pacing"],
+    )
+    assert [item for item in found if item.kind == "long_static"] == []
+
+
+def test_a_shot_four_times_its_neighbors_is_a_hold():
+    durations = [8, 8, 8, 8, 80, 8, 8, 8, 8]
+    offset = 0
+    clips = []
+    for index, duration in enumerate(durations):
+        clips.append(
+            f'<asset-clip ref="r2" offset="{offset}s" name="Shot {index}" start="0s" duration="{duration}s"/>'
+        )
+        offset += duration
+    found = _collect(
+        f"""
+        <fcpxml version="1.11">
+          <resources><format id="r1" frameDuration="1/24s"/></resources>
+          <project name="Hold">
+            <sequence format="r1" duration="{offset}s" tcStart="0s">
+              <spine>{''.join(clips)}</spine>
+            </sequence>
+          </project>
+        </fcpxml>
+        """,
+        transcript=False,
+        passes=["pacing"],
+    )
+    holds = [item for item in found if item.kind == "long_static"]
+    assert [item.clip_name for item in holds] == ["Shot 4"]
+    assert holds[0].signals["asl_ratio"] >= 4
+
+
+def test_repeated_source_range_is_a_note():
+    found = _collect(
+        """
+        <fcpxml version="1.11">
+          <resources>
+            <format id="r1" frameDuration="1/24s"/>
+            <asset id="r2" name="drone" format="r1" start="0s" duration="30s" hasVideo="1"/>
+          </resources>
+          <project name="Reprise">
+            <sequence format="r1" duration="12s" tcStart="0s">
+              <spine>
+                <asset-clip ref="r2" offset="0s" name="First" start="10s" duration="8s"/>
+                <asset-clip ref="r2" offset="8s" name="Again" start="12s" duration="4s"/>
+              </spine>
+            </sequence>
+          </project>
+        </fcpxml>
+        """,
+        transcript=False,
+        passes=["pacing"],
+    )
+    reused = [item for item in found if item.kind == "source_reuse"]
+    assert len(reused) == 1
+    assert reused[0].clip_name == "Again"
+    assert reused[0].span == "note"
+    assert reused[0].signals["fraction_of_shorter"] == 1
+
+
 def test_implicit_hole_is_a_silence_candidate():
     found = _collect(
         """

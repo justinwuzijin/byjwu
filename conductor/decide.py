@@ -170,6 +170,10 @@ def _accepted(candidate_id, proposals, candidates, hold: Fraction) -> Deletion:
 
 
 def _deletion(candidate: Candidate, action: str, hold: Fraction) -> Deletion:
+    if candidate.span == "note":
+        raise ConductorError(
+            f"{candidate.id} is an editor's note ({candidate.kind}), not a range to lift"
+        )
     start = candidate.timeline_start
     end = candidate.timeline_end
     if candidate.span == "clip" and action == "tighten":

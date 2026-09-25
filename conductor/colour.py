@@ -22,7 +22,7 @@ from __future__ import annotations
 from collections.abc import Sequence as SequenceOf
 
 from .candidates import Candidate
-from .fcpxml import Clip, Sequence
+from .fcpxml import Clip, Sequence, local
 from .transcript import Cue
 
 #: Relative aspect gap that counts as extreme when orientation already matches.
@@ -56,7 +56,7 @@ def _sequence(sequence: Sequence) -> list[Candidate]:
     anchor = spine[0] if spine else sequence.spine[0]
     found.append(_unseen(sequence, anchor))
     for clip in spine:
-        if clip.role is None:
+        if not _has_role(clip):
             found.append(_role(sequence, clip))
         aspect = _aspect(sequence, clip)
         if aspect is not None:
@@ -76,6 +76,36 @@ def _unseen(sequence: Sequence, clip: Clip) -> Candidate:
         ),
         signals={"check": "exposure_skin", "decoded_media": False},
     )
+
+
+def _has_role(clip: Clip) -> bool:
+    """True when this spine item, or the audio inside it, carries a role.
+
+    A connected title's ``videoRole`` belongs to the title, so it does not
+    clear the parent. A compound clip often keeps ``dialogue.dialogue-1`` on
+    the nested ``<audio>`` or ``<audio-channel-source>`` rather than on the
+    outer element. That is the clip's own role.
+    """
+    if clip.role:
+        return True
+    element = clip.element
+    if element is None:
+        return False
+    for node in element.iter():
+        if node is element:
+            continue
+        tag = local(node.tag)
+        if tag in {"audio-role-source", "video-role-source"} and node.get("role"):
+            return True
+        if tag == "audio" and (node.get("role") or node.get("audioRole")):
+            return True
+        if node.get("lane"):
+            continue
+        if tag in {"asset-clip", "clip", "video", "audio"} and (
+            node.get("audioRole") or node.get("videoRole")
+        ):
+            return True
+    return False
 
 
 def _role(sequence: Sequence, clip: Clip) -> Candidate:

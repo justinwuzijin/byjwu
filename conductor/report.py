@@ -15,6 +15,8 @@ from . import __version__
 from .candidates import Candidate
 from .decide import Proposal
 from .fcpxml import Document, Sequence
+from .metrics import section_pacing
+from .notes import editor_notes
 from .timeutil import clock, seconds, smpte
 
 PROTOCOL = "cut-conductor.room"
@@ -78,6 +80,12 @@ def build_payload(
             for asset in document.assets.values()
         ],
         "sequences": [_sequence_summary(sequence) for sequence in sequences],
+        "notes": editor_notes(
+            sequences=sequences,
+            candidates=candidates,
+            proposals=proposals,
+            transcript_present=transcript_name is not None,
+        ),
         "candidates": [item.to_state() for item in candidates],
         "changes": ranked,
         "kept": [
@@ -105,6 +113,15 @@ def render_markdown(payload: dict) -> str:
         f"- Markers added this run: {payload['markers_added']}",
         f"- Cuts written: {len(payload['cuts'])}",
         "",
+    ]
+    notes = payload.get("notes") or []
+    if notes:
+        lines.extend(["## Editor's notes", ""])
+        for paragraph in notes:
+            lines.append(paragraph)
+            lines.append("")
+    lines.extend(
+        [
         "## Eligible to apply",
         "",
         "High-confidence mechanical calls. `--min-confidence` can cut these.",
@@ -123,7 +140,8 @@ def render_markdown(payload: dict) -> str:
         "",
         "## Left as-is",
         "",
-    ]
+        ]
+    )
     kept = payload["kept"]
     if not kept:
         lines.append("No candidate was judged `keep`. Regions that were not candidates are untouched.")
@@ -195,6 +213,7 @@ th {{ font: 12px/1.2 ui-sans-serif, sans-serif; letter-spacing: 0.04em; text-tra
 <p class="banner">{escape(_banner(payload))} Mode: {escape(payload["mode"])}.</p>
 <h1>Cut Conductor — {escape(_title(payload))}</h1>
 <p>{escape(payload["brief"])}</p>
+{"".join(f"<p>{escape(paragraph)}</p>" for paragraph in payload.get("notes") or [])}
 {section("Eligible to apply", proposed)}
 {section("Review and escalate", human)}
 </body>
@@ -270,6 +289,7 @@ def _sequence_summary(sequence: Sequence) -> dict:
         "frame_duration": str(sequence.frame_duration),
         "clip_count": len(sequence.spine),
         "existing_marker_count": sum(len(clip.markers) for clip in sequence.spine),
+        "pacing": section_pacing(sequence),
     }
 
 

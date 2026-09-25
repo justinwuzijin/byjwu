@@ -296,6 +296,16 @@ def _policy(candidate: Mapping[str, Any], taste: Mapping[str, Any] | None = None
         return "escalate", 0.58, 0.62
     if kind in {"colour_role", "colour_unseen"}:
         return "mark_review", 0.64, 0.41
+    # Notes a person can read. A cold-open preference must not hide them, and
+    # none of these is a range the mock is willing to lift.
+    if kind == "covered_gap":
+        return "mark_review", 0.72, 0.48
+    if kind == "source_reuse":
+        return "mark_review", 0.70, 0.44
+    if kind == "rhythm_shift":
+        return "mark_review", 0.66, 0.40
+    if kind == "rate_mix":
+        return "mark_review", 0.63, 0.36
     if prefs.get("cold_open_bias") == "keep" and signals.get("is_cold_open"):
         return "keep", 0.90, 0.10
     if kind == "silence_gap":

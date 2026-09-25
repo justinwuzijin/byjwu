@@ -9,6 +9,11 @@ filler, closed holes, and the tail of a tightened hold are all the same
 operation here. Splitting a clip keeps effects and role sources on every
 piece, and keeps markers and keywords whose time falls inside that piece.
 A connected clip that would be sliced in half is dropped and reported.
+
+Connected offsets stay in the parent's timebase. Shifting a spine item along
+the sequence does not rewrite them. Trimming the parent's in point only
+rewrites an offset that was stored as seconds from that in point; a Final Cut
+timebase offset stays put and the parent's ``start`` moves instead.
 """
 
 from __future__ import annotations
@@ -19,7 +24,7 @@ from dataclasses import dataclass
 from fractions import Fraction
 
 from .errors import ConductorError
-from .fcpxml import CLIP_TAGS, Document, local
+from .fcpxml import CLIP_TAGS, Document, anchored_local, local
 from .timeutil import format_time, parse_time
 
 _TIMED = frozenset({"marker", "keyword", "chapter-marker"})
@@ -78,11 +83,15 @@ def _ripple(sequence, deletions: list[Deletion]) -> list[str]:
             continue
         if kept == [(clip.timeline_start, clip.timeline_end)]:
             new_offset = clip.timeline_start - _deleted_before(clip.timeline_start, deletions)
-            clip.element.set("offset", format_time(new_offset))
+            # Leave the attribute string alone when the clip did not move.
+            if new_offset != clip.offset:
+                clip.element.set("offset", format_time(new_offset))
             pieces.append(clip.element)
             continue
         for start, end in kept:
-            piece, dropped = _piece(clip.element, clip, start, end, deletions)
+            piece, dropped = _piece(
+                clip.element, clip, start, end, deletions, sequence.frame_duration
+            )
             warnings.extend(dropped)
             pieces.append(piece)
     for child in list(spine):
@@ -95,7 +104,7 @@ def _ripple(sequence, deletions: list[Deletion]) -> list[str]:
     return warnings
 
 
-def _piece(element, clip, start: Fraction, end: Fraction, deletions: list[Deletion]):
+def _piece(element, clip, start: Fraction, end: Fraction, deletions: list[Deletion], frame: Fraction):
     local_start = start - clip.timeline_start
     source_start = clip.start + local_start
     source_end = source_start + (end - start)
@@ -106,7 +115,16 @@ def _piece(element, clip, start: Fraction, end: Fraction, deletions: list[Deleti
     for child in list(element):
         tag = local(child.tag)
         if tag in CLIP_TAGS:
-            placed = _place_connected(child, local_start, end - start, clip.name, warnings)
+            placed = _place_connected(
+                child,
+                parent_start=clip.start,
+                parent_duration=clip.duration,
+                local_start=local_start,
+                piece_duration=end - start,
+                clip_name=clip.name,
+                warnings=warnings,
+                frame=frame,
+            )
             if placed is not None:
                 piece.append(placed)
             continue
@@ -123,20 +141,34 @@ def _piece(element, clip, start: Fraction, end: Fraction, deletions: list[Deleti
     return piece, warnings
 
 
-def _place_connected(child, local_start: Fraction, piece_duration: Fraction, clip_name: str, warnings: list[str]):
+def _place_connected(
+    child,
+    *,
+    parent_start: Fraction,
+    parent_duration: Fraction,
+    local_start: Fraction,
+    piece_duration: Fraction,
+    clip_name: str,
+    warnings: list[str],
+    frame: Fraction,
+):
     offset = parse_time(child.get("offset"), Fraction(0))
     duration = parse_time(child.get("duration"), Fraction(0))
+    local_pos, mode = anchored_local(
+        parent_start, parent_duration, offset, duration, frame=frame
+    )
     local_end = local_start + piece_duration
-    if offset + duration <= local_start or offset >= local_end:
+    if local_pos + duration <= local_start or local_pos >= local_end:
         return None
-    if offset < local_start or offset + duration > local_end:
+    if local_pos < local_start or local_pos + duration > local_end:
         warnings.append(
             f"dropped connected clip {child.get('name') or local(child.tag)!r} "
             f"on {clip_name!r}; it crossed a cut"
         )
         return None
     placed = copy.deepcopy(child)
-    placed.set("offset", format_time(offset - local_start))
+    if mode == "edit":
+        placed.set("offset", format_time(offset - local_start))
     return placed
 
 

@@ -7,9 +7,11 @@ import sys
 from pathlib import Path
 
 from .errors import ConductorError
+from .feedback import apply_note_items, bind_pending, diff_fcpxml, load_notes
+from .fcpxml import parse_fcpxml
 from .ingest import DEFAULT_BRIEF, ingest
 from .iterate import format_report, iterate
-from .passes import PASSES
+from .passes import PASSES, collect
 from .run import Report, analyze
 from .taste import feedback_event, load_taste, write_taste
 
@@ -53,14 +55,27 @@ def main(argv: list[str] | None = None) -> int:
     )
     ui = sub.add_parser("ui", help="local page that runs ingest on a folder path")
     ui.add_argument("--port", type=int, default=8765, help="localhost port (default: 8765)")
-    feedback = sub.add_parser("feedback", help="append an accept or reject to a taste log")
-    feedback.add_argument("--taste", required=True, help="taste JSON to read")
-    feedback.add_argument("--out", required=True, help="where to write the updated taste JSON")
-    feedback.add_argument("--event", required=True, choices=("accept", "reject"))
-    feedback.add_argument("--id", required=True, help="candidate id")
-    feedback.add_argument("--action", required=True, help="the action the person judged")
-    feedback.add_argument("--pass", dest="pass_name", required=True, help="pass that produced it")
+    feedback = sub.add_parser(
+        "feedback",
+        help="record an accept/reject, a notes file, or a diff against an editor re-export",
+    )
+    feedback.add_argument("--taste", required=True, help="project taste JSON to read")
+    feedback.add_argument("--out", required=True, help="where to write the updated project taste JSON")
+    feedback.add_argument("--global-taste", help="optional global profile to read")
+    feedback.add_argument(
+        "--global-out",
+        help="where to write global-scoped notes; required when a note says scope=global",
+    )
+    feedback.add_argument("--event", choices=("accept", "reject", "modify", "extra"))
+    feedback.add_argument("--id", help="candidate id, with --event")
+    feedback.add_argument("--action", help="the action the person judged, with --event")
+    feedback.add_argument("--pass", dest="pass_name", help="pass that produced it, with --event")
     feedback.add_argument("--note", default="")
+    feedback.add_argument("--kind", help="candidate kind, with --event")
+    feedback.add_argument("--notes", help="structured feedback JSON from a room bot")
+    feedback.add_argument("--fcpxml", help="timeline used to bind at= timecodes in --notes")
+    feedback.add_argument("--proposed", help="conductor shadow FCPXML, with --edited")
+    feedback.add_argument("--edited", help="editor re-export, with --proposed")
     args = parser.parse_args(argv)
     try:
         if args.command == "feedback":
@@ -84,6 +99,9 @@ def main(argv: list[str] | None = None) -> int:
             apply=args.command == "apply",
             accept=_accept(getattr(args, "accept", None)),
             min_confidence=getattr(args, "min_confidence", None),
+            global_taste_path=args.global_taste,
+            feedback_path=args.feedback,
+            learn_from=args.learn_from,
         )
     except ConductorError as exc:
         print(f"cut-conductor: {exc}", file=sys.stderr)
@@ -106,7 +124,19 @@ def _add_analyze(parser: argparse.ArgumentParser) -> None:
         action="append",
         help=f"run one pass (repeatable). Ready: {ready}. Reserved: {reserved}.",
     )
-    parser.add_argument("--taste", help="taste JSON (prefs, gates, accept/reject log)")
+    parser.add_argument("--taste", help="project taste JSON (prefs, gates, feedback log)")
+    parser.add_argument(
+        "--global-taste",
+        help="optional global taste profile, read-only; project keys win",
+    )
+    parser.add_argument(
+        "--feedback",
+        help="notes JSON a room bot wrote from chat (timecodes and standing rules)",
+    )
+    parser.add_argument(
+        "--learn-from",
+        help="previous conductor shadow FCPXML; the main file is the editor re-export",
+    )
     parser.add_argument(
         "--live",
         action="store_true",
@@ -180,7 +210,13 @@ def _add_iterate(parser: argparse.ArgumentParser) -> None:
         action="append",
         help=f"passes to judge (repeatable). Default includes colour. Ready: {ready}.",
     )
-    parser.add_argument("--taste", help="taste JSON carried into round 1; later rounds use the written log")
+    parser.add_argument("--taste", help="project taste JSON carried into round 1; later rounds use the written log")
+    parser.add_argument("--global-taste", help="optional global taste profile, read on every round")
+    parser.add_argument("--feedback", help="notes JSON folded into round 1 before judging")
+    parser.add_argument(
+        "--learn-from",
+        help="previous conductor shadow FCPXML; --fcpxml is the editor re-export. Round 1 only.",
+    )
     parser.add_argument(
         "--live",
         action="store_true",
@@ -243,6 +279,9 @@ def _iterate(args) -> int:
         max_silence_seconds=args.max_silence_seconds,
         min_shot_seconds=args.min_shot_seconds,
         max_cuts_per_minute=args.max_cuts_per_minute,
+        global_taste_path=args.global_taste,
+        feedback_path=args.feedback,
+        learn_from=args.learn_from,
     )
     print(format_report(result))
     for warning in result.warnings:
@@ -314,25 +353,96 @@ def _print_report(report: Report, starter: Path | None = None) -> None:
         print(f"  taste   {report.out_taste}")
     if report.out_html:
         print(f"  html    {report.out_html}")
+    learned = report.payload.get("learned") or []
+    if learned:
+        print(f"  learned {len(learned)} feedback event(s)")
 
 
 def _feedback(args) -> int:
-    taste = load_taste(args.taste)
-    taste.append(
-        feedback_event(
+    if bool(args.proposed) != bool(args.edited):
+        raise ConductorError("--proposed and --edited are used together")
+    modes = [bool(args.event), bool(args.notes), bool(args.proposed)]
+    if sum(modes) != 1:
+        raise ConductorError("feedback needs one of --event, --notes, or --proposed with --edited")
+    destination = Path(args.out)
+    _refuse_same(destination, args.taste, "taste file")
+    taste = load_taste(args.taste, global_path=args.global_taste)
+    candidates = _feedback_candidates(args.fcpxml) if args.fcpxml else None
+    warnings: list[str] = []
+    if args.event:
+        if not args.id or not args.action or not args.pass_name:
+            raise ConductorError("--event needs --id, --action, and --pass")
+        fields = {"source": "feedback"}
+        if args.kind:
+            fields["kind"] = args.kind
+        row = feedback_event(
             event=args.event,
             candidate_id=args.id,
             action=args.action,
             pass_name=args.pass_name,
             note=args.note,
+            fields=fields,
         )
-    )
-    destination = Path(args.out)
-    if destination.resolve() == Path(args.taste).resolve():
-        raise ConductorError("refusing to overwrite the taste file; pass a different --out")
+        taste.append(row)
+        summary = f"wrote {args.event} for {args.id}"
+    elif args.proposed:
+        events, warnings = diff_fcpxml(args.proposed, args.edited)
+        added = 0
+        for event in events:
+            if taste.append(event):
+                added += 1
+        summary = f"learned {added} event(s) from the re-export"
+    else:
+        project_items, global_items = _split_scope(load_notes(args.notes))
+        if global_items:
+            _write_global_notes(args, global_items, candidates)
+        noted, warnings = apply_note_items(taste, project_items)
+        if candidates is not None:
+            bound, bind_warnings = bind_pending(taste, candidates)
+            noted = [*noted, *bound]
+            warnings = [*warnings, *bind_warnings]
+        summary = f"learned {len(noted)} note(s)"
+        if taste.pending:
+            summary += f", {len(taste.pending)} still pending"
     write_taste(taste, destination)
-    print(f"cut-conductor: wrote {args.event} for {args.id} to {args.out}")
+    print(f"cut-conductor: {summary} to {args.out}")
+    for warning in warnings:
+        print(f"  warning {warning}", file=sys.stderr)
     return 0
+
+
+def _feedback_candidates(path: str):
+    document = parse_fcpxml(path)
+    return collect(document.sequences, [], transcript_present=False)
+
+
+def _split_scope(items: list[dict]) -> tuple[list[dict], list[dict]]:
+    project, glob = [], []
+    for item in items:
+        if item.get("scope") == "global":
+            glob.append(item)
+        else:
+            project.append(item)
+    return project, glob
+
+
+def _write_global_notes(args, items: list[dict], candidates) -> None:
+    if not args.global_out:
+        raise ConductorError("a note has scope global; pass --global-out")
+    if args.global_taste:
+        _refuse_same(Path(args.global_out), args.global_taste, "global taste file")
+    cleaned = [{key: value for key, value in item.items() if key != "scope"} for item in items]
+    glob = load_taste(args.global_taste) if args.global_taste else load_taste(None)
+    apply_note_items(glob, cleaned)
+    if candidates is not None:
+        bind_pending(glob, candidates)
+    write_taste(glob, Path(args.global_out))
+    print(f"cut-conductor: wrote {len(cleaned)} global note(s) to {args.global_out}")
+
+
+def _refuse_same(destination: Path, source: str, label: str) -> None:
+    if destination.resolve() == Path(source).resolve():
+        raise ConductorError(f"refusing to overwrite the {label}; pass a different output path")
 
 
 if __name__ == "__main__":

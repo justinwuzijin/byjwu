@@ -16,6 +16,7 @@ from .apply import apply_edits
 from .decide import deletions_for, judge
 from .errors import ConductorError
 from .fcpxml import Document, parse_fcpxml, write_document
+from .feedback import bind_pending, diff_fcpxml, ingest_notes
 from .jev import dry_run_forced
 from .markers import apply_markers
 from .metrics import measure
@@ -71,6 +72,9 @@ def analyze(
     signals: str = "auto",
     transcribe: str = "auto",
     signal_cache: str | Path | None = None,
+    global_taste_path: str | Path | None = None,
+    feedback_path: str | Path | None = None,
+    learn_from: str | Path | None = None,
 ) -> Report:
     """Run the named passes and write a shadow proposal.
 
@@ -82,6 +86,11 @@ def analyze(
     every pass in ``passes``. ``allow_empty_apply`` writes the shadow and
     skips the cut file when the gate matches nothing. ``skip_apply`` sees the
     pre-cut metrics and can decline the cut.
+
+    ``learn_from`` is the previous conductor shadow FCPXML. ``fcpxml_path``
+    is the editor's re-export. The diff is appended to the project taste
+    before this run judges. ``feedback_path`` is a notes file from a room
+    bot. ``global_taste_path`` is read-only.
     """
     source = Path(fcpxml_path)
     source_bytes = source.read_bytes()
@@ -107,7 +116,19 @@ def analyze(
             if transcript_present
             else None
         )
-    taste = load_taste(taste_path)
+    taste = load_taste(taste_path, global_path=global_taste_path)
+    learned: list[dict] = []
+    learn_warnings: list[str] = []
+    if learn_from:
+        events, diff_warnings = diff_fcpxml(learn_from, source)
+        learn_warnings.extend(diff_warnings)
+        for event in events:
+            if taste.append(event):
+                learned.append(event)
+    if feedback_path:
+        noted, note_warnings = ingest_notes(taste, feedback_path)
+        learn_warnings.extend(note_warnings)
+        learned.extend(noted)
     candidates = collect(
         sequences,
         cues,
@@ -115,6 +136,9 @@ def analyze(
         requested=passes,
         audio_silences=signal_report.silences,
     )
+    bound, bind_warnings = bind_pending(taste, candidates)
+    learn_warnings.extend(bind_warnings)
+    learned.extend(bound)
     use_live = bool(live) and not dry_run_forced()
     proposals, receipts = judge(candidates, brief, live=use_live, taste=taste)
     mode = "live" if use_live else "dry-run"
@@ -161,6 +185,7 @@ def analyze(
                             "kind": candidate.kind,
                             "timeline_start_seconds": seconds(deletion.start),
                             "timeline_end_seconds": seconds(deletion.end),
+                            "source": "person" if accept else "auto",
                         },
                     )
                 )
@@ -223,10 +248,11 @@ def analyze(
         taste=taste.to_state(),
         gates=taste.gates.to_dict(),
         cuts=cuts,
-        apply_warnings=apply_warnings,
+        apply_warnings=[*learn_warnings, *apply_warnings],
         shadow=not bool(cuts),
         applied=bool(cuts),
         signals=signal_report.to_state(),
+        learned=learned,
     )
     if source.read_bytes() != source_bytes:
         raise ConductorError("refusing to finish: the source FCPXML changed during the run")
@@ -253,7 +279,7 @@ def analyze(
         out_markdown=out_md,
         out_html=out_html,
         out_taste=out_taste,
-        warnings=[*signal_report.warnings, *apply_warnings],
+        warnings=[*signal_report.warnings, *learn_warnings, *apply_warnings],
     )
 
 

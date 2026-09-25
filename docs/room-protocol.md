@@ -5,14 +5,16 @@ How a Grok bot room drives Cut Conductor. v1 is the library and the CLI. No bot 
 The shared object is one timeline plus one brief. The timeline is a Final Cut export, or a starter sequence built from a selects folder. The shared artifact is the JSON report (`protocol` `cut-conductor.room`, `protocol_version` 1).
 
 ```text
-~/Desktop/jevid-in  (export, or a selects folder)
-    → Transcript supplies SRT/VTT (optional)
+~/Desktop/jevid-in  (export, bundle, zip, or a selects folder)
+    → room-run detects which
+    → Transcript supplies SRT/VTT when one is sitting next to the timeline
     → Conductor iterate: analyze, then auto-apply mechanical cuts only
-    → ~/Desktop/jevid-out/vN
+    → ~/Desktop/jevid-out/<name>-<timestamp>/vN
+    → room.md and room.json for the chat
     → stop on metrics, no further mechanical cut, or the round cap
     → a person only for escalate, or when the cap hits
     → accept/reject events land in taste.json
-    → the next decide call sees that taste
+    → the next decide call shifts confidence from that history
 ```
 
 ## Desktop folders
@@ -21,22 +23,20 @@ The person does not run the CLI. The bots do.
 
 | folder | who writes it | what it holds |
 |---|---|---|
-| `~/Desktop/jevid-in` | the person | a selects folder, or one FCPXML export |
-| `~/Desktop/jevid-out` | the Conductor bot | `starter.fcpxml` when the input was a folder, `v1/` … `vN/`, and `iterate.json` |
+| `~/Desktop/jevid-in` | the person | a selects folder, one FCPXML export, a `.fcpxmld` bundle, or a zip of either |
+| `~/Desktop/jevid-out/<name>-<timestamp>/` | the Conductor bot | `room.md`, `room.json`, `starter.fcpxml` when the input was a folder, `v1/` … `vN/`, and `iterate.json` |
 
-Nothing in this repo watches those folders or uploads media. The bot on that machine is what reads the path and writes the next file. Final Cut is still opened by a person, and only to import the FCPXML the room points at.
+The bot runs one command. It detects the drop, calls `iterate`, and does not modify the input. A second run writes a new timestamped folder.
 
 ```bash
-python -m conductor iterate \
-  --media ~/Desktop/jevid-in \
+python -m conductor room-run ~/Desktop/jevid-in/cut.fcpxml \
   --brief "A tight interview. Keep the guest's story, lose dead air." \
-  --transcript ~/Desktop/jevid-in/interview.srt \
-  --taste taste.json \
-  --out-dir ~/Desktop/jevid-out \
-  --max-rounds 5
+  --out-root ~/Desktop/jevid-out
 ```
 
-An export uses `--fcpxml` instead of `--media`. Exactly one of the two.
+A folder of clips, a `.fcpxmld` bundle, or a `.zip` uses the same command. A drop with music goes to the style assembler first when one is installed (`flow` `assemble+iterate`); otherwise it takes the usual path with a warning. The hook contract is in [room-run.md](room-run.md). Dry-run is the default. `--live` calls Jev. `room.md` is what the bot pastes into chat. `room.json` is `protocol` `cut-conductor.room-run`, `protocol_version` 1. It points at `iterate.json` and the per-round `*.conductor.json` files. It does not replace them.
+
+`room-run --watch ~/Desktop/jevid-in` is the optional inbox process (debounce, skip already processed, log). Operators set that up from [room-run.md](room-run.md). The editor does not run it. Final Cut is still opened by a person, and only to import the FCPXML named in the summary.
 
 ## Selects folder
 
@@ -93,7 +93,7 @@ Configured targets: `--target-seconds` with `--tolerance` (default 1 second, a s
 
 Dead air measured inside a clip is separate. When media signals run, that quiet range is also a `silence_gap` candidate (`signals.audio` true) and `iterate` may auto-apply it under the same mechanical gate. The measurement itself is on `signals` in the round JSON, not added again into `silence_seconds`.
 
-`iterate.json` at the output root is `protocol` `cut-conductor.iterate`, `protocol_version` 1. Bots post `stop_reason`, `needs_human`, `human_reasons`, `applied`, and `rounds`. Each round still has its own `*.conductor.json` (`cut-conductor.room`). Do not invent a third schema.
+`iterate.json` at the output root is `protocol` `cut-conductor.iterate`, `protocol_version` 1. Bots post `stop_reason`, `needs_human`, `human_reasons`, `applied`, and `rounds`. Each round still has its own `*.conductor.json` (`cut-conductor.room`). `room-run` adds `room.json` (`cut-conductor.room-run`) as the chat summary that points at those files. Do not invent another schema.
 
 `needs_human` is true when the last round's escalate count is above zero, or `stop_reason` is `max-rounds`. A `metrics` or `no-progress` stop with no escalate is the bot finishing. Review rows are marked and left for later. The loop does not `--accept` them.
 
@@ -178,12 +178,12 @@ echo "$CONDUCTOR_WHISPER_MODEL"
 
 Owns the brief, which passes run, the taste file, the iterate loop, and whether a one-shot run is shadow or apply.
 
-- Calls `python -m conductor iterate` for the unattended loop, or `conductor.analyze` / `conductor.ingest` for a single shadow pass.
+- Calls `python -m conductor room-run` for a drop. That calls `iterate` (and, for a clip folder, the starter FCPXML `iterate` already writes). `conductor.analyze` / `conductor.ingest` remain the one-shot library calls.
 - Actions stay inside `{keep, tighten, remove, mark_review, escalate}`. A bot does not add a sixth.
 - Default for a one-shot command is shadow. Apply is a separate command and a separate file. Iterate's apply is the mechanical auto gate only, and it still writes a new file.
 - Applies an unattended cut only when the gate marked it `auto` and the pass is mechanical.
 - Applies a review call only when a person named that candidate id with `--accept`. Iterate does not do this.
-- Writes `*.conductor.json` per round and `iterate.json` for the loop. Do not invent another schema.
+- Writes `*.conductor.json` per round, `iterate.json` for the loop, and `room.json` / `room.md` for the chat summary. Do not invent another schema.
 
 ### Transcript
 
@@ -314,7 +314,112 @@ python -m conductor feedback \
 
 ## Taste, and how bots feed it
 
-`taste.json` version 1:
+The person does not edit `taste.json`. The bot does, from two things the person already produces: a Final Cut re-export, and a sentence in the room.
+
+Nothing is trained. Each kind (`silence_gap`, `short_clip`, `long_static`, `filler_pause`, the colour kinds) gets a prior recomputed from the log. The prior moves that kind's confidence by at most 0.20, and it can only raise the mechanical auto threshold. A call that was under the auto line stays under it unless a rule sets `loosen_auto`. That flag is the opt-in. Creative passes still never take `auto`.
+
+The report row carries `confidence` (after the prior), `confidence_raw` (what Jev or the mock returned), and `taste_reason`. The reason is a sentence like `confidence lowered because you rejected 4/5 similar suggestions`. The same sentence is on the marker note (`taste=`) and under `taste.priors` in the JSON. A bot posts `taste_reason` when it explains a review marker.
+
+### Project file and global profile
+
+`--taste` is the project file. `--global-taste` is optional and read-only during `analyze` and `iterate`. Project prefs, gates, and rules win. Priors read both logs. The taste file a run writes does not copy the global log into the project.
+
+```bash
+python -m conductor analyze reexport.fcpxml \
+  --brief "..." \
+  --taste ~/Desktop/jevid-out/project.taste.json \
+  --global-taste ~/Desktop/jevid-out/global.taste.json \
+  --learn-from ~/Desktop/jevid-out/v1/timeline.conductor.fcpxml \
+  --feedback ~/Desktop/jevid-in/notes.json \
+  --out-dir ~/Desktop/jevid-out/v2
+```
+
+`iterate` takes the same three flags. `--learn-from` and `--feedback` apply on round 1 only. `--global-taste` is read every round. Later rounds keep using the taste file the previous round wrote.
+
+### Diff the re-export
+
+`--learn-from` is the shadow FCPXML the room handed back (the one with Conductor markers). The main file is what the person re-exported after editing in Final Cut. The same pair can be recorded first:
+
+```bash
+python -m conductor feedback \
+  --taste project.taste.json \
+  --out ~/Desktop/jevid-out/project.taste.json \
+  --proposed ~/Desktop/jevid-out/v1/timeline.conductor.fcpxml \
+  --edited ~/Desktop/jevid-in/reexport.fcpxml
+```
+
+Matching uses the media URL and source time, so Final Cut can renumber asset ids. For each Conductor marker:
+
+| what the re-export did | event |
+|---|---|
+| suggested range is gone | `accept` |
+| suggested range is only partly gone | `modify` |
+| picture remains, that marker is gone, and some other Conductor marker survived | `reject` |
+| picture remains and the marker is still there | nothing (still open) |
+| a cut that matches no suggestion | `extra` |
+
+If the re-export has zero Conductor markers, rejects are not inferred. A stripped note is not a reject-all. Accepts, modifies, and extras still are. The bot says so from the warning.
+
+`extra` events name a kind when the cut is recognizable (`silence_gap`, `short_clip`, `long_static`). Anything else is `editor_cut` and does not move the known kinds. Checked-in pair: `fixtures/feedback/proposed.fcpxml` and `fixtures/feedback/edited.fcpxml`.
+
+### Notes from chat
+
+Write one JSON object per thing the person said. `at` is a timecode on the sequence clock. `12:30` is twelve minutes and thirty seconds. No `at`, with a `kind`, is a standing rule.
+
+`fixtures/feedback/notes.json`:
+
+```json
+{
+  "version": 1,
+  "items": [
+    {
+      "event": "reject",
+      "at": "12:30",
+      "kind": "long_static",
+      "note": "keep the long hold"
+    },
+    {
+      "scope": "rule",
+      "event": "accept",
+      "kind": "short_clip",
+      "action": "remove",
+      "when": {"flash": true},
+      "note": "always cut flash frames",
+      "loosen_auto": true
+    }
+  ]
+}
+```
+
+`"keep the long hold at 12:30"` is the first item: `event` `reject`, `kind` `long_static`. It binds to the candidate that contains that time. If this timeline has no such candidate, the note stays in `pending` and the next run tries again.
+
+`"always cut flash frames"` is the second item. `when.flash` matches the short-clip signal. `loosen_auto: true` is the only way a prior may newly qualify a mechanical call for auto-apply. Set it when the person said "always". Leave it off and a positive prior still cannot open the auto gate. A reject rule blocks auto for that kind. Creative passes stay in review either way.
+
+`scope` `global` on an item is written only by `feedback --global-out`. `analyze --feedback` files every item on the project taste.
+
+```bash
+python -m conductor feedback \
+  --taste project.taste.json \
+  --out ~/Desktop/jevid-out/project.taste.json \
+  --global-taste global.taste.json \
+  --global-out ~/Desktop/jevid-out/global.taste.json \
+  --notes ~/Desktop/jevid-in/notes.json \
+  --fcpxml ~/Desktop/jevid-in/reexport.fcpxml
+```
+
+`--fcpxml` is how `at` finds a candidate. Without it, timed notes stay pending until the next analyze.
+
+### What the prior does
+
+Counts are per `kind`, from the project log and the global log, deduped by `fingerprint`.
+
+- Rejections lower confidence. Four rejects and one accept of the same kind produce `confidence lowered because you rejected 4/5 similar suggestions`.
+- The same rejections raise that kind's auto threshold (at most +0.12 at a total reject rate). Accepts never lower it.
+- A positive shift cannot push a below-threshold call across the auto line unless a matching rule has `loosen_auto`.
+- Accepts that `iterate` or `apply --min-confidence` made on their own are logged with `source` `auto` and never count. Only a person's `--accept`, a re-export, or a note moves a prior.
+- The sentence is stored on the change row. The gate sees the shifted confidence, so a mechanical cut can leave `eligible` and land in `review`. `iterate` then will not auto-apply it.
+
+`taste.json` version 1. `rules` and `pending` are optional.
 
 ```json
 {
@@ -330,37 +435,32 @@ python -m conductor feedback \
     "review_confidence": 0.55,
     "auto_risk_max": 0.35
   },
+  "rules": [],
   "log": [
     {
       "event": "reject",
       "candidate_id": "c0004",
       "action": "tighten",
       "pass": "dialogue",
+      "kind": "filler_pause",
       "note": "keep the breath before the explanation"
     }
   ]
 }
 ```
 
-`target_pace` is `tight`, `measured`, or `loose`. `cold_open_bias` is `keep`, `neutral`, or `cut`. `jump_cut_tolerance` is 0 to 1. Extra log fields (a room may add `at`) are kept.
+`target_pace` is `tight`, `measured`, or `loose`. `cold_open_bias` is `keep`, `neutral`, or `cut`. `jump_cut_tolerance` is 0 to 1. Extra log fields are kept. Log events are `accept`, `reject`, `modify`, and `extra`.
 
-When taste is present, Jev state includes:
-
-- `prefs` — the four preferences, unchanged.
-- `feedback.accepts` / `feedback.rejects` — counts.
-- `feedback.recent` — the last 20 events.
-
-That is the whole learning loop in v1. No model is trained. A later bot can bias its own ranking by reading the same log; it should still pass the file through `--taste` so the decide call and the bot see one object.
+When taste is present, Jev state includes `prefs`, `feedback` counts (`accepts`, `rejects`, `modifies`, `extras`, and the last 20 events), `priors`, and `rules`. The confidence shift is applied after the answer, in the gate, not by asking the model to do arithmetic.
 
 Who appends what:
 
 | event | who writes it | when |
 |---|---|---|
-| `accept` | Conductor, during `apply` | after the new FCPXML is built, one event per cut |
-| `accept` | Transcript, Pacing, or Conductor via `feedback` | a person agreed and wants it logged before the next pass |
-| `reject` | the bot that owns the pass, via `feedback` | a person declined the proposal |
-
-The next analyze/apply that points `--taste` at the updated file puts those events in front of Jev.
+| `accept` | Conductor, during `apply` or `iterate` | after the new FCPXML is built, one event per cut |
+| `accept`, `reject`, `modify`, `extra` | Conductor, from `--learn-from` or `feedback --proposed` | the re-export differs from the shadow file |
+| `accept` / `reject` | the bot, via `feedback --event` or a notes file | the person said so in the room |
+| rule | the bot, via a notes item with a `kind` and no `at` | a standing preference, including `loosen_auto` |
 
 ## State payload
 
@@ -380,6 +480,10 @@ The next analyze/apply that points `--taste` at the updated file puts those even
 | `changes[].raw_action` | what Jev chose, before the gate |
 | `changes[].action` | what the marker shows, after the gate |
 | `changes[].disposition` | `auto`, `review`, or `escalate` |
+| `changes[].confidence` | after the taste prior; this is what the gate used |
+| `changes[].confidence_raw` | Jev or the mock, before the prior |
+| `changes[].taste_reason` | why the prior moved, or null |
+| `learned[]` | events folded in from `--learn-from` or `--feedback` this run. A standing rule has `record` `rule` and is not a log row |
 | `kept[]` | candidates judged `keep` |
 | `cuts[]` | ranges actually removed, present only on apply |
 | `receipts[]` | state, questions, and answers for that batch |
@@ -393,4 +497,4 @@ The next analyze/apply that points `--taste` at the updated file puts those even
 - No story, audio, or b-roll judgments until a generator is registered. Colour is registered and review-only; it does not decode the picture.
 - No unattended cut outside the mechanical auto gate. Iterate does not accept review ids on its own.
 - No Desktop watcher in this repo. `~/Desktop/jevid-in` and `~/Desktop/jevid-out` are the folders the bot is told to use.
-- No training step on the taste log.
+- No trained model on the taste log. Priors are a bounded count, recomputed from the log, and they cannot loosen mechanical auto-apply without `loosen_auto`.

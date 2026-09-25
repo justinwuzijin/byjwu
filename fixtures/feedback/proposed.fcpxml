@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE fcpxml>
+<fcpxml version="1.11">
+  <resources>
+    <format id="r1" name="FFVideoFormat1080p24" frameDuration="1/24s" width="1920" height="1080"/>
+    <asset id="r2" name="interview" uid="A-INTERVIEW" start="0s" duration="600s" hasVideo="1" hasAudio="1" format="r1">
+      <media-rep kind="original-media" src="file:///Volumes/Media/interview.mov"/>
+    </asset>
+  </resources>
+  <library location="file:///Volumes/Media/Interview.fcpbundle">
+    <event name="Interview" uid="E-INTERVIEW">
+      <project name="Rough Cut" uid="P-ROUGH">
+        <sequence format="r1" duration="325/8s" tcStart="0s" tcFormat="NDF">
+          <spine>
+            <asset-clip ref="r2" offset="0s" name="Talk" start="12s" duration="8s" audioRole="dialogue">
+              <marker start="14s" duration="1/24s" value="Keep this" note="human marker"/>
+              <marker start="12s" duration="1/24s" value="CC review · filler @ 00:00" note="Cut Conductor shadow proposal. No edit was applied. | color=orange | action=mark_review | raw_action=mark_review | disposition=review | pass=dialogue | confidence=0.60 | risk=0.46 | id=c0004 | kind=filler_pause | range=00:00:00.000-00:00:08.000 | why=left for the editor"/>
+            </asset-clip>
+            <gap name="Gap" offset="8s" start="3600s" duration="5/2s">
+              <marker start="3600s" duration="1/24s" value="CC remove · silence gap @ 00:08" note="Cut Conductor shadow proposal. No edit was applied. | color=red | action=remove | raw_action=remove | disposition=auto | pass=mechanical | confidence=0.86 | risk=0.12 | id=c0001 | kind=silence_gap | range=00:00:08.000-00:00:10.500 | why=explicit gap of 2.5s"/>
+            </gap>
+            <asset-clip ref="r2" offset="21/2s" name="Flash" start="80s" duration="1/8s" audioRole="dialogue">
+              <marker start="80s" duration="1/24s" value="CC remove · short clip @ 00:10" note="Cut Conductor shadow proposal. No edit was applied. | color=red | action=remove | raw_action=remove | disposition=auto | pass=mechanical | confidence=0.91 | risk=0.14 | id=c0002 | kind=short_clip | range=00:00:10.500-00:00:10.625 | why=flash frame"/>
+            </asset-clip>
+            <asset-clip ref="r2" offset="85/8s" name="Hold" start="100s" duration="24s" audioRole="dialogue">
+              <marker start="100s" duration="1/24s" value="CC tighten · long static @ 00:10" note="Cut Conductor shadow proposal. No edit was applied. | color=blue | action=tighten | raw_action=tighten | disposition=review | pass=pacing | confidence=0.73 | risk=0.33 | id=c0003 | kind=long_static | range=00:00:14.625-00:00:34.625 | why=long hold"/>
+            </asset-clip>
+            <asset-clip ref="r2" offset="277/8s" name="Button" start="200s" duration="6s" audioRole="dialogue"/>
+          </spine>
+        </sequence>
+      </project>
+    </event>
+  </library>
+</fcpxml>

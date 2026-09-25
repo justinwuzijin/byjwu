@@ -525,6 +525,75 @@ def chapters(videos: list[Video], plug_under_s: float = 15.0) -> dict:
     }
 
 
+ENGINE_ROLES = {
+    "talking": ("talking", "confessional", "vlog"),
+    "montage": ("montage", "broll"),
+    "title_card": ("chapter_card",),
+    "end_card": ("end_card",),
+}
+
+
+def _role(v: Video, index: int) -> str:
+    """Map a labelled section onto the assembly engine's section kinds.
+
+    The first section is the intro, the last section before the end card is
+    the outro, and the rest pool by ENGINE_ROLES. A monologue that is not the
+    outro counts as montage (music-led).
+    """
+    sec = v.sections[index]
+    last_body = max(i for i, s in enumerate(v.sections) if s["type"] != "end_card")
+    if index == 0:
+        return "intro"
+    if index == last_body:
+        return "outro"
+    for role, kinds in ENGINE_ROLES.items():
+        if sec["type"] in kinds:
+            return role
+    return "montage"
+
+
+def roles(videos: list[Video]) -> dict:
+    """Shot lengths, shares and levels per assembly-engine section kind."""
+    shots: dict[str, list[float]] = {}
+    seconds: dict[str, float] = {}
+    lengths: dict[str, list[float]] = {}
+    levels_: dict[str, list[float]] = {}
+    total = sum(v.duration for v in videos)
+    montage_ref = []
+    for v in videos:
+        m = [np.median(v.mom(s["start"], s["end"])) for s in v.sections if s["type"] == "montage"]
+        montage_ref.append(float(np.median(m)))
+        for i, sec in enumerate(v.sections):
+            role = _role(v, i)
+            seconds[role] = seconds.get(role, 0.0) + sec["end"] - sec["start"]
+            lengths.setdefault(role, []).append(sec["end"] - sec["start"])
+            cuts = [c for c in v.cuts["0p3"] if sec["start"] < c < sec["end"]]
+            if sec["type"] in ("talking", "confessional"):
+                cuts = sorted(set(cuts + jump_cut_spikes(v, sec["start"], sec["end"])))
+            edges_ = [sec["start"]] + cuts + [sec["end"]]
+            shots.setdefault(role, []).extend(b - a for a, b in zip(edges_, edges_[1:]))
+            m = v.mom(sec["start"], sec["end"])
+            if m.size:
+                levels_.setdefault(role, []).append(float(np.median(m)) - montage_ref[-1])
+    out = {}
+    for role in ("intro", "talking", "montage", "outro", "title_card", "end_card"):
+        dist = _dist(shots.get(role, []))
+        out[role] = {
+            "shot_length": dist,
+            "share": _r(seconds.get(role, 0.0) / total),
+            "seconds": _r(seconds.get(role, 0.0), 1),
+            "section_seconds": _dist(lengths.get(role, [])),
+            "level_vs_montage_lu": _r(np.median(levels_[role]), 1) if levels_.get(role) else None,
+        }
+    out["mapping"] = {
+        "intro": "first labelled section",
+        "outro": "last section before the end card",
+        **{role: list(kinds) for role, kinds in ENGINE_ROLES.items()},
+    }
+    out["target_seconds_median"] = _r(np.median([v.duration for v in videos]), 1)
+    return out
+
+
 def summary(result: dict) -> dict:
     edges_ = [e for vid, e in result["edges"].items() if vid in LONG_VIDEOS]
     return {
@@ -725,6 +794,7 @@ def analyze(bundle: Path, labels_path: Path = HERE / "sections.json") -> dict:
             }
         },
         "chapters": chapters(videos),
+        "roles": roles(videos),
     }
     result["summary"] = summary(result)
     return result

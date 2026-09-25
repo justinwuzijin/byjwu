@@ -779,6 +779,190 @@
    }
   }
  },
+ "roles": {
+  "end_card": {
+   "level_vs_montage_lu": -8.7,
+   "seconds": 36.8,
+   "section_seconds": {
+    "max": 18.961,
+    "mean": 12.255,
+    "median": 9.704,
+    "min": 8.101,
+    "n": 3,
+    "p10": 8.422,
+    "p25": 8.902,
+    "p75": 14.332,
+    "p90": 17.11
+   },
+   "share": 0.012,
+   "shot_length": {
+    "max": 17.476,
+    "mean": 4.085,
+    "median": 2.267,
+    "min": 0.033,
+    "n": 9,
+    "p10": 0.041,
+    "p25": 1.442,
+    "p75": 4.067,
+    "p90": 8.856
+   }
+  },
+  "intro": {
+   "level_vs_montage_lu": -17.6,
+   "seconds": 123.1,
+   "section_seconds": {
+    "max": 100.567,
+    "mean": 41.044,
+    "median": 12.804,
+    "min": 9.76,
+    "n": 3,
+    "p10": 10.369,
+    "p25": 11.282,
+    "p75": 56.685,
+    "p90": 83.014
+   },
+   "share": 0.039,
+   "shot_length": {
+    "max": 21.833,
+    "mean": 6.481,
+    "median": 3.733,
+    "min": 0.033,
+    "n": 19,
+    "p10": 2.393,
+    "p25": 3.319,
+    "p75": 7.9,
+    "p90": 13.47
+   }
+  },
+  "mapping": {
+   "end_card": [
+    "end_card"
+   ],
+   "intro": "first labelled section",
+   "montage": [
+    "montage",
+    "broll"
+   ],
+   "outro": "last section before the end card",
+   "talking": [
+    "talking",
+    "confessional",
+    "vlog"
+   ],
+   "title_card": [
+    "chapter_card"
+   ]
+  },
+  "montage": {
+   "level_vs_montage_lu": -2.4,
+   "seconds": 898.7,
+   "section_seconds": {
+    "max": 227.978,
+    "mean": 69.129,
+    "median": 39.472,
+    "min": 18.1,
+    "n": 13,
+    "p10": 22.232,
+    "p25": 25.4,
+    "p75": 67.66,
+    "p90": 191.761
+   },
+   "share": 0.284,
+   "shot_length": {
+    "max": 34.967,
+    "mean": 4.3,
+    "median": 3.087,
+    "min": 0.011,
+    "n": 209,
+    "p10": 1.335,
+    "p25": 2.067,
+    "p75": 5.005,
+    "p90": 8.125
+   }
+  },
+  "outro": {
+   "level_vs_montage_lu": -1.1,
+   "seconds": 368.0,
+   "section_seconds": {
+    "max": 244.1,
+    "mean": 122.657,
+    "median": 69.4,
+    "min": 54.471,
+    "n": 3,
+    "p10": 57.457,
+    "p25": 61.935,
+    "p75": 156.75,
+    "p90": 209.16
+   },
+   "share": 0.116,
+   "shot_length": {
+    "max": 54.471,
+    "mean": 4.433,
+    "median": 2.961,
+    "min": 0.024,
+    "n": 83,
+    "p10": 1.36,
+    "p25": 2.273,
+    "p75": 4.515,
+    "p90": 7.374
+   }
+  },
+  "talking": {
+   "level_vs_montage_lu": -14.3,
+   "seconds": 1698.5,
+   "section_seconds": {
+    "max": 252.462,
+    "mean": 94.36,
+    "median": 82.082,
+    "min": 23.633,
+    "n": 18,
+    "p10": 31.449,
+    "p25": 47.875,
+    "p75": 126.025,
+    "p90": 175.056
+   },
+   "share": 0.536,
+   "shot_length": {
+    "max": 102.269,
+    "mean": 12.308,
+    "median": 7.587,
+    "min": 0.001,
+    "n": 138,
+    "p10": 1.457,
+    "p25": 3.43,
+    "p75": 14.768,
+    "p90": 29.713
+   }
+  },
+  "target_seconds_median": 1113.3,
+  "title_card": {
+   "level_vs_montage_lu": -16.5,
+   "seconds": 42.8,
+   "section_seconds": {
+    "max": 7.633,
+    "mean": 6.107,
+    "median": 6.381,
+    "min": 3.17,
+    "n": 7,
+    "p10": 4.897,
+    "p25": 6.11,
+    "p75": 6.674,
+    "p90": 7.133
+   },
+   "share": 0.013,
+   "shot_length": {
+    "max": 7.633,
+    "mean": 3.886,
+    "median": 5.714,
+    "min": 0.334,
+    "n": 11,
+    "p10": 0.458,
+    "p25": 0.75,
+    "p75": 5.714,
+    "p90": 6.799
+   }
+  }
+ },
  "schema": "byjustinwu.measured/1",
  "short_video": {
   "phS28hhJSP8": {

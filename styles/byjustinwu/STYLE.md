@@ -117,10 +117,10 @@ and motion blur, so read it as how busy the picture feels.
 - **Chapter cards are quiet.** They play over about -29 LUFS of room audio,
   with no music hit.
 
-**Where the profile departs from the measurement:** talking is set to
--18 LUFS rather than the measured -30, and true peak to -1 dBTP rather than
-his overs. The contrast (talk clearly under montage) is the style. Viewers
-riding the volume knob is not.
+**Where the profile departs from the measurement:** `music.mix_targets`
+puts talking at -18 LUFS rather than the measured -30, and true peak at
+-1 dBTP rather than his overs. The contrast (talk clearly under montage) is
+the style. Viewers riding the volume knob is not.
 
 ## Typography
 
@@ -259,19 +259,39 @@ of a full chapter card (`UhPZ4HeJQ6c@172.8, 366.1, 464.5, 874.5, 1074.5`):
 
 ## How jevid uses this
 
-- `profile.json` values with `decided_by: profile` are settings the engine
-  applies directly: shot-length targets, levels, geometry, card timing.
-- `decided_by: jev` values are priors. The engine asks the matching
-  `runtime_questions` through `conductor/jev.py`: which role a run of clips
-  plays, whether a talking section gets a bed, whether a montage locks to the
-  beat, which line earns a slam, how the video opens, marks chapters, and
-  closes.
-- `decided_by: editor` covers words. Narration lines, chapter titles,
-  asides and the tagline noun come from Justin. Jev only selects; it never
-  writes.
-- `conductor_taste` maps the talking rhythm onto today's Cut Conductor taste
-  prefs: `target_pace: loose`, `jump_cut_tolerance: 0.8`,
-  `cold_open_bias: keep`, `hold_seconds: 5.4`.
+`profile.json` is in the assembly engine's `jevid.style` schema (v1). It
+extends `base` and overrides only what differs. The engine reads it as-is.
+
+- **Engine section kinds pool the finer labels.**
+  - talking = talking + confessional + vlog.
+  - montage = music-only montage + music-led b-roll.
+  - intro = the cold open.
+  - outro = the last section before the end card.
+
+  The finer split sits beside the engine keys (`pacing.talking.parts`,
+  `pacing.montage.fast`, `pacing.montage.broll`).
+- **Music blocks are clip-gain beds.** Talking and a talk-led intro sit at
+  -96 dB, montage -2, title cards -16, end card -9, relative to montage at
+  full level. Variants the engine can switch to sit next to each bed:
+  `when_bed`, `when_music_broll`, `when_monologue`.
+- **Speech is not captioned** (`typography.subtitle.enabled: false`). The
+  subtitle geometry is still his, for narration or a skit. Narration text,
+  chapter titles, asides and the tagline noun come from Justin. Jev and Opus
+  only select; they never write.
+- **Evidence** for every value is in `provenance.evidence`, keyed by dotted
+  path, with a confidence and an optional `measured` pointer into
+  `study/measured.json`. `adjusted` marks a deliberate departure from the
+  measurement.
+- **Additions** are listed in `provenance.additions`. Nested ones are kept
+  silently by the loader. The top-level `decisions` list draws one "kept but
+  not read" warning.
+- **`decisions`** are the runtime calls, each with an `editorial` flag for
+  `conductor.jev.ask`.
+  - Linear calls go to Jev (`editorial: false`): which role a run of clips
+    plays, whether a talking section keeps a bed, whether a montage locks to
+    the beat, whether a pause stays.
+  - Creative calls go to Opus 5.5 (`editorial: true`): how the video opens,
+    how chapters are marked, which line earns a slam, how it closes.
 
 ## What the data could not answer
 
@@ -307,10 +327,10 @@ of a full chapter card (`UhPZ4HeJQ6c@172.8, 366.1, 464.5, 874.5, 1074.5`):
 pip install numpy pillow        # pillow only for the frame-derived numbers
 python styles/byjustinwu/study/analyze.py --bundle /path/to/unzipped/bundle \
   --out styles/byjustinwu/study/measured.json
-python -m pytest tests/test_conductor_style.py
+python -m pytest tests/test_byjustinwu_profile.py
 ```
 
 `study/sections.json` holds the only hand-made input: section labels per
 time range, card timings, and which frames to measure. Change a label and
-rerun. The test suite fails if a profile value drifts from its measurement
-without an `adjusted` note.
+rerun. The test fails if a profile value drifts from its measurement
+without an `adjusted` note, or if any value lacks evidence.

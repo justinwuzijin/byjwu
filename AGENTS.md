@@ -230,10 +230,3 @@ bot-owned loop: each round auto-applies only mechanical gate cuts, writes
 `out/vN/`, and stops on metrics, no progress, or `--max-rounds`. Confidence
 gates live in `conductor/gates.py`. Creative passes never take the `auto`
 disposition. Apply never overwrites the input FCPXML.
-
-Style profiles live in `styles/<name>/profile.json` and load through
-`conductor/style.py`; the schema is `styles/README.md`. Every value carries
-evidence and a confidence, and `tests/test_conductor_style.py` checks values
-against the study's committed `measured.json`. Judgement calls a style needs
-at runtime are listed as `runtime_questions` and go to Jev through
-`conductor/jev.py`; words (titles, narration) are the editor's.

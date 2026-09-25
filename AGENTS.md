@@ -221,6 +221,52 @@ on what a whole-cue filler is.
 `JEV_MOCK=1` is the cutmcp switch. Conductor ignores it. Conductor dry-run
 is the default; `CONDUCTOR_DRY_RUN=1` forces the mock even with `--live`.
 
+### Decision routing (`conductor/router.py`)
+
+Product rule: a linear, logical decision (a bounded choice with clear
+criteria) must call **Jev**. An open-ended creative or taste decision goes
+to **Claude Opus 5.5** (`conductor/opus.py`, `ANTHROPIC_API_KEY`, model
+`claude-opus-5-5`, `CONDUCTOR_OPUS_MODEL` to change it). **No Grok or xAI
+model anywhere in the decision path.** `jev.refuse_xai` enforces that on
+every model id and URL. Room bots orchestrate. They do not decide.
+
+- The classification is `router.DECISION_TYPES`. Each type has an engine, a
+  question, and a reason. Add a type with `register_decision`. Do not branch
+  on engine anywhere else. Candidate kinds map to a type of the same name.
+  An unknown kind in a reserved pass uses `PASS_DEFAULTS`, and anything
+  else raises.
+- Everything that decides goes through `Router`: `judge_candidates` for
+  pass candidates, `decide([Ask(...)])` for everything else (the assembly
+  engine, future passes). Do not call `jev.ask` or `opus.complete` directly
+  from a pass.
+- Jev asks carry `options` (≤250) and never a schema. Jev selects, it does
+  not write. Give a linear ask a `rule`: it is the dry-run answer and the
+  fallback.
+- Opus asks carry `options` or a JSON `schema`. The wire schema is stripped
+  to what Anthropic accepts (`schema.wire`). The answer is validated against
+  the full schema (`schema.validate`). Opus 5.5 rejects forced `tool_choice`
+  and disabled thinking. Use `output_config.format`.
+- Fallbacks are not negotiable. If Jev is down, the linear call goes to the
+  deterministic rules at `FALLBACK_DISCOUNT` (0.85×), never to an LLM, and
+  a rules answer is never `auto`. If
+  Opus is down, the creative call becomes a review marker with no action.
+  The first failed request marks that engine down for the rest of the run.
+- The gate (`gates.route`) is separate from the engine. A Jev call on a
+  creative pass is still review-only. Threshold comparisons in the gate are
+  arithmetic. They stay code.
+- Batching: `JEV_WINDOW` candidates per Jev request, `OPUS_WINDOW` per Opus
+  request, split at `MAX_STATE_CHARS`. The cache is keyed by content (no id,
+  no timeline position), plus brief, taste prefs, question, engine, model,
+  and live-vs-mock. `iterate` shares one router across rounds.
+- Attribution: every `Proposal` carries `engine`, `engine_source` (`live`,
+  `mock`, `rules`, `unavailable`), `decision_type`, `engine_why`, and
+  `cached`. Report rows and marker notes show it. `decision_usage` in the
+  room payload (and totals in `iterate.json`) is the call counter. Keep both
+  when you change the payload.
+- Errors that reach a report go through `router.redact`. Never log a key.
+- Tests use `httpx.MockTransport` hosts (`tests/test_conductor_router.py`).
+  Dry-run must work with no key and no network.
+
 Passes (`mechanical`, `dialogue`, `pacing`, `colour`, plus reserved `story` /
 `audio` / `broll`) are the extension point. A new editorial check is a
 `register_pass`, not a new CLI. `colour` is review-only: it reads roles and

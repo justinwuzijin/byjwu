@@ -9,6 +9,7 @@ from pathlib import Path
 from .errors import ConductorError
 from .feedback import apply_note_items, bind_pending, diff_fcpxml, load_notes
 from .fcpxml import parse_fcpxml
+from .folders import DROP_IN, DROP_OUT, drop_folder, drop_input
 from .ingest import DEFAULT_BRIEF, ingest
 from .iterate import format_report, iterate
 from .passes import PASSES, collect
@@ -190,14 +191,20 @@ def _add_ingest(parser: argparse.ArgumentParser) -> None:
 
 def _add_iterate(parser: argparse.ArgumentParser) -> None:
     ready = ", ".join(name for name, spec in PASSES.items() if spec.implemented)
-    parser.add_argument("--fcpxml", help="FCPXML to iterate. Not with --media.")
+    parser.add_argument(
+        "--fcpxml",
+        help=f"FCPXML to iterate. Not with --media. With neither, reads ~/Desktop/{DROP_IN}.",
+    )
     parser.add_argument(
         "--media",
         help="folder of clips. Writes a starter FCPXML, then iterates. Not with --fcpxml.",
     )
     parser.add_argument("--brief", required=True, help="what this cut is for")
     parser.add_argument("--transcript", help="optional SRT or WebVTT aligned to the sequence")
-    parser.add_argument("--out-dir", default="out", help="directory for vN/ rounds (default: out)")
+    parser.add_argument(
+        "--out-dir",
+        help=f"directory for vN/ rounds (default: ~/Desktop/{DROP_OUT} when reading ~/Desktop/{DROP_IN}, else out)",
+    )
     parser.add_argument("--project", help="project name, when the XML holds more than one")
     parser.add_argument("--sequence", help="with --media, project name (default: the folder name)")
     parser.add_argument(
@@ -257,9 +264,20 @@ def _add_iterate(parser: argparse.ArgumentParser) -> None:
 
 
 def _iterate(args) -> int:
+    source = {"fcpxml": args.fcpxml, "media": args.media}
+    out_dir = args.out_dir or "out"
+    if not args.fcpxml and not args.media:
+        folder, note = drop_folder(DROP_IN)
+        if note:
+            print(f"cut-conductor: {note}", file=sys.stderr)
+        source = {"fcpxml": None, "media": None, **drop_input(folder)}
+        if not args.out_dir:
+            out_dir, note = drop_folder(DROP_OUT)
+            if note:
+                print(f"cut-conductor: {note}", file=sys.stderr)
     result = iterate(
-        fcpxml=args.fcpxml,
-        media=args.media,
+        fcpxml=source["fcpxml"],
+        media=source["media"],
         brief=args.brief,
         transcript_path=args.transcript,
         taste_path=args.taste,
@@ -267,7 +285,7 @@ def _iterate(args) -> int:
         sequence=args.sequence,
         project=args.project,
         passes=args.passes,
-        out_dir=args.out_dir,
+        out_dir=out_dir,
         live=args.live,
         html=args.html,
         max_rounds=args.max_rounds,

@@ -2,7 +2,7 @@
 
 Everything about how byjwu works and how to run it. The short version is in the [README](../README.md).
 
-byjwu helps Justin ([@byjustinwu](https://www.youtube.com/@byjustinwu) on YouTube) edit his YouTube videos using TypeSafe Jev and Claude Opus 5.5. A full Grok Bot orchestration, a room of specialist bots, works out everything stylistic and taste-related about his editing: typography, pacing, style, colours, subtitles, digital assets (the abstract rectangle background layer), and music fades and ducking.
+byjwu helps Justin ([@byjustinwu](https://www.youtube.com/@byjustinwu) on YouTube) edit his YouTube videos using TypeSafe Jev and Grok 4.7. A full Grok Bot orchestration, a room of specialist bots, works out everything stylistic and taste-related about his editing: typography, pacing, style, colours, subtitles, digital assets (the abstract rectangle background layer), and music fades and ducking.
 
 The goal is raw footage and music in, and a finished FCPXML out that imports into Final Cut Pro and feels like a byjustinwu video. The style is learned from his published YouTube videos and gets better each time he re-exports a corrected cut.
 
@@ -48,8 +48,8 @@ A logic-first decision mode is not on this branch. Measured rules such as uncove
 | Piece | Decides | Does not |
 |---|---|---|
 | **Jev** (TypeSafe) | Every linear, logical call: is this gap removable, is this a flash frame, keep or cut a take under rules, does a cut meet the gate. Typed decisions only: keep, tighten, remove, mark for review, or escalate, each with a confidence and a risk. It picks from options the code defines (`conductor/jev.py`). | Write text, or make open-ended taste calls. |
-| **Claude Opus 5.5** (Anthropic) | Every open-ended creative and taste call: story shape, which moments carry the video, music feel, type and visual treatment, montage, and graphics built through code (text treatments, the rectangle background layer). Answers are JSON checked against a schema. Nothing it says is cut without a gate or a person (`conductor/opus.py`). | Generate video. Opus does not generate video natively. |
-| **Grok Bot room** | Coordination: routes work, runs the engine, posts paths and reports, and asks Justin when a call needs him. | Editorial work. No Grok model makes an editing decision. |
+| **Grok 4.7** | Every open-ended creative and taste call: story shape, which moments carry the video, music feel, type and visual treatment, montage, and graphics. Default model `grok-4.7-medium` (`CONDUCTOR_TASTE_MODEL`). Answers are JSON checked against a schema. Nothing it says is cut without a gate or a person (`conductor/opus.py`). Claude Opus stays selectable by setting that env var to a Claude id. | Generate video. |
+| **Grok Bot room** | Coordination: routes work, runs the engine, posts paths and reports, and asks Justin when a call needs him. | The taste-model calls themselves. Those go through the decision router. |
 | **Final Cut Pro** | The timeline is the truth. Justin imports the FCPXML byjwu writes, and exports XML when he already has a cut. | — |
 
 The note on a marker is assembled afterwards from the action, the confidence, and the reason. No model writes it.
@@ -85,7 +85,7 @@ A rule cut keeps covered b-roll, because apply still refuses to drop a connected
 
 The engine decides. The gate still decides who may act: dialogue filler is a Jev call, and it stays in review because the pass is creative. Threshold comparisons inside the gate are arithmetic, so they stay code.
 
-No Grok or xAI model is in the decision path. The room bots run commands and post reports. They do not make the calls. A Grok or xAI model id or URL in `CONDUCTOR_JEV_MODEL`, `CONDUCTOR_OPUS_MODEL`, or the host overrides is refused.
+Linear calls stay on Jev. Creative calls use `CONDUCTOR_TASTE_MODEL`, default `grok-4.7-medium`. Set it to a Claude id to use Opus instead. The room bots run commands and post reports.
 
 Calls are batched: one Jev request per 24 candidates (48 questions), one Opus request per 12. Answers are cached by content, not by id or position. So `iterate` round 2 only asks about regions that changed, and identical regions are asked once. The first failed request marks that engine down for the rest of the run. Every report has a `decision_usage` counter: calls per engine (live and mock), items, cache hits, fallbacks, and tokens and cost when the host returns them. The CLI prints it as a `decisions` line.
 
@@ -138,7 +138,7 @@ python -m conductor room-run ~/Desktop/byjwu-in/cut.fcpxml \
 
 The same command takes a `.fcpxml`, a `.fcpxmld` bundle, a `.zip` of either, or a folder of clips. It detects which, and it does not modify the drop. Dry-run is the default. `--live` is how a bot calls Jev. An SRT or WebVTT sitting next to the timeline is picked up; `--transcript` overrides that. A `durations.json` in a clip folder is picked up the same way.
 
-When the drop also carries music (`.mp3`, `.wav`, `.aif`, `.m4a`, and similar), room-run hands it to a style assembler first (`--style`, default `byjustinwu`) if one is installed, then runs the loop on what it built. Without one, the clips are handled as above and the summary says the music was not placed.
+When the drop also carries music (`.mp3`, `.wav`, `.aif`, `.m4a`, and similar), room-run hands it to `conductor.assemble.assemble` (`--style`, default `byjustinwu`), then runs the loop on the FCPXML it wrote. Creative calls go through the shared router to Grok 4.7. The style profile is data under `styles/`; `byjustinwu` is provisional until the style study lands. See [style-profile.md](style-profile.md). Subtitles, titles, and the rectangle layer on that timeline come from `conductor.graphics`.
 
 Each run writes a new folder, `~/Desktop/byjwu-out/<name>-<timestamp>/`, so repeating it is safe. `room.md` in that folder is the chat summary (input kind, duration before and after, cuts with timecodes, rows flagged for the editor, stop reason, which signals were available, and the file to open). `room.json` is the same summary. The shadow FCPXML is always there.
 
@@ -277,11 +277,12 @@ To call live engines, copy `.env.example` and pass `--live`. Dry-run stays the d
 |---|---|---|---|
 | `OPENROUTER_API_KEY` | Jev | `POST https://openrouter.ai/api/alpha/decisions` | `typesafe/jev-1.13` |
 | `TYPESAFE_API_KEY` | Jev | `POST https://api.typesafe.ai/v1/systemone` | `jev-1.13.0` |
-| `ANTHROPIC_API_KEY` | Opus | `POST https://api.anthropic.com/v1/messages` | `claude-opus-5-5` (`CONDUCTOR_OPUS_MODEL`) |
+| `XAI_API_KEY` or `CONDUCTOR_TASTE_KEY` | Taste (default) | `POST https://api.x.ai/v1/chat/completions` | `grok-4.7-medium` (`CONDUCTOR_TASTE_MODEL`) |
+| `ANTHROPIC_API_KEY` | Opus, when `CONDUCTOR_TASTE_MODEL` is a Claude id | `POST https://api.anthropic.com/v1/messages` | `claude-opus-5-5` (`CONDUCTOR_OPUS_MODEL`) |
 
 OpenRouter wins when both Jev keys are set. `CONDUCTOR_JEV_PROVIDER=typesafe` forces the other. The TypeSafe host rejects the slug `jev-1.13`, so the client sends `jev-1.13.0` there.
 
-`--live` needs at least one engine key. With only a Jev key, creative calls become review markers. With only an Anthropic key, linear calls use the rules. Both cases are warnings on stderr and in the report. Opus requests use `output_config.format` (JSON schema) and `output_config.effort` (`CONDUCTOR_OPUS_EFFORT`, default `medium`). Opus 5.5 rejects forced tool use and disabled thinking, so neither is sent.
+`--live` needs at least one engine key. With only a Jev key, creative calls become review markers. With only a taste-model key, linear calls use the rules. The default taste model is `grok-4.7-medium`. Set `CONDUCTOR_TASTE_MODEL` to a Claude id to use Opus instead. Opus requests use `output_config.format` (JSON schema) and `output_config.effort` (`CONDUCTOR_OPUS_EFFORT`, default `medium`).
 
 `python -m conductor` is the command to use from the repo. A `cut-conductor` script is installed with the package and may land outside your `PATH`.
 
@@ -369,7 +370,7 @@ In progress:
 - **Media signals.** Quiet audio inside a clip, local transcripts, and word timings are read when the bot machine can open the media (see the [room protocol](room-protocol.md#media-signals)). Picture signals are not built: the `colour` pass still has an honest placeholder where exposure and skin would need the picture.
 - **Taste learning.** Per-kind priors already shift later confidence from rejections, accepts, and editor re-exports. They do not train a model, and they do not loosen mechanical auto-apply unless a rule opts in. Learning from Justin's published videos belongs to the style profile below.
 - **Room run and watcher.** `room-run` and `room-run --watch` are built. With the launchd example in [room-run.md](room-run.md), an operator keeps the `~/Desktop/byjwu-in` inbox running. The editor still does not run a command. Still FCPXML out, still no plugin.
-- **Style-driven assembly.** Build the sequence from raw footage and music according to the style profile. Today ingest is filename order, and a brief does not reorder clips.
+- **Style-driven assembly.** `python -m conductor assemble` and room-run's music path build the sequence from raw footage and music according to the style profile. Ingest without music is still filename order. Before FCPXML is written, the spine is a sequential layer and connected lanes are parallel layers (`conductor/assembly/layers.py`). That packing, the RMS silence trim (threshold 0.02, hop 1024, minimum 0.5 s, 0.5 s tail padding), the log-linear music ramp, and the dissolve window are borrowed from [@diffusionstudio/core](https://github.com/diffusionstudio/core) 4.0.3 and reimplemented. The library is not a dependency and nothing is rendered through it (unlicensed output is watermarked). Silence on real media still uses ffmpeg `silencedetect` at -35 dB and 0.35 s, which is close to their amplitude threshold and a shorter minimum gap; their padding is applied only by the comparison helper. Music fades and ducking are `adjust-volume` keyframes from the profile floor (-96 dB), not their 0.001 linear gain. A cross dissolve is written only where `cuts.dissolve.sections` names the outgoing section. The base profile lists none, so the default cut is unchanged.
 - **Jev/Opus decision router.** Built: bounded, logical calls go to Jev, and open-ended creative and taste calls go to Opus 5.5 (see [The decision router](#the-decision-router)). The Opus decision types beyond the colour placeholder wait on style-driven assembly and future passes to ask them.
 - **byjustinwu style profile.** Typography, pacing, colour, SF Pro subtitles, the rectangle background layer, and music fades and ducking, learned from his YouTube videos. The Style bot owns it. The graphics stage reads it. The numbers that stage ships with today are placeholders.
 

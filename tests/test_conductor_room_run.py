@@ -170,7 +170,7 @@ def test_unsupported_fcpxml_version(tmp_path):
     assert "1.8" in message
 
 
-def test_a_real_fcpxml_1_14_export_runs_and_keeps_its_broll(tmp_path):
+def test_a_real_fcpxml_1_14_export_runs_and_keeps_its_broll(tmp_path, no_assembler):
     drop = tmp_path / "drop"
     drop.mkdir()
     xml = drop / "synthetic-export.fcpxml"

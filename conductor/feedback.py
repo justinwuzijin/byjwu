@@ -53,6 +53,9 @@ def register_observer(name: str, observer: Observer) -> None:
 
 
 def _observations(proposed: Document, edited: Document) -> list[dict]:
+    from .assembly import observe as _style_observe
+
+    _style_observe.register()
     events: list[dict] = []
     for name, observer in OBSERVERS.items():
         for item in observer(proposed, edited) or []:

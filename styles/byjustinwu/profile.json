@@ -1,0 +1,225 @@
+{
+  "schema": "jevid.style",
+  "schema_version": 1,
+  "name": "byjustinwu",
+  "extends": "base",
+  "version": "0.1.0-provisional",
+  "provisional": true,
+  "description": "PROVISIONAL placeholder for Justin Wu (YouTube @byjustinwu). Every number here is a guess from the brief, not a measurement. Replace it with the style study when it lands; keep the keys.",
+  "provenance": {
+    "source": "written from the jevid brief, not from footage",
+    "study": null,
+    "updated": "2026-09-25",
+    "replace_with": "the style study of the latest @byjustinwu uploads (ASL per section, fade and duck measurements, type specs, background captures)"
+  },
+  "assumptions": [
+    "Delivers a 1920x1080 timeline at the footage's frame rate, whatever the camera resolution.",
+    "Target length is 8 minutes when the brief does not say.",
+    "Intro is a fast hook: about 1.2s average shot, cut on the beat, A-roll inset over the rectangle background.",
+    "Talking sections average about 3.8s per visible shot, with b-roll cutaways over a quarter of the time and alternating punch-ins to hide jump cuts.",
+    "Montage cuts every beat or two (about 0.8s) and always lands on a beat.",
+    "Music fades in over 1.5s (ease in) and out over 3s (ease out), sits at -6 dB with no dialogue, and ducks 14 dB under talking with 0.25s attack and 0.6s release.",
+    "Song changes happen at a section boundary with a 1.2s crossfade.",
+    "About 35% of A-roll cuts are split edits: J-cuts lead 0.35s, L-cuts trail 0.45s.",
+    "Titles are SF Pro Display Heavy, uppercase, tight tracking, white, about 13% of frame height, with a stretch or skew treatment.",
+    "Subtitles are SF Pro Text Semibold, lowercase, one line of at most 28 characters, near the bottom third, with roughly 1 in 8 lines distorted for emphasis.",
+    "The abstract background is procedural art cut into grid and random rectangles of mixed ratios, stretched, sheared and sliced, drifting slowly and pulsing on the beat.",
+    "Palette is near-black with off-white, hot pink, electric blue and yellow accents."
+  ],
+  "format": {
+    "width": 1920,
+    "height": 1080,
+    "follow_footage": false
+  },
+  "structure": {
+    "target_seconds": 480,
+    "tolerance_seconds": 8,
+    "order": ["intro", "title_card", "talking", "montage", "talking", "outro", "end_card"],
+    "sections": {
+      "intro": {"share": 0.07, "min_seconds": 4, "max_seconds": 18},
+      "talking": {"share": 0.74, "min_seconds": 5, "max_seconds": null},
+      "montage": {"share": 0.13, "min_seconds": 4, "max_seconds": 35},
+      "outro": {"share": 0.04, "min_seconds": 0, "max_seconds": 15}
+    },
+    "title_card": {"seconds": 2.0, "bars": 2, "text_sources": ["brief", "clip_name"]},
+    "end_card": {"seconds": 3.0, "bars": 2, "text": "byjustinwu"},
+    "broll_chunk_seconds": 1.6,
+    "speech_merge_gap_seconds": 0.3,
+    "speech_handle_seconds": 0.08,
+    "intro_flash_share": 0.5
+  },
+  "pacing": {
+    "tolerance": 0.25,
+    "intro": {
+      "asl_seconds": 1.2,
+      "shot_length": {"median": 1.0, "p10": 0.5, "p90": 2.2},
+      "cut_on_beat": "always",
+      "broll_cover": 0.0
+    },
+    "talking": {
+      "asl_seconds": 3.8,
+      "shot_length": {"median": 3.4, "p10": 1.6, "p90": 7.0},
+      "cut_on_beat": "prefer",
+      "broll_cover": 0.25
+    },
+    "montage": {
+      "asl_seconds": 0.8,
+      "shot_length": {"median": 0.75, "p10": 0.4, "p90": 1.5},
+      "cut_on_beat": "always",
+      "broll_cover": 0.0
+    },
+    "outro": {
+      "asl_seconds": 2.5,
+      "shot_length": {"median": 2.2, "p10": 1.0, "p90": 4.5},
+      "cut_on_beat": "prefer",
+      "broll_cover": 0.0
+    }
+  },
+  "cuts": {
+    "beat_snap_tolerance_seconds": 0.12,
+    "min_shot_seconds": 0.4,
+    "j_cut": {"probability": 0.2, "lead_seconds": 0.35},
+    "l_cut": {"probability": 0.15, "tail_seconds": 0.45},
+    "punch_in": {"enabled": true, "scale": 1.14, "every": 2},
+    "cutaway": {"min_seconds": 0.9, "max_seconds": 2.4},
+    "broll_nat_sound_db": -22
+  },
+  "music": {
+    "bed_db": -6,
+    "fade_in": {"seconds": 1.5, "curve": "easeIn"},
+    "fade_out": {"seconds": 3.0, "curve": "easeOut"},
+    "duck": {
+      "enabled": true,
+      "depth_db": -14,
+      "attack_seconds": 0.25,
+      "release_seconds": 0.6,
+      "merge_gap_seconds": 0.9,
+      "curve": "ease"
+    },
+    "song_change": {"transition": "crossfade", "crossfade_seconds": 1.2, "at": "section_boundary"},
+    "sections": {
+      "intro": {"bed_db": -4, "duck": true},
+      "title_card": {"bed_db": -3, "duck": false},
+      "talking": {"bed_db": -6, "duck": true},
+      "montage": {"bed_db": -2, "duck": false},
+      "outro": {"bed_db": -5, "duck": true},
+      "end_card": {"bed_db": -3, "duck": false}
+    },
+    "beats": {"detect": true, "min_bpm": 75, "max_bpm": 175, "fallback_bpm": null, "beats_per_bar": 4}
+  },
+  "typography": {
+    "family": "SF Pro",
+    "title": {
+      "font": "SF Pro Display",
+      "face": "Heavy",
+      "size": 0.13,
+      "position": [0.0, 0.02],
+      "case": "upper",
+      "tracking": -0.03,
+      "color": "#F2F2F7",
+      "alignment": "center",
+      "lane": 2,
+      "treatments": ["stretch_x", "skew_left", "tall_squeeze"]
+    },
+    "subtitle": {
+      "enabled": true,
+      "font": "SF Pro Text",
+      "face": "Semibold",
+      "size": 0.042,
+      "position": [0.0, -0.33],
+      "case": "lower",
+      "tracking": 0.01,
+      "color": "#FFFFFF",
+      "alignment": "center",
+      "stroke": null,
+      "shadow": {"color": "#000000A6", "distance": 3, "angle": 300, "blur": 10},
+      "max_chars_per_line": 28,
+      "max_lines": 1,
+      "min_seconds": 0.6,
+      "max_seconds": 2.6,
+      "lane": 3,
+      "emphasis": {
+        "rate": 0.125,
+        "treatments": ["squash_pop", "stretch_x", "tracking_blowout"]
+      }
+    }
+  },
+  "text_treatments": {
+    "none": {"description": "Static text. No transform."},
+    "stretch_x": {
+      "description": "Horizontal stretch that snaps back: text lands wide and thin, then settles.",
+      "scale": [[0.0, [1.55, 0.72]], [0.22, [1.08, 0.96]], [0.4, [1.0, 1.0]]]
+    },
+    "tall_squeeze": {
+      "description": "Vertical stretch, squeezed narrow, relaxing over half a second.",
+      "scale": [[0.0, [0.7, 1.7]], [0.5, [0.94, 1.08]]]
+    },
+    "skew_left": {
+      "description": "Corner-pinned shear: the top edge leans left, a contorted italic.",
+      "corners": {
+        "topLeft": [-0.05, 0.0],
+        "topRight": [-0.05, 0.0],
+        "botLeft": [0.03, 0.0],
+        "botRight": [0.03, 0.0]
+      }
+    },
+    "squash_pop": {
+      "description": "Squash then overshoot on entry, a quick distort for an emphasis word.",
+      "scale": [[0.0, [1.3, 0.55]], [0.1, [0.88, 1.2]], [0.2, [1.04, 0.97]], [0.3, [1.0, 1.0]]]
+    },
+    "tracking_blowout": {
+      "description": "Letters spread wide and drift, with a slight rotation.",
+      "tracking": 0.35,
+      "rotation": [[0.0, -3.0], [-0.001, 2.0]]
+    }
+  },
+  "background": {
+    "enabled": true,
+    "placement": "under",
+    "lane": -3,
+    "sections": {
+      "intro": true,
+      "title_card": true,
+      "talking": false,
+      "montage": false,
+      "outro": true,
+      "end_card": true
+    },
+    "aroll_inset": {"intro": 0.8, "talking": 1.0, "montage": 1.0, "outro": 0.8},
+    "change": {"every": "section", "max_seconds": 8},
+    "layout": {
+      "mode": "mixed",
+      "grid": {"columns": 8, "rows": 5, "merge_probability": 0.45, "fill": 0.55},
+      "random": {"count": [5, 10]},
+      "size_ratios": [[1, 1], [2, 1], [1, 2], [3, 1], [4, 3], [16, 9], [9, 16]],
+      "size_range": [0.07, 0.42],
+      "gutter": 0.012,
+      "margin": 0.03
+    },
+    "contortion": {
+      "stretch": [0.45, 2.3],
+      "shear_degrees": [-18, 18],
+      "slices": [0, 7],
+      "slice_shift": 0.14,
+      "smear": 0.35,
+      "mirror": 0.25
+    },
+    "motion": {
+      "drift": 0.012,
+      "pulse": 0.035,
+      "pulse_on_beat": true,
+      "floating": 3,
+      "floating_size": [0.08, 0.22],
+      "rotation_degrees": [-4, 4]
+    },
+    "opacity": 0.9,
+    "base_color": "#0A0A0C",
+    "palette": ["#0A0A0C", "#F2F2F7", "#FF2D6F", "#2F7CFF", "#FFD60A", "#6E6E73"],
+    "art": {"folder": null, "procedural": "interference", "seed": 20260925}
+  },
+  "metrics": {
+    "subtitle_coverage_min": 0.85,
+    "on_beat_min": 0.8,
+    "background_coverage_min": 0.95
+  }
+}

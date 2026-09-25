@@ -44,7 +44,7 @@ room-run looks for `conductor.assemble.assemble`, or a callable passed to `condu
 
 `--graphics` runs the type and graphics stage on the timeline the summary names: SF Pro subtitles from the words file, distorted section titles, and the rectangle layer. It also runs when the style profile sets `graphics.enabled`. Rendered movies land in `<name>.assets/` beside that FCPXML, with relative paths. A missing ffmpeg or font is a warning in `room.md`, not a failed run. `--beats` is an optional JSON list of music-beat seconds. The stage is `conductor.graphics.apply_graphics`, which an assembler calls with the same `router`.
 
-`router` is the `conductor.router.Router` the whole run shares. An assembler makes its calls with `router.decide([Ask(...)])`: linear ones (take comparison, cut gates, subtitle breaks) go to Jev, creative ones (story, key moments, music, type, montage) go to Claude Opus 5.5, with the same fallbacks, cache, and counter as the passes. `room.json` has `decision_usage` for the assembler and the loop together, and `room.md` has a `Decisions:` line.
+`router` is the `conductor.router.Router` the whole run shares. An assembler makes its calls with `router.decide([Ask(...)])`: linear ones (take comparison, cut gates, subtitle breaks) go to Jev, creative ones (story, key moments, music, type, montage) go to Grok 4.7, with the same fallbacks, cache, and counter as the passes. `room.json` has `decision_usage` for the assembler and the loop together, and `room.md` has a `Decisions:` line.
 
 ## Failures the bot can paste
 

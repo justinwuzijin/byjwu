@@ -3,9 +3,9 @@
 The product in this repo is **byjwu** (the engine was once called Cut
 Conductor). It edits Justin's (@byjustinwu) YouTube videos: raw footage and
 music in, a finished FCPXML out that he opens in Final Cut Pro himself. Jev
-makes bounded, logical decisions. Claude Opus 5.5 makes open-ended taste
-decisions and builds graphics through code. A Grok Bot room coordinates, and
-no Grok model makes editorial decisions. Human docs are `README.md` (short),
+makes bounded, logical decisions. Grok 4.7 (`grok-4.7-medium`,
+`CONDUCTOR_TASTE_MODEL`) makes open-ended taste decisions. Opus stays
+selectable. A Grok Bot room coordinates. Human docs are `README.md` (short),
 `docs/technical.md`, and `docs/room-protocol.md`. The package you edit for that product is
 `conductor/`. Do not rename it, `python -m conductor`, or the console
 scripts. Other work depends on those names. The drop folders are
@@ -234,10 +234,9 @@ is the default; `CONDUCTOR_DRY_RUN=1` forces the mock even with `--live`.
 
 Product rule: a linear, logical decision (a bounded choice with clear
 criteria) must call **Jev**. An open-ended creative or taste decision goes
-to **Claude Opus 5.5** (`conductor/opus.py`, `ANTHROPIC_API_KEY`, model
-`claude-opus-5-5`, `CONDUCTOR_OPUS_MODEL` to change it). **No Grok or xAI
-model anywhere in the decision path.** `jev.refuse_xai` enforces that on
-every model id and URL. Room bots orchestrate. They do not decide.
+to **Grok 4.7** (`conductor/opus.py`, default `grok-4.7-medium` via
+`CONDUCTOR_TASTE_MODEL`). Set that variable to a Claude id to use Opus
+instead (`ANTHROPIC_API_KEY`). Room bots orchestrate. They do not decide.
 
 - The classification is `router.DECISION_TYPES`. Each type has an engine, a
   question, and a reason. Add a type with `register_decision`. Do not branch

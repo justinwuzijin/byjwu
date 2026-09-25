@@ -7,14 +7,14 @@ byjwu helps me edit [@byjustinwu](https://www.youtube.com/@byjustinwu) videos: r
 ```text
 footage, music, or an FCPXML
         ↓
-Grok Bot room  →  engine (conductor)  ←  Jev + Claude Opus 5.5
+Grok Bot room  →  engine (conductor)  ←  Jev + Grok 4.7
         ↓
 FCPXML  →  Final Cut Pro
 ```
 
 - **In:** footage, music, or an FCPXML, dropped in the Grok Bot room or `~/Desktop/byjwu-in`.
 - **Room:** the Grok bots coordinate: Cut Conductor, Pacing, Style, Type & Subs, and Colour.
-- **Decisions:** Jev makes the logical calls. Claude Opus 5.5 makes the taste calls.
+- **Decisions:** Jev makes the logical calls. Grok 4.7 makes the taste calls (Opus stays selectable).
 - **Engine:** `conductor` builds the edit, then marks it or applies the safe cuts.
 - **Out:** an FCPXML in `~/Desktop/byjwu-out`, opened in Final Cut.
 
@@ -38,6 +38,8 @@ On the applied file the range is lifted from the primary storyline. A whole gap 
 Each applied cut leaves a one-frame marker on the clip that now sits at the cut. The name is `CC cut`, what was removed, its duration, and the timeline timecode it came from. The note carries the rule and the confidence.
 
 Graphics stay off unless the room turns them on. When on, they are added on a free connected lane of the file you open. Subtitles, and titles with no distortion or a scale move, are Basic Title clips. Glitch, RGB split, wave, and blur-in titles are transparent movies in a folder named `<that file>.assets` beside the XML. Rectangles are Shapes generator clips, with position and scale keyframes, a blur, and a hue shift. Nothing already on the timeline is retimed. Grades are never written.
+
+An assembled timeline (raw footage and music, not a marked export) is a spine of the selected shots, connected lanes for cutaways and graphics, and a music bed whose fades and ducking are `adjust-volume` keyframes. A cross dissolve appears only where the style profile asks for one.
 
 Details are in [docs/](docs/technical.md).
 

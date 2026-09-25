@@ -27,7 +27,7 @@ from .profile import BLEND_MODES, GraphicsProfile, load_graphics_profile, parse_
 from .render import FontChoice, TitleSpec, rect_schedule, rect_seed, resolve_font, title_frames
 from .render import RenderUnavailable
 from .subtitles import Cue, Word, load_words, plan_subtitles
-from .titles import TitleCard, plan_titles
+from .titles import TitleCard, _case, plan_titles
 
 BASIC_TITLE_UID = (
     ".../Titles.localized/Bumper:Opener.localized/Basic Title.localized/Basic Title.moti"
@@ -70,6 +70,7 @@ class GraphicsResult:
     titles: list[dict] = field(default_factory=list)
     rectangles: list[dict] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
+    decisions: list = field(default_factory=list)
     placeholder_fields: list[str] = field(default_factory=list)
     profile_source: str = ""
 
@@ -161,11 +162,13 @@ def _build(document, destination, assets, words, beats, profile, router, brief, 
             plan = plan_subtitles(sequence, seq_words, profile, router, brief=brief, ledger=ledger, id_prefix=prefix)
             _subtitles(sequence, plan.cues, profile, title_effect, ids, result)
             result.subtitles.extend(cue.to_dict() for cue in plan.cues)
+            result.decisions.extend(plan.decisions)
         cards: list[TitleCard] = []
         if profile.text_fx.enabled:
-            cards, _decisions, _receipts = plan_titles(
+            cards, title_decisions, _receipts = plan_titles(
                 sequence, profile, router, brief=brief, ledger=ledger, id_prefix=f"{prefix}t"
             )
+            result.decisions.extend(title_decisions)
             _titles(sequence, cards, profile, title_font, destination, assets, ids, resources, result)
             result.titles.extend(card.to_dict() for card in cards)
         if profile.rect_layer.enabled and profile.rect_layer.coverage != "none":
@@ -191,7 +194,7 @@ def _subtitles(sequence, cues: list[Cue], profile, effect_id, ids, result: Graph
                     lane,
                     start,
                     end - start,
-                    "\n".join(cue.lines) or cue.text,
+                    _case("\n".join(cue.lines) or cue.text, profile.subtitles.casing),
                     profile.subtitle_font(),
                     profile.subtitles.face,
                     size,
@@ -200,7 +203,7 @@ def _subtitles(sequence, cues: list[Cue], profile, effect_id, ids, result: Graph
                     profile,
                     ids,
                     name="Subtitle",
-                    runs=_highlight_runs(cue, active, profile.subtitles.face, colour),
+                    runs=_highlight_runs(cue, active, profile.subtitles.face, colour, profile.subtitles.casing),
                 )
 
 
@@ -389,7 +392,8 @@ def _title_element(
         defs.append((style_id, style))
     for style_id, style in defs:
         ET.SubElement(title, "text-style-def", {"id": style_id}).append(style)
-    y = (0.5 - position_y) * 100
+    height = sequence.height or 1080
+    y = (0.5 - position_y) * height
     transform = ET.SubElement(title, "adjust-transform", {"position": f"0 {y:g}"})
     if keyframes:
         _keyframe_param(transform, "scale", keyframes)
@@ -414,13 +418,14 @@ def _highlight_slices(cue: Cue) -> list[tuple[Fraction, Fraction, int]]:
     return slices
 
 
-def _highlight_runs(cue: Cue, active: int, face: str, colour: str) -> list[tuple[str, str, str]]:
+def _highlight_runs(cue: Cue, active: int, face: str, colour: str, casing: str = "as-is") -> list[tuple[str, str, str]]:
     """WHISPER-style active word: the spoken word stays the subtitle colour; the rest is dim."""
     runs = []
     for index, word in enumerate(cue.words):
-        chunk = word.text if index == 0 else " " + word.text
+        shown = _case(word.text, casing)
+        chunk = shown if index == 0 else " " + shown
         if index == active:
-            runs.append((chunk, "Bold", colour))
+            runs.append((chunk, face, colour))
         else:
             runs.append((chunk, face, _DIM))
     return runs or [(cue.text, face, colour)]
@@ -448,7 +453,7 @@ def _keyframe_param(parent: ET.Element, name: str, points: list[tuple[str, str]]
     for index, (time, value) in enumerate(points):
         attrs = {"time": time, "value": value}
         if index + 1 < len(points):
-            attrs["interp"] = "smooth"
+            attrs["interp"] = "ease"
         ET.SubElement(animation, "keyframe", attrs)
 
 

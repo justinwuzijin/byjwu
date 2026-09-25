@@ -101,6 +101,8 @@ class Subtitles:
     #: A cut-off word is shown when at least this share of it is heard.
     partial_keep_share: float = 0.5
     strip_end_punctuation: bool = False
+    #: ``lower``, ``upper``, or ``as-is``. The style profile's subtitle case.
+    casing: str = "as-is"
 
 
 @dataclass(frozen=True)
@@ -309,10 +311,13 @@ def from_mapping(payload: Mapping, *, source: str, name: str | None = None) -> G
             except (KeyError, TypeError, ValueError):
                 continue
             sections[section] = _update(sections[section], updates, f"{source}#params.{path}", provenance, section)
+    absorbed = _absorb_style_profile(payload, sections, provenance, source)
     graphics = payload.get("graphics", payload)
     if not isinstance(graphics, Mapping):
         raise ConductorError(f"{source}: 'graphics' must be an object")
     for key, value in graphics.items():
+        if absorbed and key in {"typography", "background", "text_treatments"}:
+            continue
         if key in SECTIONS:
             if not isinstance(value, Mapping):
                 raise ConductorError(f"{source}: '{key}' must be an object")
@@ -325,6 +330,102 @@ def from_mapping(payload: Mapping, *, source: str, name: str | None = None) -> G
     profile = replace(base, **sections, **top, source=source, provenance=provenance)
     _check(profile)
     return profile
+
+
+def _absorb_style_profile(payload: Mapping, sections: dict, provenance: dict, source: str) -> bool:
+    """Copy typography, title treatments, and the rectangle layer off a style profile.
+
+    The style file is the only source of those numbers. This does not turn
+    graphics on; ``assemble`` asks for them when the profile enables type or
+    the rectangle layer.
+    """
+    typo = payload.get("typography")
+    if not isinstance(typo, Mapping) or not isinstance(typo.get("subtitle"), Mapping):
+        return False
+    sub = typo["subtitle"]
+    title = typo.get("title") if isinstance(typo.get("title"), Mapping) else {}
+    height = 1080.0
+    sub_updates: dict[str, Any] = {}
+    if sub.get("font"):
+        sub_updates["font"] = str(sub["font"])
+    if sub.get("face"):
+        sub_updates["face"] = str(sub["face"])
+    if isinstance(sub.get("size"), (int, float)):
+        sub_updates["size"] = float(sub["size"]) * height
+    if sub.get("color"):
+        sub_updates["color"] = str(sub["color"])
+    position = sub.get("position")
+    if isinstance(position, list) and len(position) == 2:
+        sub_updates["position_y"] = 0.5 - float(position[1])
+    if sub.get("max_chars_per_line"):
+        sub_updates["max_chars_per_line"] = int(sub["max_chars_per_line"])
+    if sub.get("max_lines"):
+        sub_updates["max_lines"] = int(sub["max_lines"])
+    if sub.get("min_seconds"):
+        sub_updates["min_seconds"] = float(sub["min_seconds"])
+    if sub.get("max_seconds"):
+        sub_updates["max_seconds"] = float(sub["max_seconds"])
+    if "enabled" in sub:
+        sub_updates["enabled"] = bool(sub["enabled"])
+    case = str(sub.get("case") or "as_is")
+    sub_updates["casing"] = {"lower": "lower", "upper": "upper"}.get(case, "as-is")
+    sections["subtitles"] = _update(sections["subtitles"], sub_updates, source, provenance, "subtitles")
+    type_updates: dict[str, Any] = {}
+    if typo.get("family"):
+        type_updates["display_font"] = str(title.get("font") or "SF Pro Display")
+        type_updates["text_font"] = str(sub.get("font") or "SF Pro Text")
+    if title.get("color"):
+        type_updates["color"] = str(title["color"])
+    title_case = str(title.get("case") or "as_is")
+    type_updates["casing"] = {"lower": "lower", "upper": "upper"}.get(title_case, "as-is")
+    if type_updates:
+        sections["typography"] = _update(sections["typography"], type_updates, source, provenance, "typography")
+    fx: dict[str, Any] = {"default_treatment": "scale_warp", "treatments": ("scale_warp", "none")}
+    if title.get("font"):
+        fx["font"] = str(title["font"])
+    if title.get("face"):
+        fx["face"] = str(title["face"])
+    if isinstance(title.get("size"), (int, float)):
+        fx["size"] = float(title["size"]) * height
+    if title.get("color"):
+        fx["color"] = str(title["color"])
+    title_pos = title.get("position")
+    if isinstance(title_pos, list) and len(title_pos) == 2:
+        fx["position_y"] = 0.5 - float(title_pos[1])
+    scales = _first_scale(payload.get("text_treatments"))
+    if scales is not None:
+        fx["scale_from"] = scales[0]
+        fx["scale_to"] = scales[1]
+    sections["text_fx"] = _update(sections["text_fx"], fx, source, provenance, "text_fx")
+    background = payload.get("background")
+    if isinstance(background, Mapping) and background.get("palette"):
+        size = (background.get("layout") or {}).get("size_range") or [0.08, 0.35]
+        art = background.get("art") if isinstance(background.get("art"), Mapping) else {}
+        rect = {
+            "enabled": bool(background.get("enabled", True)),
+            "palette": tuple(str(item) for item in background["palette"]),
+            "opacity": float(background.get("opacity", 0.6)),
+            "placement": background.get("placement") if background.get("placement") in {"over", "under"} else "under",
+            "coverage": "full" if background.get("enabled", True) else "none",
+            "seed": int(art.get("seed") or 0),
+            "min_size": float(size[0]),
+            "max_size": float(size[1]),
+            "render_scale": float(background.get("render_scale", 1.0)),
+            "beat_sync": bool((background.get("motion") or {}).get("pulse_on_beat", True)),
+        }
+        sections["rect_layer"] = _update(sections["rect_layer"], rect, source, provenance, "rect_layer")
+    return True
+
+
+def _first_scale(treatments: Any) -> tuple[tuple[float, float], tuple[float, float]] | None:
+    if not isinstance(treatments, Mapping):
+        return None
+    for spec in treatments.values():
+        frames = spec.get("scale") if isinstance(spec, Mapping) else None
+        if isinstance(frames, list) and len(frames) >= 2:
+            start, end = frames[0][1], frames[-1][1]
+            return (float(start[0]), float(start[1])), (float(end[0]), float(end[1]))
+    return None
 
 
 def _update(section, values: Mapping, source: str, provenance: dict, prefix: str):

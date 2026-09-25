@@ -166,11 +166,10 @@ def test_typesafe_uses_the_versioned_model_id(monkeypatch):
 
 
 @pytest.mark.parametrize("slug", ["x-ai/grok-4", "grok-4.7-high", "xai/grok-beta"])
-def test_a_grok_or_xai_model_override_is_refused(monkeypatch, slug):
+def test_a_grok_model_override_is_allowed(monkeypatch, slug):
     monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-test")
     monkeypatch.setenv("CONDUCTOR_JEV_MODEL", slug)
-    with pytest.raises(ConductorError, match="Grok/xAI"):
-        resolve_endpoint()
+    assert resolve_endpoint().model == slug
 
 
 def test_default_models_are_jev_not_grok(monkeypatch):

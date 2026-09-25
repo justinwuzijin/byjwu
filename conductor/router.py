@@ -2,8 +2,8 @@
 
 The product rule: a decision that is linear and logical — a bounded choice
 with clear criteria — goes to **Jev**. An open-ended creative or taste
-decision goes to **Claude Opus 5.5**. No Grok or xAI model is anywhere in
-this path; :func:`conductor.jev.refuse_xai` rejects one if configured.
+decision goes through this router. The default taste model is
+``grok-4.7-medium`` (``CONDUCTOR_TASTE_MODEL``). A Claude id selects Opus.
 
 Classification (``DECISION_TYPES``):
 
@@ -551,7 +551,7 @@ class Router:
             self._opus_endpoint = opus.resolve_endpoint()
             self._models[OPUS] = self._opus_endpoint.model
         else:
-            self._down[OPUS] = "ANTHROPIC_API_KEY is unset"
+            self._down[OPUS] = "no taste-model key (XAI_API_KEY, CONDUCTOR_TASTE_KEY, or ANTHROPIC_API_KEY when CONDUCTOR_TASTE_MODEL is Claude)"
 
     def __enter__(self) -> Router:
         return self

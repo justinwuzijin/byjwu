@@ -1,9 +1,10 @@
-"""Anthropic Messages client for creative decisions (Claude Opus 5.5).
+"""Creative and taste decisions.
 
-``ANTHROPIC_API_KEY`` → ``POST https://api.anthropic.com/v1/messages`` with
-model ``claude-opus-5-5``. ``CONDUCTOR_OPUS_MODEL`` picks another model,
-``CONDUCTOR_ANTHROPIC_URL`` points at a proxy, ``CONDUCTOR_OPUS_EFFORT``
-sets ``output_config.effort`` (default ``medium``).
+The default model is the Cursor slug ``grok-4.7-medium``, from
+``CONDUCTOR_TASTE_MODEL``. A Claude model id (``claude`` or ``opus`` in the
+name) keeps the Anthropic Messages path, off unless that env var selects it.
+``CONDUCTOR_OPUS_MODEL`` still overrides the Anthropic model when the taste
+model is Claude. ``CONDUCTOR_OPUS_EFFORT`` sets ``output_config.effort``.
 
 The answer is constrained with ``output_config.format`` (JSON schema), not a
 forced tool call: Opus 5.5 rejects ``tool_choice`` ``tool``/``any`` and does
@@ -24,12 +25,13 @@ from dataclasses import dataclass
 from typing import Any
 
 from .errors import ConductorError
-from .jev import refuse_xai
 from .schema import validate, wire
 
 ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
 ANTHROPIC_VERSION = "2023-06-01"
 OPUS_MODEL = "claude-opus-5-5"
+TASTE_MODEL = "grok-4.7-medium"
+TASTE_URL = "https://api.x.ai/v1/chat/completions"
 MOCK_MODEL = "conductor-opus-mock-1"
 DEFAULT_EFFORT = "medium"
 EFFORTS = frozenset({"low", "medium", "high", "xhigh", "max"})
@@ -48,6 +50,7 @@ class Endpoint:
     model: str
     effort: str
     headers: dict[str, str]
+    provider: str = "anthropic"
 
 
 @dataclass
@@ -59,33 +62,62 @@ class Reply:
     stop_reason: str | None
 
 
+def taste_model(environ: Mapping[str, str] | None = None) -> str:
+    env = os.environ if environ is None else environ
+    return env.get("CONDUCTOR_TASTE_MODEL", "").strip() or TASTE_MODEL
+
+
+def uses_anthropic(model: str) -> bool:
+    low = model.lower()
+    return "claude" in low or "opus" in low
+
+
 def has_key(environ: Mapping[str, str] | None = None) -> bool:
     env = os.environ if environ is None else environ
-    return bool(env.get("ANTHROPIC_API_KEY", "").strip())
+    model = taste_model(env)
+    if uses_anthropic(model):
+        return bool(env.get("ANTHROPIC_API_KEY", "").strip())
+    return bool(env.get("XAI_API_KEY", "").strip() or env.get("CONDUCTOR_TASTE_KEY", "").strip())
 
 
 def resolve_endpoint(environ: Mapping[str, str] | None = None) -> Endpoint:
     env = os.environ if environ is None else environ
-    key = env.get("ANTHROPIC_API_KEY", "").strip()
-    if not key:
-        raise ConductorError(
-            "ANTHROPIC_API_KEY is unset. Creative decisions become review markers."
-        )
-    model = env.get("CONDUCTOR_OPUS_MODEL", "").strip() or OPUS_MODEL
-    url = env.get("CONDUCTOR_ANTHROPIC_URL", "").strip() or ANTHROPIC_URL
+    model = taste_model(env)
     effort = env.get("CONDUCTOR_OPUS_EFFORT", "").strip().lower() or DEFAULT_EFFORT
     if effort not in EFFORTS:
         raise ConductorError(f"CONDUCTOR_OPUS_EFFORT must be one of {sorted(EFFORTS)}")
-    refuse_xai(model, url)
+    if uses_anthropic(model):
+        key = env.get("ANTHROPIC_API_KEY", "").strip()
+        if not key:
+            raise ConductorError(
+                "ANTHROPIC_API_KEY is unset. Creative decisions become review markers."
+            )
+        chosen = env.get("CONDUCTOR_OPUS_MODEL", "").strip() or model
+        url = env.get("CONDUCTOR_ANTHROPIC_URL", "").strip() or ANTHROPIC_URL
+        return Endpoint(
+            url=url,
+            model=chosen,
+            effort=effort,
+            headers={
+                "x-api-key": key,
+                "anthropic-version": ANTHROPIC_VERSION,
+                "content-type": "application/json",
+            },
+            provider="anthropic",
+        )
+    key = env.get("XAI_API_KEY", "").strip() or env.get("CONDUCTOR_TASTE_KEY", "").strip()
+    if not key:
+        raise ConductorError(
+            "No taste-model key. Set XAI_API_KEY or CONDUCTOR_TASTE_KEY, "
+            "or set CONDUCTOR_TASTE_MODEL to a Claude id with ANTHROPIC_API_KEY."
+        )
+    url = env.get("CONDUCTOR_TASTE_URL", "").strip() or TASTE_URL
     return Endpoint(
         url=url,
         model=model,
         effort=effort,
-        headers={
-            "x-api-key": key,
-            "anthropic-version": ANTHROPIC_VERSION,
-            "content-type": "application/json",
-        },
+        headers={"Authorization": f"Bearer {key}", "content-type": "application/json"},
+        provider="grok",
     )
 
 
@@ -99,6 +131,8 @@ def complete(
     max_tokens: int,
 ) -> Reply:
     """One structured request. Raises :class:`ConductorError` on any failure."""
+    if endpoint.provider == "grok":
+        return _complete_grok(system=system, payload=payload, schema=schema, endpoint=endpoint, client=client)
     body = {
         "model": endpoint.model,
         "max_tokens": int(max_tokens),
@@ -127,6 +161,35 @@ def complete(
         request_id=str(raw["id"]) if raw.get("id") else None,
         usage=dict(usage) if isinstance(usage, Mapping) else None,
         stop_reason=str(stop) if stop else None,
+    )
+
+
+def _complete_grok(*, system, payload, schema, endpoint: Endpoint, client) -> Reply:
+    body = {
+        "model": endpoint.model,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": json.dumps(payload, sort_keys=True, ensure_ascii=False)},
+        ],
+        "response_format": {"type": "json_object"},
+    }
+    raw = _post(client, endpoint, body)
+    choices = raw.get("choices")
+    if not isinstance(choices, list) or not choices:
+        raise ConductorError("taste model returned no choices")
+    message = choices[0].get("message") if isinstance(choices[0], Mapping) else None
+    text = str((message or {}).get("content") or "")
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise ConductorError(f"taste model returned non-JSON text: {text[:120]!r}") from exc
+    usage = raw.get("usage")
+    return Reply(
+        data=validate(data, schema),
+        model=str(raw.get("model") or endpoint.model),
+        request_id=str(raw["id"]) if raw.get("id") else None,
+        usage=dict(usage) if isinstance(usage, Mapping) else None,
+        stop_reason=None,
     )
 
 

@@ -53,7 +53,14 @@ def main(argv: list[str] | None = None) -> int:
     _add_iterate(
         sub.add_parser(
             "iterate",
-            help="repeat analyze and auto-apply mechanical cuts until the cut holds",
+            help="repeat analyze and auto-apply mechanical cuts until the cut holds "
+            "(or, with --assemble/--style/--music, assemble v0 and refine it against the style)",
+        )
+    )
+    _add_assemble(
+        sub.add_parser(
+            "assemble",
+            help="build a finished timeline from raw footage + music in a creator's style",
         )
     )
     _add_room(
@@ -95,6 +102,8 @@ def main(argv: list[str] | None = None) -> int:
             return _ingest(args)
         if args.command == "iterate":
             return _iterate(args)
+        if args.command == "assemble":
+            return _assemble(args)
         if args.command == "room-run":
             return _room(args)
         report = analyze(
@@ -279,16 +288,81 @@ def _add_iterate(parser: argparse.ArgumentParser) -> None:
         help="stop when spine joins per minute are at or under this",
     )
     parser.add_argument(
+        "--assemble",
+        action="store_true",
+        help="assemble v0 from raw footage + music, then refine rounds against the style profile",
+    )
+    parser.add_argument("--music", help="with --assemble, a song or folder of songs (default: audio in --media)")
+    parser.add_argument(
         "--graphics",
         action="store_true",
         help="render subtitles, distorted titles, and the rectangle layer onto the output FCPXML",
     )
     parser.add_argument(
         "--style",
-        help="style profile for graphics (default: byjustinwu). The stage also runs when that profile enables it",
+        help="style profile for assembly and graphics (default: byjustinwu)",
     )
     parser.add_argument("--beats", help="JSON list of music beat times, in seconds, for the rectangle layer")
     _add_signals(parser)
+
+
+def _add_assemble(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--media", help="folder of raw clips (music files in it or in music/ are used too)")
+    parser.add_argument("--fcpxml", help="an FCPXML whose assets are the raw footage and music. Not with --media.")
+    parser.add_argument("--music", help="a song or a folder of songs, in addition to any in --media")
+    parser.add_argument("--brief", required=True, help="what the video is; a length like '8-minute' sets the target")
+    parser.add_argument("--style", help="style profile name or path (default: byjustinwu)")
+    parser.add_argument("--taste", help="taste JSON; assembly accept/reject events and style observations apply")
+    parser.add_argument("--durations", help="JSON object of file name to length (clips and songs)")
+    parser.add_argument("--target-seconds", type=float, help="target length; wins over the brief and the profile")
+    parser.add_argument("--sequence", help="project name (default: the folder name)")
+    parser.add_argument("--out-dir", default="out", help="directory for the FCPXML, report, and stills (default: out)")
+    parser.add_argument(
+        "--live",
+        action="store_true",
+        help="make the creative calls with Claude Opus 5.5. Requires ANTHROPIC_API_KEY. Off by default.",
+    )
+
+
+def _assemble(args) -> int:
+    from .assembly import assemble
+
+    if bool(args.media) == bool(args.fcpxml):
+        raise ConductorError("assemble needs exactly one of --media or --fcpxml")
+    result = assemble(
+        media=args.media,
+        fcpxml=args.fcpxml,
+        music=args.music,
+        brief=args.brief,
+        style=args.style,
+        taste_path=args.taste,
+        durations_path=args.durations,
+        target_seconds=args.target_seconds,
+        name=args.sequence,
+        out_dir=args.out_dir,
+        live=args.live,
+    )
+    timeline = result.payload["timeline"]
+    dtd = result.payload["dtd"]
+    print(
+        f"byjwu: {result.mode} assembly, {timeline['duration_seconds']:.2f}s, "
+        f"{len(result.payload['structure'])} sections, {timeline['subtitles']} subtitles, "
+        f"{timeline['background_stills']} background stills, {timeline['markers']} markers "
+        f"({timeline['todo_markers']} to-do)"
+    )
+    print(f"  fcpxml  {result.fcpxml}")
+    print(f"  report  {result.markdown}")
+    print(f"  json    {result.json}")
+    print(f"  dtd     {'valid' if dtd['valid'] else ('not checked' if not dtd['checked'] else 'INVALID')}")
+    print(f"  style   {', '.join(result.failures) or 'all targets hold'}")
+    print(f"  calls   {result.payload['decision_usage_summary']}")
+    for warning in result.warnings:
+        print(f"  warning {warning}", file=sys.stderr)
+    if dtd["checked"] and not dtd["valid"]:
+        for error in dtd["errors"][:10]:
+            print(f"  dtd     {error}", file=sys.stderr)
+        return 1
+    return 0
 
 
 def _add_signals(parser: argparse.ArgumentParser) -> None:
@@ -464,8 +538,10 @@ def _iterate(args) -> int:
         global_taste_path=args.global_taste,
         feedback_path=args.feedback,
         learn_from=args.learn_from,
-        graphics=True if args.graphics else None,
+        assemble=args.assemble,
+        music=args.music,
         style=args.style,
+        graphics=True if args.graphics else None,
         beats=args.beats,
     )
     print(format_report(result))

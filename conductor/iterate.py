@@ -19,6 +19,12 @@ One :class:`conductor.router.Router` serves every round, so a region that did
 not change is not asked about again, and an engine that went down stays on
 its fallback. Each round records its own ``decision_usage``; ``iterate.json``
 has the total.
+
+``assemble=True`` (or a ``style`` / ``music``) switches to the assembly loop
+in ``conductor.assembly.refine``: ``v0`` is assembled from the raw material
+and later rounds are corrected against the style profile's metrics instead
+of by mechanical cuts. Same ``iterate.json`` protocol, with ``mode:
+assemble``.
 """
 
 from __future__ import annotations
@@ -61,6 +67,8 @@ class IterateResult:
     signals_summary: str = ""
     decision_usage: dict = field(default_factory=dict)
     ledger: Ledger | None = None
+    mode: str = "mechanical"
+    final: Path | None = None
 
 
 def iterate(
@@ -93,11 +101,31 @@ def iterate(
     feedback_path: str | Path | None = None,
     learn_from: str | Path | None = None,
     router: Router | None = None,
+    assemble: bool = False,
+    music: str | Path | None = None,
+    style: str | Path | None = None,
     graphics: bool | None = None,
-    style: str | None = None,
     beats: str | Path | None = None,
 ) -> IterateResult:
     """Run the unattended mechanical loop. Dry-run unless ``live`` is set."""
+    if assemble or music:
+        from .assembly.refine import iterate_assembly
+
+        return iterate_assembly(
+            brief=brief,
+            out_dir=out_dir,
+            media=media,
+            fcpxml=fcpxml,
+            music=music,
+            style=style,
+            taste_path=taste_path,
+            durations_path=durations_path,
+            target_seconds=target_seconds,
+            name=sequence,
+            live=live,
+            max_rounds=max_rounds,
+            router=router,
+        )
     if bool(fcpxml) == bool(media):
         raise ConductorError("iterate needs exactly one of --fcpxml or --media")
     if media is None and (durations_path or sequence):
@@ -315,6 +343,10 @@ def _rounds(
 
 def format_report(result: IterateResult) -> str:
     """The per-round table and the stop line."""
+    if result.mode == "assemble":
+        from .assembly.refine import format_assembly_report
+
+        return format_assembly_report(result)
     lines = [
         f"cut-conductor: iterate, {len(result.rounds)} rounds, stop {result.stop_reason}",
         "round  duration  silence  review  escalate  avg_shot  cuts/min  applied",

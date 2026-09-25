@@ -233,9 +233,14 @@ disposition. Apply never overwrites the input FCPXML.
 
 XML-only signals, for a timeline with no transcript, live in
 `conductor/candidates.py`. A spine gap counts as silence only where no
-connected clip covers it. Holds are judged against the local average shot.
-Repeated source ranges, rhythm shifts, and mixed frame rates are pacing
-notes (`span="note"`); the mock will not lift them. Real Final Cut exports
-store an anchored `offset` in the parent clip's timebase.
+connected clip covers it, and `apply` will not remove a spine item wholesale
+while a connected clip still covers part of it. Holds are judged against the
+local average shot. Repeated source ranges, rhythm shifts, mixed frame rates,
+an untrimmed string-out, a silent generator card, and a music bed that ends
+early are pacing notes (`span="note"`); the mock will not lift them. The
+lane-less media inside a compound `clip` is the clip's picture, not an
+anchored item. Real Final Cut exports store an anchored `offset` in the
+parent clip's timebase. Markers are inserted before `audio-channel-source`
+and filter elements, which is where the 1.14 content model requires them.
 `fcpxml.anchored_local` also accepts the hand-built seconds-from-in-point
 fixtures in this repo.

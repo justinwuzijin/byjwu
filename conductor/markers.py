@@ -22,6 +22,17 @@ from .timeutil import format_time
 
 _SHADOW = "Cut Conductor shadow proposal"
 
+#: FCPXML 1.14 places these after ``(%marker_item;)*`` on clip-like elements.
+#: Inserting a marker before the first of them keeps the content model.
+_AFTER_MARKERS = frozenset(
+    {
+        "audio-channel-source",
+        "filter-video",
+        "filter-audio",
+        "metadata",
+    }
+)
+
 
 def apply_markers(
     document: Document,
@@ -114,7 +125,36 @@ def _append_marker(
     marker.set("note", note)
     if completed is not None:
         marker.set("completed", completed)
-    element.append(marker)
+    element.insert(_marker_insert_at(element), marker)
+
+
+def _marker_insert_at(element: ET.Element) -> int:
+    for index, child in enumerate(element):
+        if local(child.tag) in _AFTER_MARKERS:
+            return index
+    return len(element)
+
+
+def marker_order_violations(element: ET.Element) -> list[str]:
+    """Parents whose ``<marker>`` sits after a post-marker element.
+
+    The 1.14 content model is ``(%marker_item;)*`` then
+    ``audio-channel-source*``, video filters, ``filter-audio*``, ``metadata?``.
+    Apple's DTD is all-rights-reserved, so this is a structural check rather
+    than a vendored copy of the DTD.
+    """
+    found: list[str] = []
+    for parent in element.iter():
+        later = None
+        for child in parent:
+            tag = local(child.tag)
+            if tag in _AFTER_MARKERS and later is None:
+                later = tag
+            elif tag == "marker" and later is not None:
+                name = parent.get("name") or parent.get("ref") or local(parent.tag)
+                found.append(f"{name}: marker follows {later}")
+                break
+    return found
 
 
 def _clip_snapshot(document: Document) -> tuple:

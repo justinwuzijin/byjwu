@@ -40,6 +40,23 @@ CLIP_TAGS = frozenset(
     }
 )
 
+#: A compound's lane-less story element is its media, not an anchored item.
+COMPOUND_TAGS = frozenset({"clip", "sync-clip", "ref-clip", "mc-clip"})
+
+
+def is_primary_story(parent_tag: str, child: ET.Element) -> bool:
+    """True for the lane-less media inside a compound, including its container gap.
+
+    Final Cut stores that element at the full media duration. The compound's
+    own ``start`` and ``duration`` are the visible window. A child with a
+    ``lane`` is anchored and is not primary.
+    """
+    return (
+        parent_tag in COMPOUND_TAGS
+        and not child.get("lane")
+        and local(child.tag) in CLIP_TAGS
+    )
+
 
 def local(tag: str) -> str:
     return tag.rsplit("}", 1)[-1]
@@ -102,6 +119,9 @@ class Clip:
     asset_id: str | None = None
     conform: str | None = None
     source_frame: Fraction | None = None
+    asset_start: Fraction | None = None
+    asset_duration: Fraction | None = None
+    asset_has_audio: bool | None = None
 
     @property
     def timeline_start(self) -> Fraction:
@@ -392,7 +412,7 @@ def _clip(
             markers.append(_marker(child))
         elif tag == "conform-rate" and conform is None:
             conform = child.get("srcFrameRate")
-        elif tag in CLIP_TAGS:
+        elif tag in CLIP_TAGS and not is_primary_story(local(elem.tag), child):
             connected_clips.append(
                 _clip(
                     child,
@@ -413,15 +433,8 @@ def _clip(
     width, height = _frame_size(ref, assets, formats)
     asset_id = ref if ref in assets else None
     if asset_id is None:
-        for child in elem:
-            if child.get("lane"):
-                continue
-            if local(child.tag) not in {"video", "asset-clip", "audio"}:
-                continue
-            child_ref = child.get("ref")
-            if child_ref in assets:
-                asset_id = child_ref
-                break
+        asset_id = _nested_asset_ref(elem, assets)
+    asset = assets.get(asset_id) if asset_id else None
     format_id = elem.get("format")
     source_frame = None
     if format_id and format_id in formats:
@@ -450,7 +463,27 @@ def _clip(
         asset_id=asset_id,
         conform=conform,
         source_frame=source_frame,
+        asset_start=None if asset is None else asset.start,
+        asset_duration=None if asset is None else asset.duration,
+        asset_has_audio=None if asset is None else asset.has_audio,
     )
+
+
+def _nested_asset_ref(elem: ET.Element, assets: dict[str, Asset]) -> str | None:
+    """Asset ref of a compound's primary media, not of a laned anchor."""
+    for child in elem:
+        if child.get("lane"):
+            continue
+        tag = local(child.tag)
+        if tag in {"video", "asset-clip", "audio"}:
+            child_ref = child.get("ref")
+            if child_ref in assets:
+                return child_ref
+        if tag in COMPOUND_TAGS or tag == "gap":
+            found = _nested_asset_ref(child, assets)
+            if found:
+                return found
+    return None
 
 
 def _frame_size(

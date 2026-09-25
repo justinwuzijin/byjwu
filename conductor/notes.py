@@ -36,6 +36,15 @@ def editor_notes(
     holds = _holds(candidates)
     if holds:
         paragraphs.append(holds)
+    stringout = _stringout(candidates)
+    if stringout:
+        paragraphs.append(stringout)
+    cards = _cards(candidates)
+    if cards:
+        paragraphs.append(cards)
+    music = _music(candidates)
+    if music:
+        paragraphs.append(music)
     reuse = _reuse(sequences, candidates)
     if reuse:
         paragraphs.append(reuse)
@@ -191,6 +200,55 @@ def _holds(candidates: list[Candidate]) -> str:
     )
 
 
+def _stringout(candidates: list[Candidate]) -> str:
+    runs = [item for item in candidates if item.kind == "untrimmed_run"]
+    if not runs:
+        return ""
+    bits = []
+    for item in runs:
+        count = item.signals.get("shot_count")
+        average = item.signals.get("average_seconds")
+        other = item.signals.get("other_average_seconds")
+        against = f", against {other:.1f}s in the rest of the cut" if other else ""
+        bits.append(
+            f"{count} shots from {_tc(item.timeline_start)} to {_tc(item.timeline_end)} "
+            f"are the whole source clip (average {average:.1f}s{against})"
+        )
+    return (
+        _join(bits)
+        + ". No selects have been made there. It stays in the timeline for a person to cut down."
+    )
+
+
+def _cards(candidates: list[Candidate]) -> str:
+    cards = [item for item in candidates if item.kind == "silent_card"]
+    if not cards:
+        return ""
+    bits = [
+        f"{item.clip_name} at {_tc(item.timeline_start)} ({_span(item.duration)})"
+        for item in cards
+    ]
+    return (
+        "Silent generator cards, with no audio and nothing on a lane: "
+        + _join(bits)
+        + ". Review, not a lift. A title or a shorten belongs on them."
+    )
+
+
+def _music(candidates: list[Candidate]) -> str:
+    tails = [item for item in candidates if item.kind == "music_tail"]
+    if not tails:
+        return ""
+    item = tails[0]
+    tail = item.signals.get("tail_seconds")
+    name = item.signals.get("bed_name") or "The music bed"
+    amount = f"{tail:.0f}s" if tail is not None else "a while"
+    return (
+        f"{name} ends at {_tc(item.timeline_start)}, {amount} before the picture. "
+        "The bed stays. Either finish with the song or tighten that tail."
+    )
+
+
 def _reuse(sequences: list[Sequence], candidates: list[Candidate]) -> str:
     reused = [item for item in candidates if item.kind == "source_reuse"]
     if not reused:
@@ -237,7 +295,8 @@ def _picture(sequences: list[Sequence], candidates: list[Candidate]) -> str:
         parts.append(
             f"{item.clip_name} at {_tc(item.timeline_start)} is "
             f"{signals.get('clip_width')}×{signals.get('clip_height')} in a "
-            f"{signals.get('sequence_width')}×{signals.get('sequence_height')} sequence. "
+            f"{signals.get('sequence_width')}×{signals.get('sequence_height')} sequence"
+            f"{_fit_note(signals)}. "
             "Marked for a person. The picture was not decoded."
         )
     mixes = [item for item in candidates if item.kind == "rate_mix"]
@@ -270,6 +329,19 @@ def _picture(sequences: list[Sequence], candidates: list[Candidate]) -> str:
             "Exposure, white balance, and skin are not in the XML, so they were not judged."
         )
     return " ".join(parts)
+
+
+def _fit_note(signals: dict) -> str:
+    bits = []
+    rotation = signals.get("rotation")
+    if rotation and str(rotation) not in {"0", "0.0"}:
+        bits.append(f"rotated {rotation}°")
+    scale = signals.get("scale")
+    if scale and str(scale) not in {"1 1", "1.0 1.0", "1"}:
+        bits.append(f"scaled {str(scale).split()[0]}×")
+    if not bits:
+        return ""
+    return ", " + " and ".join(bits)
 
 
 def _weighted_average(group: list[dict]) -> float:

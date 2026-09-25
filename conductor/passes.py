@@ -70,12 +70,24 @@ PASSES: dict[str, Pass] = {
     ),
     "pacing": _builtin(
         "pacing",
-        frozenset({"long_static", "covered_gap", "source_reuse", "rhythm_shift", "rate_mix"}),
+        frozenset(
+            {
+                "long_static",
+                "covered_gap",
+                "source_reuse",
+                "rhythm_shift",
+                "rate_mix",
+                "untrimmed_run",
+                "silent_card",
+                "music_tail",
+            }
+        ),
         True,
         "Holds against the local pace, gaps sitting under connected clips, "
-        "repeated source ranges, and sudden rhythm or frame-rate changes. "
-        "Creative: review unless accepted. The coverage and reprise notes are "
-        "markers, not lifts.",
+        "repeated source ranges, sudden rhythm or frame-rate changes, an "
+        "untrimmed string-out, a silent generator card, and a music bed that "
+        "ends before the picture. Creative: review unless accepted. Those "
+        "notes are markers, not lifts.",
     ),
     "story": Pass(
         "story",

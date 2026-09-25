@@ -147,6 +147,10 @@ def _aspect(sequence: Sequence, clip: Clip) -> Candidate | None:
             f"asset is {clip.width}×{clip.height} and the sequence is "
             f"{sequence.width}×{sequence.height} (relative aspect gap {relative:.2f})"
         )
+    transform = _transform(clip)
+    fitted = _fit_phrase(transform)
+    if fitted:
+        why = f"{why}. It is {fitted}"
     return _candidate(
         sequence,
         clip,
@@ -163,8 +167,42 @@ def _aspect(sequence: Sequence, clip: Clip) -> Candidate | None:
             "clip_width": clip.width,
             "clip_height": clip.height,
             "relative_delta": round(relative, 4),
+            "rotation": transform.get("rotation"),
+            "scale": transform.get("scale"),
         },
     )
+
+
+def _transform(clip: Clip) -> dict[str, str]:
+    element = clip.element
+    if element is None:
+        return {}
+    for child in element:
+        if local(child.tag) != "adjust-transform":
+            continue
+        found = {}
+        if child.get("rotation"):
+            found["rotation"] = child.get("rotation") or ""
+        if child.get("scale"):
+            found["scale"] = child.get("scale") or ""
+        return found
+    return {}
+
+
+def _fit_phrase(transform: dict[str, str]) -> str:
+    bits: list[str] = []
+    rotation = transform.get("rotation")
+    if rotation and rotation not in {"0", "0.0"}:
+        bits.append(f"rotated {rotation}°")
+    scale = transform.get("scale")
+    if scale and scale not in {"1 1", "1.0 1.0", "1"}:
+        amount = scale.split()[0]
+        bits.append(f"scaled {amount}×")
+    if not bits:
+        return ""
+    if len(bits) == 1:
+        return bits[0]
+    return f"{bits[0]} and {bits[1]}"
 
 
 def _mismatch(

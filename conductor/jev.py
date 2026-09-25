@@ -306,6 +306,12 @@ def _policy(candidate: Mapping[str, Any], taste: Mapping[str, Any] | None = None
         return "mark_review", 0.66, 0.40
     if kind == "rate_mix":
         return "mark_review", 0.63, 0.36
+    if kind == "untrimmed_run":
+        return "mark_review", 0.68, 0.42
+    if kind == "silent_card":
+        return "mark_review", 0.74, 0.30
+    if kind == "music_tail":
+        return "mark_review", 0.67, 0.38
     if prefs.get("cold_open_bias") == "keep" and signals.get("is_cold_open"):
         return "keep", 0.90, 0.10
     if kind == "silence_gap":

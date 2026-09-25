@@ -197,7 +197,7 @@ Passes run in order — `mechanical`, then `dialogue`, then `pacing`, then `colo
 |---|---|---|
 | `mechanical` | Bare silence of at least 1.25s. A gap with a connected clip on it is not silence; only the uncovered stretch is. Clips under 0.45s (under 0.20s is a flash). | High-confidence tighten/remove, with `--min-confidence`. This is what `iterate` auto-applies. |
 | `dialogue` | A whole filler cue (0.25–3s), or a pause of at least 0.80s beside filler | Review, unless you `--accept` the id |
-| `pacing` | A long hold. With a transcript: 20s under 0.40 words/second. Without one: a hold/slate/b-roll name, a shot at least 4× the shots around it, or 45s when the timeline is too short to compare. Also review notes for a gap sitting under connected clips, a repeated source range, a sudden rhythm change, and a mixed frame rate. | Review, unless you `--accept` a hold. The notes are not lifts. |
+| `pacing` | A long hold. With a transcript: 20s under 0.40 words/second. Without one: a hold/slate/b-roll name, a shot at least 4× the shots around it, or 45s when the timeline is too short to compare. Also review notes for a gap sitting under connected clips, a repeated source range, a sudden rhythm change, a mixed frame rate, an untrimmed string-out, a silent generator card, and a music bed that ends early. | Review, unless you `--accept` a hold. The notes are not lifts. |
 | `colour` | A spine clip with no role. An asset frame that badly mismatches the sequence (portrait against landscape, or about 15% off). A placeholder for exposure and skin. | Review or escalate. The picture is not decoded. Never an unattended cut, and never a grade of the pixels. |
 | `story`, `audio`, `broll` | Not built | `conductor.passes.register_pass` |
 

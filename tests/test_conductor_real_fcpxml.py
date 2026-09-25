@@ -18,6 +18,7 @@ from conductor.apply import Deletion, apply_edits
 from conductor.decide import _deletion, judge
 from conductor.errors import ConductorError
 from conductor.fcpxml import parse_fcpxml, parse_xml, write_document
+from conductor.markers import _append_marker, marker_order_violations
 from conductor.iterate import iterate
 from conductor.passes import collect
 from conductor.run import analyze
@@ -90,6 +91,18 @@ def test_swiss_italy_parses_the_real_spine():
     assert len(laned) == 8
     assert {clip.anchor for clip in laned} == {"media"}
     assert laned[0].local_offset > 90
+    # Child offset is in the gap's source time. Adding it to the gap offset
+    # lands past the end of the sequence; subtracting the gap start does not.
+    assert laned[0].timeline_start < sequence.duration
+    assert abs(float(laned[0].timeline_start) - 2064.479) < 0.01
+    assert abs(float(laned[-1].timeline_end) - 2189.187) < 0.01
+    compound = sequence.spine[1]
+    assert compound.kind == "clip"
+    assert [clip.lane for clip in compound.connected_clips] == [-1]
+    audio = compound.connected_clips[0]
+    assert abs(float(audio.timeline_start) - 7.549) < 0.01
+    assert float(audio.duration) < 15
+    assert all(float(clip.duration) < 30 for clip in _descendants(audio))
     portrait = next(clip for clip in sequence.spine if clip.width == 2160 and clip.height == 3840)
     assert portrait.name == "C8432"
 
@@ -118,6 +131,9 @@ def test_candidates_are_useful_and_only_bare_gaps_are_automatic():
             "colour_aspect": 1,
             "colour_role": 4,
             "colour_unseen": 1,
+            "untrimmed_run": 1,
+            "silent_card": 2,
+            "music_tail": 1,
         }
     )
 
@@ -131,10 +147,28 @@ def test_candidates_are_useful_and_only_bare_gaps_are_automatic():
     covered = next(item for item in found if item.kind == "covered_gap")
     for item in eligible:
         assert item.timeline_end <= covered.timeline_start or item.timeline_start >= covered.timeline_end
-    for kind in ("covered_gap", "source_reuse", "rhythm_shift", "rate_mix", "long_static"):
+    for kind in (
+        "covered_gap",
+        "source_reuse",
+        "rhythm_shift",
+        "rate_mix",
+        "long_static",
+        "untrimmed_run",
+        "silent_card",
+        "music_tail",
+    ):
         assert all(by_id[item.id].disposition == "review" for item in found if item.kind == kind)
     aspect = next(item for item in found if item.kind == "colour_aspect")
     assert by_id[aspect.id].disposition == "escalate"
+    assert aspect.signals.get("rotation") == "90"
+    assert "rotated 90" in aspect.reason and "scaled 1.8" in aspect.reason
+    stringout = next(item for item in found if item.kind == "untrimmed_run")
+    assert stringout.signals["shot_count"] == 35
+    assert abs(stringout.signals["average_seconds"] - 34.6) < 0.2
+    cards = [item for item in found if item.kind == "silent_card"]
+    assert [round(float(item.timeline_start), 0) for item in cards] == [114, 1862]
+    music = next(item for item in found if item.kind == "music_tail")
+    assert abs(music.signals["tail_seconds"] - 24.1) < 0.2
     notes = "\n".join(
         analyze_notes(document, found, proposals)
     )
@@ -143,6 +177,10 @@ def test_candidates_are_useful_and_only_bare_gaps_are_automatic():
     assert "2160×3840" in notes
     assert "reprises" in notes
     assert "29.97" in notes
+    assert "whole source clip" in notes
+    assert "Silent generator" in notes
+    assert "rotated 90" in notes
+    assert "before the picture" in notes
     with pytest.raises(ConductorError, match="note"):
         _deletion(covered, "remove", Fraction(4))
 
@@ -202,6 +240,8 @@ def test_iterate_lifts_only_the_bare_gap_and_keeps_the_timeline(tmp_path):
     assert "## Editor's notes" in text
     assert "32:48" in text
     assert "silence cuts" in text
+    again = collect(parse_fcpxml(applied).sequences, [], transcript_present=False)
+    assert [item.kind for item in again if item.kind == "silence_gap"] == []
 
 
 def _gap_lane_offsets(path: Path) -> list[str | None]:
@@ -310,3 +350,74 @@ def test_edit_local_title_inside_a_trim_keeps_its_place(tmp_path):
     assert trimmed.connected_clips[0].name == "Title"
     assert trimmed.connected_clips[0].offset == 1
     assert trimmed.connected_clips[0].duration == 2
+
+
+def _descendants(clip):
+    yield clip
+    for child in clip.connected_clips:
+        yield from _descendants(child)
+
+
+def test_wholesale_gap_removal_keeps_the_connected_broll(tmp_path):
+    document = parse_fcpxml(FIXTURE)
+    sequence = document.sequences[0]
+    gap = next(clip for clip in sequence.spine if clip.kind == "gap")
+    result = apply_edits(
+        document,
+        [
+            Deletion(
+                candidate_id="c-whole",
+                sequence=sequence.name,
+                start=gap.timeline_start,
+                end=gap.timeline_end,
+                action="remove",
+                pass_name="mechanical",
+            )
+        ],
+    )
+    assert any("connected clip covers" in note for note in result.warnings)
+    removed = sum(item["end_seconds"] - item["start_seconds"] for item in result.cuts)
+    assert 100 < removed < 120
+    dest = tmp_path / "shielded.fcpxml"
+    write_document(document.tree, dest)
+    applied = parse_fcpxml(dest)
+    kept = next(clip for clip in applied.sequences[0].spine if clip.kind == "gap")
+    laned = [clip for clip in kept.connected_clips if clip.lane is not None]
+    assert [clip.name for clip in laned] == [
+        "C8358",
+        "C8358",
+        "C8358",
+        "C8359",
+        "C8363",
+        "C8363",
+        "C8361",
+        "C8362",
+    ]
+    assert laned[0].local_offset == 0
+    assert abs(float(kept.duration) - 124.7) < 0.1
+    again = collect(applied.sequences, [], transcript_present=False)
+    assert [item.kind for item in again if item.kind == "silence_gap"] == []
+
+
+def test_markers_are_inserted_before_filters(tmp_path):
+    document = parse_fcpxml(FIXTURE)
+    montage = next(clip for clip in document.sequences[0].spine if clip.name == "C8379")
+    assert montage.element is not None
+    tags_before = [child.tag for child in montage.element]
+    assert "audio-channel-source" in tags_before and "filter-video" in tags_before
+    _append_marker(
+        montage.element,
+        start=montage.start,
+        duration=document.sequences[0].frame_duration,
+        value="CC note",
+        note="Cut Conductor shadow proposal | check",
+        completed="0",
+    )
+    tags = [child.tag for child in montage.element]
+    assert tags.index("marker") < tags.index("audio-channel-source")
+    assert tags.index("marker") < tags.index("filter-video")
+    assert marker_order_violations(document.tree.getroot()) == []
+    report = analyze(FIXTURE, brief=BRIEF, out_dir=tmp_path, passes=None)
+    written = ET.parse(report.out_fcpxml).getroot()
+    assert marker_order_violations(written) == []
+    assert any(node.tag == "marker" and node.get("value", "").startswith("CC ") for node in written.iter())

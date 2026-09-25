@@ -39,6 +39,19 @@ Frame rate
     At least 8 spine items conformed from a rate other than the sequence.
     One note per sequence, not a per-clip nag and not a lift.
 
+Untrimmed section
+    Eight or more contiguous spine clips, each used from the asset's own
+    start for its full duration, running at least two minutes and at least
+    2.5× the average of the rest of the cut. One note for the whole run.
+
+Silent card
+    A generator (a ``<video>`` whose ref is not an asset) of at least 8s
+    with no audio element and nothing on a lane. A note, not a lift.
+
+Music tail
+    An external audio bed of at least 20s that ends 8–90s before the
+    sequence does. A note, not a lift.
+
 Filler-ish pauses
     A whole cue that :func:`cutmcp.extract.is_trivial_filler` would catch
     (``um``, ``you know``, … — never ``like`` / ``yeah`` / ``okay``), lasting
@@ -58,7 +71,7 @@ from fractions import Fraction
 
 from cutmcp.extract import is_trivial_filler
 
-from .fcpxml import Clip, Sequence
+from .fcpxml import Clip, Sequence, local
 from .timeutil import rate_label, same_rate, seconds
 from .transcript import Cue
 
@@ -83,6 +96,13 @@ REUSE_SHARE = Fraction(1, 2)
 RHYTHM_RATIO = 2.2
 RHYTHM_MIN_SHOTS = 12
 RATE_MIX_MIN = 8
+UNTRIMMED_MIN_CLIPS = 8
+UNTRIMMED_MIN_SECONDS = Fraction(120)
+UNTRIMMED_ASL_RATIO = 2.5
+SILENT_CARD_MIN = Fraction(8)
+MUSIC_BED_MIN = Fraction(20)
+MUSIC_TAIL_MIN = Fraction(8)
+MUSIC_TAIL_MAX = Fraction(90)
 
 KIND_LABEL = {
     "silence_gap": "silence gap",
@@ -93,6 +113,9 @@ KIND_LABEL = {
     "source_reuse": "reused source",
     "rhythm_shift": "rhythm change",
     "rate_mix": "frame rate",
+    "untrimmed_run": "untrimmed section",
+    "silent_card": "silent card",
+    "music_tail": "music ends early",
 }
 
 
@@ -159,6 +182,9 @@ def generate(
     found.extend(_source_reuse(sequence))
     found.extend(_rhythm(sequence))
     found.extend(_rate_mix(sequence))
+    found.extend(_untrimmed_runs(sequence))
+    found.extend(_silent_cards(sequence))
+    found.extend(_music_tail(sequence))
     found.sort(key=lambda item: (item.timeline_start, item.timeline_end, item.kind))
     return found
 
@@ -518,6 +544,227 @@ def _source_reuse(sequence: Sequence) -> list[Candidate]:
                 )
             )
     return found
+
+
+def _untrimmed(clip: Clip, frame: Fraction) -> bool:
+    if clip.kind == "gap" or clip.asset_duration is None or clip.asset_start is None:
+        return False
+    if clip.asset_duration <= 0:
+        return False
+    if abs(clip.start - clip.asset_start) > frame:
+        return False
+    return abs(clip.duration - clip.asset_duration) <= frame * 2
+
+
+def _untrimmed_runs(sequence: Sequence) -> list[Candidate]:
+    """One note for a string-out of whole source clips, not one cut per shot."""
+    frame = sequence.frame_duration or Fraction(1, 24)
+    runs: list[list[Clip]] = []
+    current: list[Clip] = []
+    for clip in sequence.spine:
+        if _untrimmed(clip, frame):
+            current.append(clip)
+            continue
+        if current:
+            runs.append(current)
+            current = []
+    if current:
+        runs.append(current)
+    others = [
+        clip
+        for clip in sequence.spine
+        if clip.kind != "gap" and clip.duration > 0 and not _untrimmed(clip, frame)
+    ]
+    other_total = sum((clip.duration for clip in others), Fraction(0))
+    other_average = other_total / len(others) if others else None
+    found: list[Candidate] = []
+    for run in runs:
+        total = sum((clip.duration for clip in run), Fraction(0))
+        if len(run) < UNTRIMMED_MIN_CLIPS or total < UNTRIMMED_MIN_SECONDS:
+            continue
+        average = total / len(run)
+        if other_average is not None and len(others) >= 4:
+            if float(average) < float(other_average) * UNTRIMMED_ASL_RATIO:
+                continue
+        elif float(average) < 20:
+            continue
+        graded = _run_has(run, "filter-video") or _run_has(run, "adjust-voiceIsolation")
+        against = ""
+        if other_average is not None and len(others) >= 4:
+            against = (
+                f", against {_num(other_average)}s in the rest of the cut"
+            )
+        grade = (
+            " Some of them carry a grade or voice isolation."
+            if graded
+            else " No grade or voice isolation on them."
+        )
+        found.append(
+            _make(
+                kind="untrimmed_run",
+                label=KIND_LABEL["untrimmed_run"],
+                sequence=sequence,
+                clip=run[0],
+                start=run[0].timeline_start,
+                end=run[-1].timeline_end,
+                transcript="",
+                reason=(
+                    f"{len(run)} shots from {_tc(run[0].timeline_start)} to "
+                    f"{_tc(run[-1].timeline_end)} are the whole source clip "
+                    f"(average {_num(average)}s{against}).{grade} "
+                    "A string-out to review, not a lift."
+                ),
+                signals={
+                    "shot_count": len(run),
+                    "average_seconds": seconds(average),
+                    "other_average_seconds": None
+                    if other_average is None
+                    else seconds(other_average),
+                    "graded": graded,
+                    "do_not_cut": True,
+                },
+                cues=[],
+                span="note",
+            )
+        )
+    return found
+
+
+def _run_has(clips: list[Clip], tag: str) -> bool:
+    for clip in clips:
+        element = clip.element
+        if element is None:
+            continue
+        for node in element.iter():
+            if local(node.tag) == tag:
+                return True
+    return False
+
+
+def _silent_cards(sequence: Sequence) -> list[Candidate]:
+    """Generator cards with no audio. Review, never a mechanical remove."""
+    found: list[Candidate] = []
+    for clip in sequence.spine:
+        if not _silent_card(clip):
+            continue
+        found.append(
+            _make(
+                kind="silent_card",
+                label=KIND_LABEL["silent_card"],
+                sequence=sequence,
+                clip=clip,
+                start=clip.timeline_start,
+                end=clip.timeline_end,
+                transcript="",
+                reason=(
+                    f"{clip.name} at {_tc(clip.timeline_start)} is a "
+                    f"{_num(clip.duration)}s generator card with no audio on it "
+                    "and nothing connected. Left for a title or a shorten. Not a cut."
+                ),
+                signals={
+                    "generator": True,
+                    "has_audio": False,
+                    "card_seconds": seconds(clip.duration),
+                    "do_not_cut": True,
+                },
+                cues=[],
+                span="note",
+            )
+        )
+    return found
+
+
+def _silent_card(clip: Clip) -> bool:
+    if clip.kind == "gap" or clip.asset_id is not None:
+        return False
+    if clip.kind not in {"video", "title"}:
+        return False
+    if clip.duration < SILENT_CARD_MIN:
+        return False
+    if any(child.lane is not None for child in clip.connected_clips):
+        return False
+    element = clip.element
+    if element is None:
+        return True
+    for node in element.iter():
+        if node is element:
+            continue
+        tag = local(node.tag)
+        if tag in {"audio", "asset-clip", "audio-channel-source"}:
+            return False
+    return True
+
+
+def _music_tail(sequence: Sequence) -> list[Candidate]:
+    """A long external audio bed that finishes while the picture still runs."""
+    if sequence.duration is None:
+        return []
+    frame = sequence.frame_duration or Fraction(1, 24)
+    pieces: list[tuple[Clip, Clip]] = []
+    for clip in sequence.spine:
+        for child in clip.connected_clips:
+            if child.lane is None or not child.asset_id or child.asset_has_audio is not True:
+                continue
+            if child.asset_id == clip.asset_id:
+                continue
+            pieces.append((clip, child))
+    if not pieces:
+        return []
+    pieces.sort(key=lambda item: (item[1].asset_id or "", item[1].timeline_start))
+    beds: list[dict] = []
+    for parent, child in pieces:
+        if (
+            beds
+            and beds[-1]["asset_id"] == child.asset_id
+            and child.timeline_start - beds[-1]["end"] <= frame * 2
+        ):
+            if child.timeline_end > beds[-1]["end"]:
+                beds[-1]["end"] = child.timeline_end
+                beds[-1]["parent"] = parent
+                beds[-1]["child"] = child
+            continue
+        beds.append(
+            {
+                "asset_id": child.asset_id,
+                "start": child.timeline_start,
+                "end": child.timeline_end,
+                "parent": parent,
+                "child": child,
+            }
+        )
+    beds = [bed for bed in beds if bed["end"] - bed["start"] >= MUSIC_BED_MIN]
+    if not beds:
+        return []
+    last = max(beds, key=lambda bed: bed["end"])
+    tail = sequence.duration - last["end"]
+    if tail < MUSIC_TAIL_MIN or tail > MUSIC_TAIL_MAX:
+        return []
+    child = last["child"]
+    parent = last["parent"]
+    return [
+        _make(
+            kind="music_tail",
+            label=KIND_LABEL["music_tail"],
+            sequence=sequence,
+            clip=parent,
+            start=last["end"],
+            end=sequence.duration,
+            transcript="",
+            reason=(
+                f"{child.name} ends at {_tc(last['end'])}, "
+                f"{_num(tail)}s before the picture ends at {_tc(sequence.duration)}. "
+                "The bed stays. Finish with the song, or tighten the tail."
+            ),
+            signals={
+                "bed_name": child.name,
+                "tail_seconds": seconds(tail),
+                "bed_end_seconds": seconds(last["end"]),
+                "do_not_cut": True,
+            },
+            cues=[],
+            span="note",
+        )
+    ]
 
 
 def _rhythm(sequence: Sequence) -> list[Candidate]:

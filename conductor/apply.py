@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from fractions import Fraction
 
 from .errors import ConductorError
-from .fcpxml import CLIP_TAGS, Document, anchored_local, local
+from .fcpxml import CLIP_TAGS, Document, anchored_local, is_primary_story, local
 from .timeutil import format_time, parse_time
 
 _TIMED = frozenset({"marker", "keyword", "chapter-marker"})
@@ -58,12 +58,118 @@ def apply_edits(document: Document, deletions: list[Deletion]) -> ApplyResult:
     by_sequence: dict[str, list[Deletion]] = {}
     for deletion in deletions:
         by_sequence.setdefault(deletion.sequence, []).append(deletion)
+    planned: list[tuple] = []
+    adjusted: list[Deletion] = []
     for sequence in document.sequences:
         group = by_sequence.get(sequence.name)
         if not group:
             continue
-        warnings.extend(_ripple(sequence, group))
-    return ApplyResult(cuts=[_cut_row(item) for item in deletions], warnings=warnings)
+        kept, notes = _shield_connected(sequence, group)
+        warnings.extend(notes)
+        planned.append((sequence, kept))
+        adjusted.extend(kept)
+    if not adjusted:
+        raise ConductorError(
+            "refusing to remove a clip that still has connected items on it"
+        )
+    for sequence, kept in planned:
+        if kept:
+            warnings.extend(_ripple(sequence, kept))
+    return ApplyResult(cuts=[_cut_row(item) for item in adjusted], warnings=warnings)
+
+
+def _shield_connected(sequence, deletions: list[Deletion]) -> tuple[list[Deletion], list[str]]:
+    """Punch connected coverage out of a deletion.
+
+    A spine gap or clip with anchored children is never removed wholesale.
+    Only the uncovered stretches are cut. The covered picture stays, and the
+    caller ripples what remains.
+    """
+    protected: list[tuple[Fraction, Fraction]] = []
+    frame = sequence.frame_duration
+    for clip in sequence.spine:
+        protected.extend(_anchored_spans(clip, frame))
+    if not protected:
+        return list(deletions), []
+    blockers = [
+        Deletion(
+            candidate_id="connected",
+            sequence=sequence.name,
+            start=start,
+            end=end,
+            action="keep",
+            pass_name="mechanical",
+        )
+        for start, end in _merge_spans(protected)
+    ]
+    warnings: list[str] = []
+    adjusted: list[Deletion] = []
+    for deletion in deletions:
+        pieces = _subtract(deletion.start, deletion.end, blockers)
+        kept = sum((end - start for start, end in pieces), Fraction(0))
+        covered = deletion.duration - kept
+        if covered > 0:
+            warnings.append(
+                f"kept {format_time(covered)} of {deletion.candidate_id} "
+                "because a connected clip covers it"
+            )
+        for start, end in pieces:
+            adjusted.append(
+                Deletion(
+                    candidate_id=deletion.candidate_id,
+                    sequence=deletion.sequence,
+                    start=start,
+                    end=end,
+                    action=deletion.action,
+                    pass_name=deletion.pass_name,
+                )
+            )
+    return adjusted, warnings
+
+
+def _anchored_spans(clip, frame: Fraction) -> list[tuple[Fraction, Fraction]]:
+    """Timeline ranges of laned children. Lane-less compound media is not one."""
+    element = clip.element
+    spans: list[tuple[Fraction, Fraction]] = []
+    if element is None:
+        children = [
+            (child.offset, child.duration)
+            for child in clip.connected_clips
+            if child.lane is not None
+        ]
+    else:
+        children = []
+        for child in element:
+            if local(child.tag) not in CLIP_TAGS or not child.get("lane"):
+                continue
+            children.append(
+                (
+                    parse_time(child.get("offset"), Fraction(0)),
+                    parse_time(child.get("duration"), Fraction(0)),
+                )
+            )
+    for offset, duration in children:
+        local_pos, _mode = anchored_local(
+            clip.start, clip.duration, offset, duration, frame=frame
+        )
+        start = clip.timeline_start + local_pos
+        end = start + duration
+        left = max(start, clip.timeline_start)
+        right = min(end, clip.timeline_end)
+        if right > left:
+            spans.append((left, right))
+    return spans
+
+
+def _merge_spans(spans: list[tuple[Fraction, Fraction]]) -> list[tuple[Fraction, Fraction]]:
+    ordered = sorted(spans)
+    merged: list[list[Fraction]] = []
+    for start, end in ordered:
+        if not merged or start > merged[-1][1]:
+            merged.append([start, end])
+        else:
+            merged[-1][1] = max(merged[-1][1], end)
+    return [(start, end) for start, end in merged]
 
 
 def _ripple(sequence, deletions: list[Deletion]) -> list[str]:
@@ -114,6 +220,11 @@ def _piece(element, clip, start: Fraction, end: Fraction, deletions: list[Deleti
     warnings: list[str] = []
     for child in list(element):
         tag = local(child.tag)
+        if is_primary_story(local(element.tag), child):
+            # The compound's own media. Its offset stays in container time;
+            # the parent's start and duration are the trim.
+            piece.append(copy.deepcopy(child))
+            continue
         if tag in CLIP_TAGS:
             placed = _place_connected(
                 child,

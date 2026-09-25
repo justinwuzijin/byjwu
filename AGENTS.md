@@ -276,6 +276,14 @@ every model id and URL. Room bots orchestrate. They do not decide.
 - Tests use `httpx.MockTransport` hosts (`tests/test_conductor_router.py`).
   Dry-run must work with no key and no network.
 
+`conductor.graphics.apply_graphics` is the type and graphics stage (`iterate`,
+`room-run`, and `assemble` call it). It is off unless `--graphics` is passed
+or the profile sets `graphics.enabled`. Subtitle breaks, timing, and partial
+words are Jev asks. Title placement and treatment are Opus asks. The
+placeholder type defaults live in `conductor/graphics/profile.py` and are not
+measurements. Rendered media goes in `<stem>.assets/` beside the output
+FCPXML. Missing ffmpeg or Pillow skips that render and records a note.
+
 Passes (`mechanical`, `dialogue`, `pacing`, `colour`, plus reserved `story` /
 `audio` / `broll`) are the extension point. A new editorial check is a
 `register_pass`, not a new CLI. `colour` is review-only: it reads roles and

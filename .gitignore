@@ -15,3 +15,6 @@ demo/
 
 # secrets
 .env
+
+# rendered type and graphics, written beside an output FCPXML
+*.assets/

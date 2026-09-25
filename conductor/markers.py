@@ -27,7 +27,10 @@ _SHADOW = "Cut Conductor shadow proposal"
 _AFTER_MARKERS = frozenset(
     {
         "audio-channel-source",
+        "audio-role-source",
+        "sync-source",
         "filter-video",
+        "filter-video-mask",
         "filter-audio",
         "metadata",
     }
@@ -138,10 +141,9 @@ def _marker_insert_at(element: ET.Element) -> int:
 def marker_order_violations(element: ET.Element) -> list[str]:
     """Parents whose ``<marker>`` sits after a post-marker element.
 
-    The 1.14 content model is ``(%marker_item;)*`` then
-    ``audio-channel-source*``, video filters, ``filter-audio*``, ``metadata?``.
-    Apple's DTD is all-rights-reserved, so this is a structural check rather
-    than a vendored copy of the DTD.
+    The 1.11 and 1.14 content models put ``(%marker_item;)*`` before
+    ``audio-channel-source*``, video filters, ``filter-audio*``, and ``metadata?``.
+    The DTDs live in ``conductor/dtd``.
     """
     found: list[str] = []
     for parent in element.iter():

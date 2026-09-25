@@ -15,7 +15,7 @@ from . import __version__
 from .apply import apply_edits
 from .decide import deletions_for, judge
 from .errors import ConductorError
-from .fcpxml import Document, parse_fcpxml, write_document
+from .fcpxml import Document, parse_fcpxml, stamp_projects, write_document
 from .feedback import bind_pending, diff_fcpxml, ingest_notes
 from .jev import dry_run_forced
 from .markers import apply_markers
@@ -78,6 +78,7 @@ def analyze(
     feedback_path: str | Path | None = None,
     learn_from: str | Path | None = None,
     router: Router | None = None,
+    output_version: int = 1,
 ) -> Report:
     """Run the named passes and write a shadow proposal.
 
@@ -232,10 +233,12 @@ def analyze(
         _refuse_overwrite(source, paths["fcpxml"])
         _refuse_overwrite(source, paths["applied"])
         markers_added = apply_markers(document, proposals, candidates)
+        stamp_projects(document.tree, version=output_version, marked=True)
         write_document(document.tree, paths["fcpxml"])
         out_fcpxml = paths["fcpxml"]
         files["fcpxml"] = str(paths["fcpxml"])
         if applied_doc is not None:
+            stamp_projects(applied_doc.tree, version=output_version, marked=False)
             write_document(applied_doc.tree, paths["applied"])
             out_applied = paths["applied"]
             files["applied_fcpxml"] = str(paths["applied"])

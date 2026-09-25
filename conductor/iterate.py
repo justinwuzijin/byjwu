@@ -259,6 +259,7 @@ def _rounds(
             allow_empty_apply=True,
             skip_apply=(targets.clear if targets.configured() else None),
             router=router,
+            output_version=number,
             feedback_path=feedback_path if number == 1 else None,
             learn_from=learn_from if number == 1 else None,
             **analyze_args,

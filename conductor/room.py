@@ -873,7 +873,8 @@ def _summarize(
         raise ConductorError("The run finished without a timeline to open in Final Cut.")
     before = measure(parse_fcpxml(result.rounds[0]["source"]).sequences)["duration_seconds"]
     after = measure(parse_fcpxml(open_path).sequences)["duration_seconds"]
-    cuts = [_cut_row(cut) for cut in result.applied]
+    rules_fired, cuts_applied = _across_rounds(result.rounds)
+    cuts = [_cut_row(cut) for row in result.rounds for cut in (row.get("cuts") or [])]
     flagged = _flagged(last.get("json"))
     media_signals = last.get("signals") or {}
     signals = _signals(prepared, media_signals)
@@ -901,6 +902,8 @@ def _summarize(
             "after": _clock_seconds(after),
         },
         "cuts": cuts,
+        "cuts_applied": cuts_applied,
+        "rules_fired": rules_fired,
         "flagged": flagged,
         "stop_reason": result.stop_reason,
         "needs_human": result.needs_human,
@@ -940,6 +943,8 @@ def _markdown(payload: dict) -> str:
         f"Flow: {payload['flow']}" + (f" (style {payload['style']})" if payload.get("style") else ""),
         f"Duration: {duration['before']} → {duration['after']}",
         f"Stop: {payload['stop_reason']}",
+        f"Cuts applied: {payload['cuts_applied']}",
+        f"Rules fired: {payload['rules_fired']}",
         f"Signals: {payload['signals_label']}",
         f"Decisions: {format_usage(payload['decision_usage']) or 'none'}",
     ]
@@ -962,9 +967,10 @@ def _markdown(payload: dict) -> str:
     else:
         for item in payload["flagged"]:
             lines.append(_flag_line(item))
-    lines.extend(["", f"Open in Final Cut: {payload['open_in_final_cut']}"])
+    opened = _display_path(payload["open_in_final_cut"], payload["out_dir"])
+    lines.extend(["", f"Open in Final Cut: {opened}"])
     if payload["shadow"] != payload["open_in_final_cut"]:
-        lines.append(f"Shadow (markers): {payload['shadow']}")
+        lines.append(f"Shadow (markers): {_display_path(payload['shadow'], payload['out_dir'])}")
     if payload.get("media_note"):
         lines.extend(["", payload["media_note"]])
     if payload["needs_human"]:
@@ -989,11 +995,11 @@ def _usage(result: IterateResult, router: Router | None) -> dict:
 
 
 def _flag_line(item: dict) -> str:
-    span = item.get("range")
-    if isinstance(span, list) and len(span) == 2:
-        when = f"{span[0]}–{span[1]}"
-    else:
-        when = item.get("timecode") or ""
+    when = item.get("timecode") or ""
+    if item.get("length"):
+        when = f"{when} ({item['length']})".strip()
+    elif isinstance(item.get("range"), list) and len(item["range"]) == 2:
+        when = f"{item['range'][0]}–{item['range'][1]}"
     ident = item.get("candidate_id") or ""
     clip = f" — {item['clip_name']}" if item.get("clip_name") else ""
     return f"- {item['section']} {ident} {when} {item['action']} ({item['pass']}){clip}"
@@ -1074,6 +1080,57 @@ def _cut_row(cut: dict) -> dict:
     }
 
 
+def _across_rounds(rounds: list[dict]) -> tuple[int, int]:
+    """Rules fired and cuts applied, summed over every round."""
+    rules = 0
+    cuts = 0
+    for row in rounds:
+        fired, applied = _rules_from_round(row)
+        rules += fired
+        cuts += applied
+    return rules, cuts
+
+
+def _rules_from_round(row: dict) -> tuple[int, int]:
+    """``(rules fired, cuts applied)`` for one round.
+
+    Rules are changes the deterministic fallback answered (``engine_source``
+    ``rules``). Cuts are the ones that round wrote. The last round alone is
+    not the run: an earlier round can cut and then stop.
+    """
+    cuts = len(row.get("cuts") or [])
+    path = row.get("json")
+    if not path:
+        return 0, cuts
+    file = Path(path)
+    if not file.is_file():
+        return 0, cuts
+    payload = json.loads(file.read_text(encoding="utf-8"))
+    rules = sum(
+        1 for change in payload.get("changes") or [] if change.get("engine_source") == "rules"
+    )
+    return rules, cuts
+
+
+def _display_path(path: str, out_dir: str) -> str:
+    """Path the editor opens, when ``BYJWU_OUT_DISPLAY_ROOT`` is set.
+
+    The root is the folder that corresponds to this run's output parent, for
+    example ``~/Desktop/byjwu-out``. Unset, the path is the one on the machine
+    that ran conductor. ``~`` is kept as written. No username is added.
+    """
+    root = os.environ.get("BYJWU_OUT_DISPLAY_ROOT", "").strip()
+    if not root or not path:
+        return path
+    resolved = Path(path).resolve()
+    parent = Path(out_dir).resolve().parent
+    try:
+        relative = resolved.relative_to(parent)
+    except ValueError:
+        return path
+    return f"{root.rstrip('/')}/{relative.as_posix()}"
+
+
 def _flagged(json_path: str | None) -> list[dict]:
     if not json_path:
         return []
@@ -1081,9 +1138,12 @@ def _flagged(json_path: str | None) -> list[dict]:
     if not file.is_file():
         return []
     payload = json.loads(file.read_text(encoding="utf-8"))
+    durations = {
+        item.get("id"): item.get("duration_seconds") for item in payload.get("candidates") or []
+    }
     rows = []
     for row in payload.get("changes") or []:
-        if row.get("section") not in {"review", "escalate"}:
+        if row.get("section") not in {"review", "escalate"} and row.get("kind") != "long_static":
             continue
         rows.append(
             {
@@ -1091,14 +1151,25 @@ def _flagged(json_path: str | None) -> list[dict]:
                 "section": row.get("section"),
                 "action": row.get("action"),
                 "pass": row.get("pass"),
+                "kind": row.get("kind"),
                 "clip_name": row.get("clip_name"),
                 "timecode": row.get("timecode"),
+                "length": _length_label(durations.get(row.get("candidate_id"))),
                 "range": row.get("range"),
                 "reason": row.get("reason"),
                 "confidence": row.get("confidence"),
             }
         )
     return rows
+
+
+def _length_label(duration: float | None) -> str | None:
+    if duration is None:
+        return None
+    if abs(duration - round(duration)) < 1e-3:
+        return f"{int(round(duration))}s"
+    text = f"{duration:.3f}".rstrip("0").rstrip(".")
+    return f"{text}s"
 
 
 def _missing_local_media(document: Document, root: Path) -> list[str]:

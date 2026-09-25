@@ -246,11 +246,12 @@ class Layout:
             room = file_end - src
             if src >= unit.end - self.frame or room < floor:
                 continue
-            self._music_check(self.t, self.min_shot)
             drawn = next(draws)
             if drawn < floor:
                 drawn = floor
             drawn = min(drawn, room)
+            # The shot can run past the file. Loop first so its beats exist.
+            self._music_check(self.t, drawn)
             end, on_beat = self._cut_point(drawn, mode, room, window=window)
             length = end - self.t
             placed = self._place_visual(
@@ -694,24 +695,58 @@ class Layout:
 
     def _change_song(self, t: Fraction) -> None:
         current = self.segments[-1]
+        # A long shot can run past the file. The next copy joins that end
+        # (the last bar, when there is one), not ``t``, or the bed has a hole.
+        join = self._loop_join(current, min(self._q(t), current.media_end))
+        if join <= current.start:
+            join = min(current.media_end, current.start + self.frame)
+        songs = self.material.songs
+        nxt = songs[(self.song_cursor + 1) % len(songs)]
+        looping = nxt.path == current.song.path
         transition = str(self.profile.get("music.song_change.transition"))
-        if transition == "crossfade":
-            overlap = self._q(self._f(self.profile.get("music.song_change.crossfade_seconds")))
-            current.end = min(current.media_end, t + overlap)
-            current.fade_out = max(self.frame, current.end - t)
-        elif transition == "cut":
-            current.end = min(current.media_end, t)
+        overlap = Fraction(0)
+        if looping or transition == "crossfade":
+            raw = self.profile.get("music.song_change.crossfade_seconds", 0.5)
+            overlap = self._q(self._f(0.5 if raw is None else raw))
+            overlap = min(overlap, max(Fraction(0), join - current.start - self.frame))
+        if transition == "cut" and not looping:
+            current.end = join
             current.fade_out = self.frame * 2
+            start_at = join
+            how = "cut"
         else:
-            current.end = min(current.media_end, t)
-            current.fade_out = self._q(self._f(self.profile.get("music.fade_out.seconds")))
-        current.transition_out = transition
-        self._start_song(t, transition)
+            current.end = join
+            fade = overlap or self._q(self._f(self.profile.get("music.fade_out.seconds")))
+            current.fade_out = max(self.frame, fade)
+            start_at = join - overlap
+            how = "crossfade" if overlap else transition
+        current.transition_out = how
+        self._start_song(start_at, how)
+
+    def _loop_join(self, current: MusicSegment, join: Fraction) -> Fraction:
+        """Last downbeat within one bar of ``join``, so a loop lands on the bar."""
+        if len(self.downbeats) < 2 or len(self.beats) < 2:
+            return join
+        bar = self._period() * int(self.profile.get("music.beats.beats_per_bar"))
+        if bar <= 0:
+            return join
+        candidates = [
+            beat for beat in self.downbeats
+            if join - bar <= beat <= join and beat > current.start + self.frame
+        ]
+        return candidates[-1] if candidates else join
 
     def _close_music(self) -> None:
         if not self.segments:
             return
         end = self.t
+        guard = 0
+        while self.segments[-1].media_end < end - self.frame and guard < 32:
+            before = self.segments[-1].media_end
+            self._change_song(end)
+            guard += 1
+            if not self.segments or self.segments[-1].media_end <= before:
+                break
         kept = [segment for segment in self.segments if segment.start < end]
         self.segments = kept
         last = kept[-1]

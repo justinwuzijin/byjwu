@@ -953,6 +953,16 @@ def _summarize(
     return RoomRun(True, dest.resolve(), markdown, payload, open_path)
 
 
+def _cuts_line(payload: dict) -> str:
+    count = payload["cuts_applied"]
+    if count == 0 and payload.get("flow") == "assemble+iterate":
+        return (
+            "Cuts applied: 0 (iterate ran; the assembly already cut the timeline, "
+            "so there was nothing further to trim)"
+        )
+    return f"Cuts applied: {count}"
+
+
 def _rules_from_round(last: dict) -> dict:
     path = last.get("json")
     if not path:
@@ -980,7 +990,7 @@ def _markdown(payload: dict) -> str:
         f"Flow: {payload['flow']}" + (f" (style {payload['style']})" if payload.get("style") else ""),
         f"Duration: {duration['before']} → {duration['after']}",
         f"Stop: {payload['stop_reason']}",
-        f"Cuts applied: {payload['cuts_applied']}",
+        _cuts_line(payload),
         f"Rules fired: {payload['rules_fired']}",
         f"Signals: {payload['signals_label']}",
         f"Decisions: {format_usage(payload['decision_usage']) or 'none'}",
@@ -994,7 +1004,13 @@ def _markdown(payload: dict) -> str:
         "",
     ]
     if not payload["cuts"]:
-        lines.append("None.")
+        if payload.get("flow") == "assemble+iterate":
+            lines.append(
+                "None. Iterate ran on the assembled timeline and applied no further trims. "
+                "The assembly had already made the cut."
+            )
+        else:
+            lines.append("None.")
     else:
         for cut in payload["cuts"]:
             clip = f" — {cut['clip_name']}" if cut.get("clip_name") else ""

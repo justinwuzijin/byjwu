@@ -91,6 +91,7 @@ If `faster-whisper` is not installed, `room-run` says to install it with `pip in
 - Talking sentences from the same take stay one hold until they reach the profile’s talking average. A new segment from `conductor/segments.py` starts a new hold, so a topic shift is a cut.
 - Montage cuts snap to the nearest beat within half a beat of the drawn length. The shot may run a little past that chunk into later unused source on the same clip. A later montage section does not replay source the first section already used. Speech cuts stay on the words.
 - The FCPXML check now also rejects overlapping spine items, times off the frame grid, an asset-clip whose ref does not exist, and two items on the same lane that overlap.
+- One song shorter than the timeline loops on a bar with a short crossfade. The next copy's beats are loaded before the montage shot that would otherwise land past the file. A longer song fades out at the timeline end.
 
 ## What is still weak
 
@@ -99,3 +100,27 @@ B-roll scores 80. The profile barely covers talk, so the montage is the B-roll, 
 The timeline is a few minutes because the shoot is ten clips. The profile’s length target is the long diary runtime. The score does not punish that gap. A real drop would.
 
 The 95.8 number is the sidecar run, where word times come from the SRT. Ducking is 81.8 because the score reads the music level under dialogue, and a few spans are not all the way down at the profile's silent bed. The 96.6 number is the no-sidecar run: `base.en` word times, then the same assembler. A take's picture range is reserved once, so the head of a clip is not laid twice. Holds group on pause length, the segment index, and staying on the same take, so a misheard word does not open a new shot. A silence sliver beside a music bed is left in the shot, so a montage cut stays on the beat.
+
+## One song
+
+Justin usually drops one track. The two-song shoot above hides a hole: when the only file is shorter than the timeline, the next copy used to start at the current playhead, which was already past the file end. A 48 second bed left gaps after each copy. A 160 second bed left a gap from 160.0 to 161.04.
+
+The bed now loops on the last downbeat within one bar of the file end, with a short crossfade, and the beat grid for the next copy is in place before a montage shot is drawn. Ducking is written on every copy. A song longer than the timeline is one clip and fades out at the end. A song about as long as the timeline covers it and fades out the same way.
+
+`tests/test_single_song.py` assembles those three beds with sidecars and checks the linter finds no `music_coverage` hole. `tests/test_eval_e2e.py::test_one_short_song_room_run_matches_the_style` is the drop-folder path: ten espeak clips, no sidecars, only `bed_120bpm.wav` (48 seconds), dry-run, no keys.
+
+That run scored overall **96.6**. Lint passed. The critic approved.
+
+| Dimension | Score |
+|---|---|
+| Pacing | 100 |
+| Hook | 100 |
+| Hygiene | 100 |
+| Beat | 100 |
+| B-roll | 80 |
+| Ducking | 90.0 |
+| Type and chapters | 100 |
+| Colour notes | 100 |
+| Structure | 100 |
+
+Iterate ran on the assembled timeline and applied 2 cuts. When it applies none, the report says the assembly had already made the cut, rather than reading as if the pass was skipped.

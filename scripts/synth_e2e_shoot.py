@@ -125,7 +125,7 @@ SONG_SLOW_SECONDS = 160.0
 BPM_SLOW = 96.0
 
 
-def generate(folder: Path, *, use_ffmpeg: bool = True, sidecars: bool = True) -> dict:
+def generate(folder: Path, *, use_ffmpeg: bool = True, sidecars: bool = True, beds: str = "both") -> dict:
     folder.mkdir(parents=True, exist_ok=True)
     ffmpeg = shutil.which("ffmpeg") if use_ffmpeg else None
     espeak = shutil.which("espeak-ng") or shutil.which("espeak")
@@ -141,22 +141,35 @@ def generate(folder: Path, *, use_ffmpeg: bool = True, sidecars: bool = True) ->
             path.with_suffix(".json").write_text(_whisper(clip.lines), encoding="utf-8")
     durations = {clip.name: f"{clip.seconds}s" for clip in CLIPS}
     (folder / "durations.json").write_text(json.dumps(durations, indent=2) + "\n", encoding="utf-8")
-    song = folder / SONG
-    write_click_track(song, bpm=BPM, seconds=SONG_SECONDS)
-    slow = folder / SONG_SLOW
-    write_click_track(slow, bpm=BPM_SLOW, seconds=SONG_SLOW_SECONDS)
+    songs: list[dict] = []
+    if beds in {"both", "short"}:
+        song = folder / SONG
+        write_click_track(song, bpm=BPM, seconds=SONG_SECONDS)
+        songs.append({"name": song.name, "bpm": BPM, "seconds": SONG_SECONDS})
+    if beds == "both":
+        slow = folder / SONG_SLOW
+        write_click_track(slow, bpm=BPM_SLOW, seconds=SONG_SLOW_SECONDS)
+        songs.append({"name": slow.name, "bpm": BPM_SLOW, "seconds": SONG_SLOW_SECONDS})
+    if beds == "long":
+        song = folder / "bed_long.wav"
+        write_click_track(song, bpm=BPM, seconds=400.0)
+        songs.append({"name": song.name, "bpm": BPM, "seconds": 400.0})
+    if beds == "matched":
+        song = folder / "bed_matched.wav"
+        write_click_track(song, bpm=BPM, seconds=180.0)
+        songs.append({"name": song.name, "bpm": BPM, "seconds": 180.0})
+    if not songs:
+        raise ValueError(f"unknown beds={beds!r}")
+    song = folder / songs[0]["name"]
     return {
         "folder": str(folder),
         "clips": len(CLIPS),
         "real_clips": made,
         "tts": bool(espeak),
         "song": song.name,
-        "bpm": BPM,
-        "song_seconds": SONG_SECONDS,
-        "songs": [
-            {"name": song.name, "bpm": BPM, "seconds": SONG_SECONDS},
-            {"name": slow.name, "bpm": BPM_SLOW, "seconds": SONG_SLOW_SECONDS},
-        ],
+        "bpm": songs[0]["bpm"],
+        "song_seconds": songs[0]["seconds"],
+        "songs": songs,
     }
 
 

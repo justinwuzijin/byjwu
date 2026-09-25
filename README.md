@@ -8,4 +8,4 @@ byjwu turns raw footage and music into a Final Cut Pro FCPXML that feels like a 
 
 Technical docs: [docs/technical.md](docs/technical.md).
 
-a grok bot design build night in los angeles 09/22/26
+built at a grok bot design build night in los angeles 09/22/26

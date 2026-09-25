@@ -56,9 +56,12 @@ def test_sample_kinds_and_passes():
     by_kind = {}
     for item in found:
         by_kind.setdefault(item.kind, []).append(item)
-    assert [item.pass_name for item in found if item.kind == "silence_gap"] == ["mechanical"]
-    assert found[0].id == "c0001" and found[0].kind == "silence_gap"
-    assert found[0].span == "clip"
+    silence = [item for item in found if item.kind == "silence_gap"]
+    assert [item.pass_name for item in silence] == ["mechanical"]
+    assert silence[0].id == "c0002" and silence[0].span == "clip"
+    colour = [item for item in found if item.pass_name == "colour"]
+    assert [item.kind for item in colour] == ["colour_unseen"]
+    assert "not decoded" in colour[0].reason or "did not decode" in colour[0].reason
     assert any(item.kind == "short_clip" and item.pass_name == "mechanical" for item in found)
     assert any(item.kind == "long_static" and item.pass_name == "pacing" for item in found)
     fillers = [item for item in found if item.kind == "filler_pause"]
@@ -66,7 +69,7 @@ def test_sample_kinds_and_passes():
     assert all(item.pass_name == "dialogue" for item in fillers)
     assert any(item.signals.get("pure_filler") for item in fillers)
     assert any(item.label == "pause" and item.signals.get("adjacent_filler") for item in fillers)
-    assert "Cold open" not in {item.clip_name for item in found}
+    assert "Cold open" not in {item.clip_name for item in found if item.pass_name != "colour"}
 
 
 def test_mechanical_pass_skips_dialogue_and_pacing():

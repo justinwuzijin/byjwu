@@ -7,6 +7,7 @@ path is only ever read.
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -17,9 +18,11 @@ from .errors import ConductorError
 from .fcpxml import Document, parse_fcpxml, write_document
 from .jev import dry_run_forced
 from .markers import apply_markers
+from .metrics import measure
 from .passes import collect, resolve_names
 from .report import build_payload, dumps, render_html, render_markdown
 from .taste import Taste, feedback_event, load_taste, write_taste
+from .timeutil import seconds
 from .transcript import load_transcript
 
 
@@ -60,12 +63,20 @@ def analyze(
     apply: bool = False,
     accept: list[str] | None = None,
     min_confidence: float | None = None,
+    apply_passes: list[str] | None = None,
+    allow_empty_apply: bool = False,
+    skip_apply: Callable[[dict], bool] | None = None,
 ) -> Report:
     """Run the named passes and write a shadow proposal.
 
     ``live=False`` (the default) uses the local mock and does not read an API
     key. ``apply=True`` writes a second FCPXML. It requires ``accept`` or
-    ``min_confidence`` together with ``passes``.
+    ``min_confidence`` together with ``passes`` (or ``apply_passes``).
+
+    ``apply_passes`` limits which passes may be cut. The report still contains
+    every pass in ``passes``. ``allow_empty_apply`` writes the shadow and
+    skips the cut file when the gate matches nothing. ``skip_apply`` sees the
+    pre-cut metrics and can decline the cut.
     """
     source = Path(fcpxml_path)
     source_bytes = source.read_bytes()
@@ -87,28 +98,47 @@ def analyze(
     cuts: list[dict] = []
     apply_warnings: list[str] = []
     applied_doc = None
-    if apply:
-        deletions = deletions_for(
-            proposals,
-            candidates,
-            accept=accept,
-            min_confidence=min_confidence,
-            passes=passes,
-            hold=taste.hold(),
-        )
-        applied_doc = parse_fcpxml(source)
-        result = apply_edits(applied_doc, deletions)
-        cuts = result.cuts
-        apply_warnings = result.warnings
-        for deletion in deletions:
-            taste.append(
-                feedback_event(
-                    event="accept",
-                    candidate_id=deletion.candidate_id,
-                    action=deletion.action,
-                    pass_name=deletion.pass_name,
-                )
+    perform_apply = apply
+    if perform_apply and skip_apply is not None:
+        if skip_apply(measure(sequences, proposals=proposals)):
+            perform_apply = False
+    if perform_apply:
+        try:
+            deletions = deletions_for(
+                proposals,
+                candidates,
+                accept=accept,
+                min_confidence=min_confidence,
+                passes=apply_passes if apply_passes is not None else passes,
+                hold=taste.hold(),
             )
+        except ConductorError as exc:
+            if allow_empty_apply and str(exc).startswith("no cuts matched"):
+                deletions = []
+            else:
+                raise
+        if deletions:
+            applied_doc = parse_fcpxml(source)
+            result = apply_edits(applied_doc, deletions)
+            cuts = result.cuts
+            apply_warnings = result.warnings
+            by_candidate = {item.id: item for item in candidates}
+            for deletion in deletions:
+                candidate = by_candidate[deletion.candidate_id]
+                taste.append(
+                    feedback_event(
+                        event="accept",
+                        candidate_id=deletion.candidate_id,
+                        action=deletion.action,
+                        pass_name=deletion.pass_name,
+                        fields={
+                            "clip_name": candidate.clip_name,
+                            "kind": candidate.kind,
+                            "timeline_start_seconds": seconds(deletion.start),
+                            "timeline_end_seconds": seconds(deletion.end),
+                        },
+                    )
+                )
 
     out_fcpxml = out_applied = out_json = out_md = out_html = out_taste = None
     markers_added = 0
@@ -157,8 +187,8 @@ def analyze(
         gates=taste.gates.to_dict(),
         cuts=cuts,
         apply_warnings=apply_warnings,
-        shadow=not apply,
-        applied=apply,
+        shadow=not bool(cuts),
+        applied=bool(cuts),
     )
     if source.read_bytes() != source_bytes:
         raise ConductorError("refusing to finish: the source FCPXML changed during the run")

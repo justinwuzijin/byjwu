@@ -221,8 +221,12 @@ on what a whole-cue filler is.
 `JEV_MOCK=1` is the cutmcp switch. Conductor ignores it. Conductor dry-run
 is the default; `CONDUCTOR_DRY_RUN=1` forces the mock even with `--live`.
 
-Passes (`mechanical`, `dialogue`, `pacing`, plus reserved `story` / `audio`
-/ `broll`) are the extension point. A new editorial check is a
-`register_pass`, not a new CLI. Confidence gates live in `conductor/gates.py`.
-Creative passes never take the `auto` disposition. Apply never overwrites
-the input FCPXML.
+Passes (`mechanical`, `dialogue`, `pacing`, `colour`, plus reserved `story` /
+`audio` / `broll`) are the extension point. A new editorial check is a
+`register_pass`, not a new CLI. `colour` is review-only: it reads roles and
+aspect from the XML, leaves a placeholder where exposure and skin would need
+a decode, and never auto-applies. `python -m conductor iterate` is the
+bot-owned loop: each round auto-applies only mechanical gate cuts, writes
+`out/vN/`, and stops on metrics, no progress, or `--max-rounds`. Confidence
+gates live in `conductor/gates.py`. Creative passes never take the `auto`
+disposition. Apply never overwrites the input FCPXML.

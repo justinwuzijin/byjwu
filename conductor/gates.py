@@ -5,8 +5,8 @@ Thresholds are configuration, not prompt text.
 - ``auto`` — high confidence, low risk, and a mechanical pass. Eligible for
   ``--min-confidence`` apply.
 - ``review`` — a real signal, but a person should look. Creative passes
-  (dialogue, pacing, and anything registered as creative) land here even when
-  the model is sure.
+  (dialogue, pacing, colour, and anything registered as creative) land here
+  even when the model is sure. Colour never becomes an unattended cut.
 - ``escalate`` — low confidence, or Jev already said escalate.
 
 The raw action is kept on the proposal. The gated action is what the marker

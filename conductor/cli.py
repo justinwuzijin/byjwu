@@ -8,6 +8,7 @@ from pathlib import Path
 
 from .errors import ConductorError
 from .ingest import DEFAULT_BRIEF, ingest
+from .iterate import format_report, iterate
 from .passes import PASSES
 from .run import Report, analyze
 from .taste import feedback_event, load_taste, write_taste
@@ -44,6 +45,12 @@ def main(argv: list[str] | None = None) -> int:
             help="build a starter FCPXML from a folder of clips, then shadow-mark it",
         )
     )
+    _add_iterate(
+        sub.add_parser(
+            "iterate",
+            help="repeat analyze and auto-apply mechanical cuts until the cut holds",
+        )
+    )
     ui = sub.add_parser("ui", help="local page that runs ingest on a folder path")
     ui.add_argument("--port", type=int, default=8765, help="localhost port (default: 8765)")
     feedback = sub.add_parser("feedback", help="append an accept or reject to a taste log")
@@ -62,6 +69,8 @@ def main(argv: list[str] | None = None) -> int:
             return _ui(args)
         if args.command == "ingest":
             return _ingest(args)
+        if args.command == "iterate":
+            return _iterate(args)
         report = analyze(
             args.fcpxml,
             transcript_path=args.transcript,
@@ -147,6 +156,98 @@ def _add_ingest(parser: argparse.ArgumentParser) -> None:
         type=float,
         help="with --apply and --pass, apply only auto-gated calls at or above this confidence",
     )
+
+
+def _add_iterate(parser: argparse.ArgumentParser) -> None:
+    ready = ", ".join(name for name, spec in PASSES.items() if spec.implemented)
+    parser.add_argument("--fcpxml", help="FCPXML to iterate. Not with --media.")
+    parser.add_argument(
+        "--media",
+        help="folder of clips. Writes a starter FCPXML, then iterates. Not with --fcpxml.",
+    )
+    parser.add_argument("--brief", required=True, help="what this cut is for")
+    parser.add_argument("--transcript", help="optional SRT or WebVTT aligned to the sequence")
+    parser.add_argument("--out-dir", default="out", help="directory for vN/ rounds (default: out)")
+    parser.add_argument("--project", help="project name, when the XML holds more than one")
+    parser.add_argument("--sequence", help="with --media, project name (default: the folder name)")
+    parser.add_argument(
+        "--durations",
+        help="with --media, JSON object of file name to length (8, 8s, or 1/8s)",
+    )
+    parser.add_argument(
+        "--pass",
+        dest="passes",
+        action="append",
+        help=f"passes to judge (repeatable). Default includes colour. Ready: {ready}.",
+    )
+    parser.add_argument("--taste", help="taste JSON carried into round 1; later rounds use the written log")
+    parser.add_argument(
+        "--live",
+        action="store_true",
+        help="call Jev. Requires OPENROUTER_API_KEY or TYPESAFE_API_KEY. Off by default.",
+    )
+    parser.add_argument("--html", action="store_true", help="also write a single-file HTML report each round")
+    parser.add_argument("--max-rounds", type=int, default=5, help="stop after this many rounds (default: 5)")
+    parser.add_argument(
+        "--min-confidence",
+        type=float,
+        default=0.8,
+        help="auto-apply mechanical calls at or above this confidence (default: 0.8)",
+    )
+    parser.add_argument("--target-seconds", type=float, help="stop when duration is within --tolerance of this")
+    parser.add_argument(
+        "--tolerance",
+        type=float,
+        default=1.0,
+        help="seconds of slack around --target-seconds (default: 1)",
+    )
+    parser.add_argument("--max-escalate", type=int, help="stop when escalate rows are at or under this")
+    parser.add_argument("--max-review", type=int, help="stop when review rows are at or under this")
+    parser.add_argument(
+        "--max-silence-seconds",
+        type=float,
+        help="stop when silence-gap candidates sum to at most this many seconds",
+    )
+    parser.add_argument(
+        "--min-shot-seconds",
+        type=float,
+        help="stop when the average non-gap spine clip is at least this long",
+    )
+    parser.add_argument(
+        "--max-cuts-per-minute",
+        type=float,
+        help="stop when spine joins per minute are at or under this",
+    )
+
+
+def _iterate(args) -> int:
+    result = iterate(
+        fcpxml=args.fcpxml,
+        media=args.media,
+        brief=args.brief,
+        transcript_path=args.transcript,
+        taste_path=args.taste,
+        durations_path=args.durations,
+        sequence=args.sequence,
+        project=args.project,
+        passes=args.passes,
+        out_dir=args.out_dir,
+        live=args.live,
+        html=args.html,
+        max_rounds=args.max_rounds,
+        min_confidence=args.min_confidence,
+        target_seconds=args.target_seconds,
+        tolerance=args.tolerance,
+        max_escalate=args.max_escalate,
+        max_review=args.max_review,
+        max_silence_seconds=args.max_silence_seconds,
+        min_shot_seconds=args.min_shot_seconds,
+        max_cuts_per_minute=args.max_cuts_per_minute,
+    )
+    print(format_report(result))
+    for warning in result.warnings:
+        print(f"  warning {warning}", file=sys.stderr)
+    return 0
 
 
 def _accept(value: str | None) -> list[str] | None:

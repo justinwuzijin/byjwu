@@ -1,11 +1,13 @@
 """Cut Conductor — editorial co-pilot for a Final Cut timeline.
 
 FCPXML in, proposal markers out, by default. ``ingest`` can build that
-FCPXML from a folder of clips first. Passes (mechanical, dialogue, pacing)
-can run alone or in sequence. An explicit apply writes another FCPXML with
-accepted trims. The file you hand in, and the source clips, are never modified.
+FCPXML from a folder of clips first. Passes (mechanical, dialogue, pacing,
+colour) can run alone or in sequence. ``iterate`` repeats analyze and
+auto-applies only mechanical cuts. An explicit apply writes another FCPXML
+with accepted trims. The file you hand in, and the source clips, are never
+modified.
 
-``analyze`` and ``ingest`` are the library boundary. The CLI is
+``analyze``, ``ingest``, and ``iterate`` are the library boundary. The CLI is
 ``python -m conductor``.
 """
 
@@ -17,6 +19,7 @@ from .errors import ConductorError
 # The callable shares the submodule name. ``import conductor.ingest`` is this
 # function; the module object remains ``sys.modules["conductor.ingest"]``.
 from .ingest import ingest
+from .iterate import iterate
 from .run import analyze
 
-__all__ = ["ConductorError", "analyze", "ingest", "__version__"]
+__all__ = ["ConductorError", "analyze", "ingest", "iterate", "__version__"]

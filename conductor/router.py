@@ -45,7 +45,7 @@ Fallbacks:
 
 - Jev unavailable (no key, HTTP failure, unusable answer): the deterministic
   rules in :func:`conductor.jev.policy`, confidence × ``FALLBACK_DISCOUNT``.
-  Never another model. At the default gates no fallback call reaches ``auto``.
+  Never another model. ``decide`` never gives a rules answer ``auto``.
 - Opus unavailable: the decision becomes a review marker with no action.
 
 The first failed request marks that engine down for the rest of the run, so
@@ -435,6 +435,8 @@ def format_usage(usage: Mapping) -> str:
             f"{name} {calls} call{'s' if calls != 1 else ''} "
             f"({items} item{'s' if items != 1 else ''}, {row['cache_hits']} cached"
         )
+        if row.get("failed_calls"):
+            text += f", {row['failed_calls']} failed"
         if row.get("fallback_items"):
             text += f", {row['fallback_items']} by rules"
         if row.get("unavailable_items"):
@@ -562,7 +564,7 @@ class Router:
                 asks, brief=brief, context={"taste": {"prefs": dict(taste.get("prefs") or {})}}, ledger=ledger
             )
             receipts.extend(opus_receipts)
-            for (item, dtype), decision in zip(creative, decisions):
+            for (item, dtype), decision in zip(creative, decisions, strict=True):
                 verdicts[item.id] = _creative_verdict(decision, dtype)
         return verdicts, receipts
 
@@ -598,7 +600,7 @@ class Router:
                     f"at confidence x{self.fallback_discount}."
                 )
                 answers = {}
-                for key, (item, dtype) in window:
+                for _key, (item, dtype) in window:
                     action, confidence, risk = jev.policy(item.to_state(), taste)
                     answers[item.id] = Verdict(
                         action=action,

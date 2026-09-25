@@ -214,6 +214,8 @@ def _proposal(candidate: Candidate, verdict: Verdict, gates: Gates, taste: Taste
             creative=is_creative(candidate.pass_name or "mechanical"),
             gates=kind_gates,
         )
+        if disposition == "auto" and verdict.source == "rules":
+            action, disposition = "mark_review", "review"
     human = disposition in {"review", "escalate"}
     name = None
     note = None

@@ -1,4 +1,4 @@
-"""Real Final Cut export: swiss-italy, a ~39 minute travel timeline.
+"""Synthetic FCPXML 1.14 export shaped like a real Final Cut timeline.
 
 The file has no media and no transcript. These tests lock the parser, the
 bare-versus-covered gap split, and the rule that iterate may lift only the
@@ -24,7 +24,8 @@ from conductor.passes import collect
 from conductor.run import analyze
 from conductor.taste import load_taste
 
-FIXTURE = Path("fixtures/swiss-italy.fcpxml")
+FIXTURE = Path("fixtures/real_export_shape.fcpxml")
+BROLL = ["broll_a", "broll_b", "broll_c", "broll_d"]
 BRIEF = "A travel vlog. Keep the journey, lose dead air and flash frames."
 
 _KEPT = (
@@ -76,34 +77,35 @@ def _on_sequence_grid(path: Path) -> None:
         previous = clip.offset + clip.duration
 
 
-def test_swiss_italy_parses_the_real_spine():
+def test_synthetic_export_parses_the_spine():
     document = parse_fcpxml(FIXTURE)
     assert document.version == "1.14"
     sequence = document.sequences[0]
-    assert sequence.name == "swiss-italy"
+    assert sequence.name == "synthetic-export"
     assert sequence.frame_duration == Fraction(1001, 24000)
     assert sequence.width == 3840 and sequence.height == 2160
-    assert len(sequence.spine) == 200
+    assert len(sequence.spine) == 30
     assert sum(1 for clip in sequence.spine if clip.kind == "gap") == 1
-    assert sum(1 for clip in sequence.spine if clip.kind == "asset-clip") == 161
+    assert sum(1 for clip in sequence.spine if clip.kind == "asset-clip") == 26
     gap = next(clip for clip in sequence.spine if clip.kind == "gap")
     laned = [clip for clip in gap.connected_clips if clip.lane is not None]
-    assert len(laned) == 8
+    assert [clip.name for clip in laned] == BROLL
     assert laned[0].local_offset > 90
     # Child offset is in the gap's source time. Adding it to the gap offset
     # lands past the end of the sequence; subtracting the gap start does not.
+    assert gap.offset + laned[0].offset > sequence.duration
     assert laned[0].timeline_start < sequence.duration
-    assert abs(float(laned[0].timeline_start) - 2064.479) < 0.01
-    assert abs(float(laned[-1].timeline_end) - 2189.187) < 0.01
+    assert abs(float(laned[0].timeline_start) - 426.426) < 0.01
+    assert abs(float(laned[-1].timeline_end) - 456.456) < 0.01
     compound = sequence.spine[1]
     assert compound.kind == "clip"
     assert [clip.lane for clip in compound.connected_clips] == [-1]
     audio = compound.connected_clips[0]
-    assert abs(float(audio.timeline_start) - 7.549) < 0.01
+    assert abs(float(audio.timeline_start) - 10.01) < 0.01
     assert float(audio.duration) < 15
     assert all(float(clip.duration) < 30 for clip in _descendants(audio))
     portrait = next(clip for clip in sequence.spine if clip.width == 2160 and clip.height == 3840)
-    assert portrait.name == "C8432"
+    assert portrait.name == "portrait_a"
 
 
 def test_write_with_no_cuts_matches_the_parsed_tree(tmp_path):
@@ -123,9 +125,9 @@ def test_candidates_are_useful_and_only_bare_gaps_are_automatic():
         {
             "silence_gap": 2,
             "covered_gap": 1,
-            "long_static": 3,
-            "source_reuse": 25,
-            "rhythm_shift": 2,
+            "long_static": 2,
+            "source_reuse": 4,
+            "rhythm_shift": 1,
             "rate_mix": 1,
             "colour_aspect": 1,
             "colour_role": 4,
@@ -162,17 +164,17 @@ def test_candidates_are_useful_and_only_bare_gaps_are_automatic():
     assert aspect.signals.get("rotation") == "90"
     assert "rotated 90" in aspect.reason and "scaled 1.8" in aspect.reason
     stringout = next(item for item in found if item.kind == "untrimmed_run")
-    assert stringout.signals["shot_count"] == 35
-    assert abs(stringout.signals["average_seconds"] - 34.6) < 0.2
+    assert stringout.signals["shot_count"] == 8
+    assert abs(stringout.signals["average_seconds"] - 30.03) < 0.01
     cards = [item for item in found if item.kind == "silent_card"]
-    assert [round(float(item.timeline_start), 0) for item in cards] == [114, 1862]
+    assert [round(float(item.timeline_start), 0) for item in cards] == [72, 468]
     music = next(item for item in found if item.kind == "music_tail")
-    assert abs(music.signals["tail_seconds"] - 24.1) < 0.2
+    assert abs(music.signals["tail_seconds"] - 24.024) < 0.01
     notes = "\n".join(
         analyze_notes(document, found, proposals)
     )
-    assert "32:48" in notes and "36:29" in notes
-    assert "34:24" in notes
+    assert "05:26" in notes and "07:36" in notes
+    assert "07:06" in notes
     assert "2160×3840" in notes
     assert "reprises" in notes
     assert "29.97" in notes
@@ -218,26 +220,17 @@ def test_iterate_lifts_only_the_bare_gap_and_keeps_the_timeline(tmp_path):
     _on_sequence_grid(applied)
     document = parse_fcpxml(applied)
     sequence = document.sequences[0]
-    assert len(sequence.spine) == 200
+    assert len(sequence.spine) == 30
     gap = next(clip for clip in sequence.spine if clip.kind == "gap")
     laned = [clip for clip in gap.connected_clips if clip.lane is not None]
-    assert [clip.name for clip in laned] == [
-        "C8358",
-        "C8358",
-        "C8358",
-        "C8359",
-        "C8363",
-        "C8363",
-        "C8361",
-        "C8362",
-    ]
+    assert [clip.name for clip in laned] == BROLL
     assert laned[0].local_offset == 0
-    assert abs(float(gap.duration) - 124.7) < 0.1
+    assert abs(float(gap.duration) - 30.03) < 0.01
     assert _gap_lane_offsets(FIXTURE) == _gap_lane_offsets(applied)
     shadow = Path(result.rounds[0]["markdown"])
     text = shadow.read_text(encoding="utf-8")
     assert "## Editor's notes" in text
-    assert "32:48" in text
+    assert "05:26" in text
     assert "silence cuts" in text
     again = collect(parse_fcpxml(applied).sequences, [], transcript_present=False)
     assert [item.kind for item in again if item.kind == "silence_gap"] == []
@@ -466,18 +459,9 @@ def test_wholesale_gap_removal_keeps_the_connected_broll(tmp_path):
     applied = parse_fcpxml(dest)
     kept = next(clip for clip in applied.sequences[0].spine if clip.kind == "gap")
     laned = [clip for clip in kept.connected_clips if clip.lane is not None]
-    assert [clip.name for clip in laned] == [
-        "C8358",
-        "C8358",
-        "C8358",
-        "C8359",
-        "C8363",
-        "C8363",
-        "C8361",
-        "C8362",
-    ]
+    assert [clip.name for clip in laned] == BROLL
     assert laned[0].local_offset == 0
-    assert abs(float(kept.duration) - 124.7) < 0.1
+    assert abs(float(kept.duration) - 30.03) < 0.01
     again = collect(applied.sequences, [], transcript_present=False)
     assert [item.kind for item in again if item.kind == "silence_gap"] == []
 
@@ -542,7 +526,7 @@ def test_removing_a_whole_clip_keeps_the_stretch_under_its_title():
 
 def test_markers_are_inserted_before_filters(tmp_path):
     document = parse_fcpxml(FIXTURE)
-    montage = next(clip for clip in document.sequences[0].spine if clip.name == "C8379")
+    montage = next(clip for clip in document.sequences[0].spine if clip.name == "graded_clip")
     assert montage.element is not None
     tags_before = [child.tag for child in montage.element]
     assert "audio-channel-source" in tags_before and "filter-video" in tags_before

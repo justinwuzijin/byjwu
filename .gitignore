@@ -15,3 +15,8 @@ demo/
 
 # secrets
 .env
+
+# real Final Cut exports stay off the repo
+fixtures/*.real.*
+*.fcpxmld/
+private/

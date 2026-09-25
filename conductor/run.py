@@ -307,6 +307,15 @@ def analyze(
         out_fcpxml = paths["fcpxml"]
         files["fcpxml"] = str(paths["fcpxml"])
         if applied_doc is not None:
+            # Review notes (colour, pacing) belong on the file the editor opens,
+            # not only on the shadow. A missing clip after a ripple is skipped.
+            for proposal in proposals:
+                if proposal.disposition == "auto":
+                    continue
+                try:
+                    apply_markers(applied_doc, [proposal], candidates)
+                except ConductorError:
+                    continue
             stamp_projects(applied_doc.tree, version=output_version, marked=False)
             write_document(applied_doc.tree, paths["applied"])
             out_applied = paths["applied"]

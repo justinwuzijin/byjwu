@@ -234,11 +234,18 @@ class Layout:
             self._montage_on_grid(section, units, mode)
             return
         draws = self._draws("montage", section.index)
+        floor = self._f(
+            float(self.profile.pacing("montage")["asl_seconds"])
+            * (1.0 - float(self.profile.get("pacing.tolerance")))
+        )
         for unit in units:
             if self.t - section.start >= section.budget - self.min_shot:
                 break
             self._music_check(self.t, self.min_shot)
-            end, on_beat = self._cut_point(next(draws), mode, unit.duration)
+            drawn = next(draws)
+            if drawn < floor and unit.duration >= floor:
+                drawn = floor
+            end, on_beat = self._cut_point(drawn, mode, unit.duration)
             self._place_visual(unit, section, end - self.t, on_beat, mode, "montage shot")
 
     def _montage_on_grid(self, section: Section, units: list[Unit], mode: str) -> None:
@@ -586,9 +593,13 @@ class Layout:
         remaining = current.media_end - t
         margin = self._f(self.profile.get("music.fade_out.seconds"))
         at_boundary = boundary and self.profile.get("music.song_change.at") == "section_boundary"
-        if at_boundary and remaining < upcoming + margin and (len(self.material.songs) > 1 or remaining < upcoming):
-            self._change_song(t)
-        elif remaining < upcoming + self.frame * 2:
+        # A section budget is not a reason to restart the only song. That
+        # stacks copies of the file's head on one lane.
+        if at_boundary:
+            if len(self.material.songs) > 1 and remaining < upcoming + margin:
+                self._change_song(t)
+            return
+        if remaining < upcoming + self.frame * 2:
             self._change_song(t)
 
     def _change_song(self, t: Fraction) -> None:

@@ -28,6 +28,7 @@ and ``candidate_id`` equal to the key sets the value to the event's
 
 from __future__ import annotations
 
+import difflib
 import re
 from dataclasses import dataclass, field, replace
 from fractions import Fraction
@@ -235,6 +236,46 @@ def build_units(material: Material, profile: StyleProfile, *, talking_max: float
     return units, warnings
 
 
+def _suppress_earlier_takes(speech: list[Unit], hints: dict[str, dict]) -> None:
+    """Drop an earlier line when a later one repeats it.
+
+    Same clip, or the next clip when the wording is almost the same. A later
+    complete sentence wins, matching the retake rule used on applied cuts.
+    The window on one clip is 45 seconds. Fillers are ignored in the compare.
+    """
+    window = 45.0
+    for index, unit in enumerate(speech):
+        left = _take_tokens(unit.text)
+        if len(left) < 3:
+            continue
+        for later in speech[index + 1 : index + 8]:
+            same_clip = later.footage.clip.path == unit.footage.clip.path
+            if same_clip and float(later.start - unit.end) > window:
+                continue
+            right = _take_tokens(later.text)
+            if len(right) < 3:
+                continue
+            ratio = difflib.SequenceMatcher(None, left, right).ratio()
+            prefix = len(right) > len(left) and right[: len(left)] == left
+            # The later line has to be the complete one. A shorter echo is not a retake of a finished line.
+            if len(right) + 1 < len(left) and not prefix:
+                continue
+            close = ratio >= 0.85 or (same_clip and (ratio >= 0.6 or prefix))
+            if not close:
+                continue
+            hints[unit.id]["keep"] = {
+                "value": 0.12,
+                "confidence": 0.9,
+                "reason": "earlier take; a later complete line matches",
+            }
+            break
+
+
+def _take_tokens(text: str) -> list[str]:
+    skip = {"um", "uh", "erm", "hmm", "like"}
+    return [token for token in re.findall(r"[a-z0-9']+", text.lower()) if token not in skip]
+
+
 def estimate_budgets(profile: StyleProfile, target: float) -> dict[str, float]:
     """Seconds per section kind (all instances together), before material limits."""
     order = list(profile.get("structure.order"))
@@ -287,6 +328,7 @@ def heuristics(units: list[Unit], profile: StyleProfile, budgets: dict[str, floa
             "section": {"value": section, "confidence": confidence, "reason": reason},
             "keep": {"value": keep, "confidence": max(keep, 1 - keep), "reason": keep_reason},
         }
+    _suppress_earlier_takes(speech, hints)
     intro_flash = budgets["intro"] * float(profile.get("structure.intro_flash_share")) if speech else budgets["intro"]
     intro_count = int(round(intro_flash / max(0.2, float(profile.pacing("intro")["asl_seconds"]))))
     cut = profile.get("cuts.cutaway")

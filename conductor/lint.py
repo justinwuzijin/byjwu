@@ -131,7 +131,12 @@ def _hard(plan: EditPlan, report: LintReport, *, check_media: bool) -> None:
 def _overlaps(plan: EditPlan, report: LintReport) -> None:
     grouped: dict[str, list[PlanClip]] = {}
     for clip in plan.clips:
-        if clip.role == GAP or clip.asset_id is None or clip.source_start is None or clip.source_end is None:
+        if (
+            clip.role in {GAP, MUSIC}
+            or clip.asset_id is None
+            or clip.source_start is None
+            or clip.source_end is None
+        ):
             continue
         grouped.setdefault(clip.asset_id, []).append(clip)
     for asset_id, clips in grouped.items():
@@ -509,3 +514,139 @@ def _short(text: str) -> str:
 
 def _f(value: Fraction) -> float:
     return round(float(value), 6)
+
+
+def lint_fcpxml(path: str | Path) -> list[Finding]:
+    """Structural checks the DTD does not make: spine tiling, frame grid, refs, lanes.
+
+    Returns hard findings. An empty list means these checks passed.
+    """
+    import xml.etree.ElementTree as ET
+
+    from .fcpxml import local
+    from .timeutil import parse_time
+
+    root = ET.parse(str(path)).getroot()
+    findings: list[Finding] = []
+    assets = {
+        el.get("id")
+        for el in root.iter()
+        if local(el.tag) == "asset" and el.get("id")
+    }
+    formats = {el.get("id"): el for el in root.iter() if local(el.tag) == "format"}
+    sequence = next((el for el in root.iter() if local(el.tag) == "sequence"), None)
+    if sequence is None:
+        return [Finding("hard", "structure", "no sequence")]
+    fmt = formats.get(sequence.get("format"))
+    frame = parse_time(fmt.get("frameDuration") if fmt is not None else None, Fraction(1, 24))
+    spine = next((el for el in sequence if local(el.tag) == "spine"), None)
+    if spine is None:
+        return [Finding("hard", "structure", "no spine")]
+    cursor = Fraction(0)
+    timed = {"asset-clip", "video", "audio", "clip", "gap", "ref-clip", "sync-clip", "title"}
+    for child in list(spine):
+        tag = local(child.tag)
+        if tag == "transition":
+            continue
+        if tag not in timed:
+            continue
+        offset = parse_time(child.get("offset"), Fraction(0))
+        duration = parse_time(child.get("duration"), Fraction(0))
+        name = child.get("name") or tag
+        if offset < cursor:
+            findings.append(
+                Finding(
+                    "hard",
+                    "spine_overlap",
+                    f"{name} starts at {_f(offset)}s before the previous spine item ends at {_f(cursor)}s",
+                    name,
+                    _f(offset),
+                    _f(cursor),
+                )
+            )
+        cursor = max(cursor, offset + duration)
+        _grid(findings, name, frame, offset, duration, child)
+        _ref_and_lane(findings, child, assets, spine=True)
+        _connected_structure(findings, child, assets, frame)
+    return findings
+
+
+def _grid(findings: list[Finding], name: str, frame: Fraction, offset: Fraction, duration: Fraction, element) -> None:
+    from .timeutil import parse_time
+
+    if duration <= 0:
+        findings.append(Finding("hard", "time_invalid", f"{name} has no positive duration", name))
+    for label, value in (("offset", offset), ("duration", duration)):
+        if value % frame != 0:
+            findings.append(
+                Finding("hard", "time_align", f"{name} {label} {_f(value)}s is off the frame grid", name)
+            )
+    start = element.get("start")
+    if start is not None:
+        src = parse_time(start, Fraction(0))
+        if src % frame != 0:
+            findings.append(
+                Finding("hard", "time_align", f"{name} start {_f(src)}s is off the frame grid", name)
+            )
+
+
+def _ref_and_lane(findings: list[Finding], element, assets: set[str], *, spine: bool) -> None:
+    from .fcpxml import local
+
+    tag = local(element.tag)
+    name = element.get("name") or tag
+    if tag == "asset-clip":
+        ref = element.get("ref") or ""
+        if ref not in assets:
+            findings.append(Finding("hard", "asset_ref", f"{name} ref {ref or '(missing)'} does not resolve", name))
+    lane = element.get("lane")
+    if lane is None:
+        return
+    try:
+        number = int(lane)
+    except ValueError:
+        findings.append(Finding("hard", "lane", f"{name} lane {lane!r} is not an integer", name))
+        return
+    if spine and number != 0:
+        findings.append(Finding("hard", "lane", f"spine item {name} uses lane {number}", name))
+    if not spine and number == 0:
+        findings.append(Finding("hard", "lane", f"connected item {name} uses lane 0", name))
+
+
+def _connected_structure(findings: list[Finding], parent, assets: set[str], frame: Fraction) -> None:
+    from .fcpxml import local
+    from .timeutil import parse_time
+
+    grouped: dict[int, list[tuple[Fraction, Fraction, str]]] = {}
+    for child in list(parent):
+        tag = local(child.tag)
+        if tag not in {"asset-clip", "video", "audio", "clip", "title", "ref-clip"}:
+            continue
+        if not child.get("lane"):
+            continue
+        name = child.get("name") or tag
+        offset = parse_time(child.get("offset"), Fraction(0))
+        duration = parse_time(child.get("duration"), Fraction(0))
+        _grid(findings, name, frame, offset, duration, child)
+        _ref_and_lane(findings, child, assets, spine=False)
+        try:
+            lane = int(child.get("lane") or "0")
+        except ValueError:
+            continue
+        grouped.setdefault(lane, []).append((offset, duration, name))
+    for lane, items in grouped.items():
+        items.sort()
+        cursor = None
+        for offset, duration, name in items:
+            if cursor is not None and offset < cursor:
+                findings.append(
+                    Finding(
+                        "hard",
+                        "lane_overlap",
+                        f"{name} overlaps another item on lane {lane}",
+                        name,
+                        _f(offset),
+                        _f(cursor),
+                    )
+                )
+            cursor = offset + duration if cursor is None else max(cursor, offset + duration)

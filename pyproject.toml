@@ -33,3 +33,4 @@ conductor = ["dtd/*.dtd"]
 testpaths = ["tests"]
 asyncio_mode = "auto"
 filterwarnings = ["ignore::DeprecationWarning"]
+markers = ["slow: generates media and runs the assembly pipeline"]

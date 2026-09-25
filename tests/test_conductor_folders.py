@@ -74,3 +74,34 @@ def test_iterate_with_no_input_uses_new_folders(tmp_path, monkeypatch, capsys):
     assert code == 0
     assert "legacy" not in capsys.readouterr().err
     assert (tmp_path / "Desktop" / "byjwu-out" / "starter.fcpxml").is_file()
+
+
+def test_room_run_defaults_to_the_legacy_outbox_with_a_note(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    legacy_out = tmp_path / "Desktop" / "jevid-out"
+    legacy_out.mkdir(parents=True)
+    code = main(["room-run", str(FIXTURE), "--brief", BRIEF, "--max-rounds", "1"])
+    assert code == 0
+    assert "using legacy" in capsys.readouterr().err
+    assert list(legacy_out.glob("*/room.md"))
+    assert not (tmp_path / "Desktop" / "byjwu-out").exists()
+
+
+def test_room_run_needs_a_path_unless_watching(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    assert main(["room-run", "--brief", BRIEF]) == 2
+
+
+def test_room_run_watch_defaults_to_the_drop_folders(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    seen = {}
+    monkeypatch.setattr("conductor.cli.watch", lambda inbox, **kwargs: seen.update(inbox=inbox, **kwargs))
+    assert main(["room-run", "--watch"]) == 0
+    assert seen["inbox"] == tmp_path / "Desktop" / "byjwu-in"
+    assert seen["out_root"] == tmp_path / "Desktop" / "byjwu-out"
+    for name in ("jevid-in", "jevid-out"):
+        (tmp_path / "Desktop" / name).mkdir(parents=True)
+    assert main(["room-run", "--watch"]) == 0
+    assert seen["inbox"] == tmp_path / "Desktop" / "jevid-in"
+    assert seen["out_root"] == tmp_path / "Desktop" / "jevid-out"
+    assert capsys.readouterr().err.count("using legacy") == 2

@@ -13,6 +13,7 @@ from .folders import DROP_IN, DROP_OUT, drop_folder, drop_input
 from .ingest import DEFAULT_BRIEF, ingest
 from .iterate import format_report, iterate
 from .passes import PASSES, collect
+from .room import room_run, watch
 from .run import Report, analyze
 from .taste import feedback_event, load_taste, write_taste
 
@@ -54,6 +55,12 @@ def main(argv: list[str] | None = None) -> int:
             help="repeat analyze and auto-apply mechanical cuts until the cut holds",
         )
     )
+    _add_room(
+        sub.add_parser(
+            "room-run",
+            help="bot entry: detect a drop, iterate, and write a chat summary",
+        )
+    )
     ui = sub.add_parser("ui", help="local page that runs ingest on a folder path")
     ui.add_argument("--port", type=int, default=8765, help="localhost port (default: 8765)")
     feedback = sub.add_parser(
@@ -87,6 +94,8 @@ def main(argv: list[str] | None = None) -> int:
             return _ingest(args)
         if args.command == "iterate":
             return _iterate(args)
+        if args.command == "room-run":
+            return _room(args)
         report = analyze(
             args.fcpxml,
             transcript_path=args.transcript,
@@ -263,18 +272,116 @@ def _add_iterate(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _add_room(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "path",
+        nargs="?",
+        help=(
+            "a .fcpxml, .fcpxmld, .zip of either, or a folder of clips. "
+            f"With --watch, the drop folder (default: ~/Desktop/{DROP_IN})."
+        ),
+    )
+    parser.add_argument(
+        "--watch",
+        action="store_true",
+        help="keep running, and process new drops in this folder once each file has finished copying",
+    )
+    parser.add_argument("--brief", help="what this cut is for (default: a filename-order assembly line)")
+    parser.add_argument(
+        "--out-root",
+        help=f"folder for timestamped results (default: ~/Desktop/{DROP_OUT})",
+    )
+    parser.add_argument("--transcript", help="SRT or WebVTT. Default: one sitting next to the timeline")
+    parser.add_argument("--taste", help="taste JSON carried into round 1")
+    parser.add_argument(
+        "--durations",
+        help="for a clip folder, JSON object of file name to length. Default: durations.json in the folder",
+    )
+    parser.add_argument("--max-rounds", type=int, default=5, help="stop after this many rounds (default: 5)")
+    parser.add_argument(
+        "--style",
+        help="assembly style when the drop has music and an assembler is installed (default: byjustinwu)",
+    )
+    parser.add_argument(
+        "--live",
+        action="store_true",
+        help="call Jev. Requires OPENROUTER_API_KEY or TYPESAFE_API_KEY. Off by default.",
+    )
+    parser.add_argument(
+        "--stable-seconds",
+        type=float,
+        default=2.0,
+        help="with --watch, wait until a drop's size is unchanged for this long (default: 2)",
+    )
+    parser.add_argument(
+        "--poll-seconds",
+        type=float,
+        default=1.0,
+        help="with --watch, seconds between scans (default: 1)",
+    )
+
+
+def _room(args) -> int:
+    if args.stable_seconds < 0 or args.poll_seconds < 0:
+        raise ConductorError("--stable-seconds and --poll-seconds must be >= 0")
+    if args.path is None:
+        if not args.watch:
+            raise ConductorError("room-run needs a drop path, or --watch")
+        args.path = _drop_folder(DROP_IN)
+    if args.out_root is None:
+        args.out_root = _drop_folder(DROP_OUT)
+    if args.watch:
+        return _watch_room(args)
+    result = room_run(
+        args.path,
+        out_root=args.out_root,
+        brief=args.brief,
+        live=args.live,
+        transcript=args.transcript,
+        taste=args.taste,
+        durations=args.durations,
+        max_rounds=args.max_rounds,
+        style=args.style,
+    )
+    print(result.markdown, end="" if result.markdown.endswith("\n") else "\n")
+    return 0
+
+
+def _watch_room(args) -> int:
+    def _show(event) -> None:
+        if event.status == "ran":
+            print(event.message, end="" if str(event.message).endswith("\n") else "\n")
+        elif event.status == "error":
+            print(f"cut-conductor: {event.message}", file=sys.stderr)
+
+    try:
+        watch(
+            args.path,
+            out_root=args.out_root,
+            brief=args.brief,
+            live=args.live,
+            transcript=args.transcript,
+            taste=args.taste,
+            durations=args.durations,
+            max_rounds=args.max_rounds,
+            style=args.style,
+            stable_seconds=args.stable_seconds,
+            poll_seconds=args.poll_seconds,
+            on_event=_show,
+        )
+    except KeyboardInterrupt:
+        print("cut-conductor: room-run watch stopped", file=sys.stderr)
+        return 0
+    return 0
+
+
 def _iterate(args) -> int:
     source = {"fcpxml": args.fcpxml, "media": args.media}
     out_dir = args.out_dir or "out"
     if not args.fcpxml and not args.media:
-        folder, note = drop_folder(DROP_IN)
-        if note:
-            print(f"cut-conductor: {note}", file=sys.stderr)
-        source = {"fcpxml": None, "media": None, **drop_input(folder)}
+        source = {"fcpxml": None, "media": None, **drop_input(_drop_folder(DROP_IN))}
         if not args.out_dir:
-            out_dir, note = drop_folder(DROP_OUT)
-            if note:
-                print(f"cut-conductor: {note}", file=sys.stderr)
+            out_dir = _drop_folder(DROP_OUT)
     result = iterate(
         fcpxml=source["fcpxml"],
         media=source["media"],
@@ -305,6 +412,13 @@ def _iterate(args) -> int:
     for warning in result.warnings:
         print(f"  warning {warning}", file=sys.stderr)
     return 0
+
+
+def _drop_folder(name: str) -> Path:
+    folder, note = drop_folder(name)
+    if note:
+        print(f"cut-conductor: {note}", file=sys.stderr)
+    return folder
 
 
 def _accept(value: str | None) -> list[str] | None:

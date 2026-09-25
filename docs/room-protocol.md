@@ -4,15 +4,17 @@ How the byjwu Grok Bot room drives the editing engine (the `conductor` package, 
 
 The bots coordinate. They do not make editorial decisions. Bounded, logical calls come from Jev (`conductor/jev.py`). Open-ended creative and taste calls come from Claude Opus 5.5 through the Jev/Opus decision router, which is in progress. No Grok model makes an editing decision.
 
-Justin, the owner, does not use the command line. He drops a selects folder or an FCPXML export in the room or in `~/Desktop/byjwu-in`, and opens the FCPXML that lands in `~/Desktop/byjwu-out` in Final Cut Pro himself. The CLI below is what the bots run for him. If `byjwu-in` / `byjwu-out` don't exist but the legacy `jevid-in` / `jevid-out` do, the engine uses the legacy folders and prints a one-line note.
+Justin, the owner, does not use the command line. He drops a selects folder, an FCPXML export, a `.fcpxmld` bundle, or a zip in the room or in `~/Desktop/byjwu-in`, and opens the FCPXML that lands in `~/Desktop/byjwu-out` in Final Cut Pro himself. The CLI below is what the bots run for him. The legacy-folder fallback is described under [Desktop folders](#desktop-folders).
 
 The shared object is one timeline plus one brief. The timeline is a Final Cut export, or a starter sequence built from a selects folder. The shared artifact is the JSON report (`protocol` `cut-conductor.room`, `protocol_version` 1).
 
 ```text
-~/Desktop/byjwu-in  (export, or a selects folder)
-    → Type & Subs supplies SRT/VTT (optional)
+~/Desktop/byjwu-in  (export, bundle, zip, or a selects folder)
+    → room-run detects which
+    → Type & Subs supplies SRT/VTT when one is sitting next to the timeline
     → Cut Conductor iterate: analyze, then auto-apply mechanical cuts only
-    → ~/Desktop/byjwu-out/vN
+    → ~/Desktop/byjwu-out/<name>-<timestamp>/vN
+    → room.md and room.json for the chat
     → stop on metrics, no further mechanical cut, or the round cap
     → a person only for escalate, or when the cap hits
     → accept/reject events land in taste.json
@@ -25,22 +27,22 @@ The person does not run the CLI. The bots do.
 
 | folder | who writes it | what it holds |
 |---|---|---|
-| `~/Desktop/byjwu-in` | the person | a selects folder, or one FCPXML export |
-| `~/Desktop/byjwu-out` | the Cut Conductor bot | `starter.fcpxml` when the input was a folder, `v1/` … `vN/`, and `iterate.json` |
+| `~/Desktop/byjwu-in` | the person | a selects folder, one FCPXML export, a `.fcpxmld` bundle, or a zip of either |
+| `~/Desktop/byjwu-out/<name>-<timestamp>/` | the Cut Conductor bot | `room.md`, `room.json`, `starter.fcpxml` when the input was a folder, `v1/` … `vN/`, and `iterate.json` |
 
-Nothing in this repo watches those folders or uploads media. The bot on that machine is what reads the path and writes the next file. Final Cut is still opened by a person, and only to import the FCPXML the room points at.
+The bot runs one command. It detects the drop, calls `iterate`, and does not modify the input. A second run writes a new timestamped folder.
 
 ```bash
-python -m conductor iterate \
-  --media ~/Desktop/byjwu-in \
+python -m conductor room-run ~/Desktop/byjwu-in/cut.fcpxml \
   --brief "A tight interview. Keep the guest's story, lose dead air." \
-  --transcript ~/Desktop/byjwu-in/interview.srt \
-  --taste taste.json \
-  --out-dir ~/Desktop/byjwu-out \
-  --max-rounds 5
+  --out-root ~/Desktop/byjwu-out
 ```
 
-An export uses `--fcpxml` instead of `--media`, never both. With neither, `iterate` reads `~/Desktop/byjwu-in`: a single `.fcpxml` there is the export, otherwise the folder is the selects. More than one `.fcpxml` is an error. Rounds go to `~/Desktop/byjwu-out` unless `--out-dir` is given. When only the legacy folders exist, those are used and the CLI prints one note line per folder on stderr.
+A folder of clips, a `.fcpxmld` bundle, or a `.zip` uses the same command. A drop with music goes to the style assembler first when one is installed (`flow` `assemble+iterate`); otherwise it takes the usual path with a warning. The hook contract is in [room-run.md](room-run.md). Dry-run is the default. `--live` calls Jev. `room.md` is what the bot pastes into chat. `room.json` is `protocol` `cut-conductor.room-run`, `protocol_version` 1. It points at `iterate.json` and the per-round `*.conductor.json` files. It does not replace them.
+
+`room-run --watch ~/Desktop/byjwu-in` is the optional inbox process (debounce, skip already processed, log). Operators set that up from [room-run.md](room-run.md). The editor does not run it. Final Cut is still opened by a person, and only to import the FCPXML named in the summary.
+
+With no path, `room-run --watch` watches `~/Desktop/byjwu-in`. `--out-root` defaults to `~/Desktop/byjwu-out`. `iterate` with neither `--fcpxml` nor `--media` reads the same inbox and writes to the same outbox. When `byjwu-in` / `byjwu-out` don't exist but the legacy `jevid-in` / `jevid-out` do, the legacy folders are used and the CLI prints one note line per folder on stderr.
 
 ## Selects folder
 
@@ -95,7 +97,7 @@ Configured targets: `--target-seconds` with `--tolerance` (default 1 second, a s
 
 Silence is the sum of `silence_gap` candidates (explicit gaps and holes of at least 1.25s). It is not a waveform. Average shot length and cuts per minute are spine arithmetic: a cut is the join between two non-gap clips.
 
-`iterate.json` at the output root is `protocol` `cut-conductor.iterate`, `protocol_version` 1. Bots post `stop_reason`, `needs_human`, `human_reasons`, `applied`, and `rounds`. Each round still has its own `*.conductor.json` (`cut-conductor.room`). Do not invent a third schema.
+`iterate.json` at the output root is `protocol` `cut-conductor.iterate`, `protocol_version` 1. Bots post `stop_reason`, `needs_human`, `human_reasons`, `applied`, and `rounds`. Each round still has its own `*.conductor.json` (`cut-conductor.room`). `room-run` adds `room.json` (`cut-conductor.room-run`) as the chat summary that points at those files. Do not invent another schema.
 
 `needs_human` is true when the last round's escalate count is above zero, or `stop_reason` is `max-rounds`. A `metrics` or `no-progress` stop with no escalate is the bot finishing. Review rows are marked and left for later. The loop does not `--accept` them.
 
@@ -118,12 +120,12 @@ Style has no pass in the engine yet. The sections below cover the roles the engi
 
 Owns the brief, which passes run, the taste file, the iterate loop, and whether a one-shot run is shadow or apply.
 
-- Calls `python -m conductor iterate` for the unattended loop, or `conductor.analyze` / `conductor.ingest` for a single shadow pass.
+- Calls `python -m conductor room-run` for a drop. That calls `iterate` (and, for a clip folder, the starter FCPXML `iterate` already writes). `conductor.analyze` / `conductor.ingest` remain the one-shot library calls.
 - Actions stay inside `{keep, tighten, remove, mark_review, escalate}`. A bot does not add a sixth.
 - Default for a one-shot command is shadow. Apply is a separate command and a separate file. Iterate's apply is the mechanical auto gate only, and it still writes a new file.
 - Applies an unattended cut only when the gate marked it `auto` and the pass is mechanical.
 - Applies a review call only when a person named that candidate id with `--accept`. Iterate does not do this.
-- Writes `*.conductor.json` per round and `iterate.json` for the loop. Do not invent another schema.
+- Writes `*.conductor.json` per round, `iterate.json` for the loop, and `room.json` / `room.md` for the chat summary. Do not invent another schema.
 
 ### Type & Subs
 

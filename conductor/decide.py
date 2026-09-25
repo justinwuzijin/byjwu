@@ -71,11 +71,13 @@ class Proposal:
     engine_model: str | None = None
     rationale: str = ""
     cached: bool = False
+    via: str | None = None
     rule: dict | None = None
 
     def attribution(self) -> dict:
         return {
             "engine": self.engine,
+            "via": self.via,
             "engine_source": self.engine_source,
             "decision_type": self.decision_type,
             "engine_why": self.engine_why,
@@ -377,6 +379,7 @@ def _proposal(candidate: Candidate, verdict: Verdict, gates: Gates, taste: Taste
         engine_model=verdict.model,
         rationale=verdict.rationale,
         cached=verdict.cached,
+        via=verdict.via,
         rule=verdict.rule,
     )
 
@@ -412,6 +415,8 @@ def _note(
         f"decision={verdict.decision_type}",
         f"routed={_trim(verdict.why, 120)}",
     ]
+    if verdict.via:
+        parts.append(f"via={verdict.via}")
     if abs(confidence_raw - confidence) > 1e-9:
         parts.append(f"confidence_raw={confidence_raw:.2f}")
     if taste_reason:

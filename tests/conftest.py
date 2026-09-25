@@ -73,7 +73,11 @@ def _isolated_env(tmp_path_factory):
     os.environ["JEV_MOCK"] = "1"
     os.environ["CUTMCP_CACHE"] = str(tmp_path_factory.mktemp("cutmcp-cache"))
     os.environ["HOME"] = str(tmp_path_factory.mktemp("home"))
-    os.environ.pop("TYPESAFE_API_KEY", None)
+    for name in (
+        "TYPESAFE_API_KEY", "CURSOR_API_KEY", "CURSOR_AUTH_TOKEN", "CURSOR_AGENT_BIN",
+        "CONDUCTOR_OPUS_BACKEND", "CONDUCTOR_OPUS_TIMEOUT",
+    ):
+        os.environ.pop(name, None)
     yield
 
 

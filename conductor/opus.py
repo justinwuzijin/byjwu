@@ -1,10 +1,12 @@
 """Creative and taste decisions.
 
-The default model is the Cursor slug ``grok-4.7-medium``, from
-``CONDUCTOR_TASTE_MODEL``. A Claude model id (``claude`` or ``opus`` in the
-name) keeps the Anthropic Messages path, off unless that env var selects it.
-``CONDUCTOR_OPUS_MODEL`` still overrides the Anthropic model when the taste
-model is Claude. ``CONDUCTOR_OPUS_EFFORT`` sets ``output_config.effort``.
+The default model is ``grok-4.7-medium`` (``CONDUCTOR_TASTE_MODEL``). A Cursor
+or Opus slug (``grok-4.7-*`` or ``claude-opus-5-5-*``, including plain
+``claude-opus-5-5``) uses the Cursor CLI (:mod:`conductor.cursor_agent`,
+``CURSOR_API_KEY``). If that binary or key is missing, there is no backend
+and creative calls become review markers. ``CONDUCTOR_TASTE_BACKEND=anthropic``
+(or ``CONDUCTOR_OPUS_BACKEND``) still selects the Anthropic Messages path.
+``CONDUCTOR_OPUS_EFFORT`` sets ``output_config.effort``.
 
 The answer is constrained with ``output_config.format`` (JSON schema), not a
 forced tool call: Opus 5.5 rejects ``tool_choice`` ``tool``/``any`` and does
@@ -34,7 +36,15 @@ TASTE_MODEL = "grok-4.7-medium"
 TASTE_URL = "https://api.x.ai/v1/chat/completions"
 MOCK_MODEL = "conductor-opus-mock-1"
 DEFAULT_EFFORT = "medium"
+DEFAULT_TIMEOUT = 120.0
+DEFAULT_CONCURRENCY = 3
 EFFORTS = frozenset({"low", "medium", "high", "xhigh", "max"})
+
+CURSOR = "cursor"
+ANTHROPIC = "anthropic"
+GROK = "grok"
+AUTO = "auto"
+BACKENDS = (CURSOR, ANTHROPIC, AUTO)
 
 #: USD per million (input, output) tokens, from Anthropic's model page. Only
 #: models listed here get an estimated cost in the report.
@@ -73,11 +83,95 @@ def uses_anthropic(model: str) -> bool:
 
 
 def has_key(environ: Mapping[str, str] | None = None) -> bool:
+    backend, _why = choose_backend(environ)
+    return backend is not None
+
+
+def setting(environ: Mapping[str, str] | None, name: str, *aliases: str, default: str = "") -> str:
+    """First non-empty of ``name`` and its aliases. Older ``CONDUCTOR_OPUS_*`` names still work."""
     env = os.environ if environ is None else environ
+    for key in (name, *aliases):
+        value = env.get(key, "").strip()
+        if value:
+            return value
+    return default
+
+
+def timeout_seconds(environ: Mapping[str, str] | None = None, *, default: float = DEFAULT_TIMEOUT) -> float:
+    """Per taste request, on either backend. ``CONDUCTOR_TASTE_TIMEOUT`` or ``CONDUCTOR_OPUS_TIMEOUT``."""
+    env = os.environ if environ is None else environ
+    raw = setting(env, "CONDUCTOR_TASTE_TIMEOUT", "CONDUCTOR_OPUS_TIMEOUT")
+    if not raw:
+        return default
+    try:
+        value = float(raw)
+    except ValueError as exc:
+        raise ConductorError(f"CONDUCTOR_TASTE_TIMEOUT must be seconds, got {raw!r}") from exc
+    if value <= 0:
+        raise ConductorError("CONDUCTOR_OPUS_TIMEOUT must be positive")
+    return value
+
+
+def concurrency(environ: Mapping[str, str] | None = None) -> int:
+    """Taste batches in flight at once (default 3). ``CONDUCTOR_TASTE_CONCURRENCY`` or ``CONDUCTOR_OPUS_CONCURRENCY``."""
+    env = os.environ if environ is None else environ
+    raw = setting(env, "CONDUCTOR_TASTE_CONCURRENCY", "CONDUCTOR_OPUS_CONCURRENCY")
+    if not raw:
+        return DEFAULT_CONCURRENCY
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise ConductorError(f"CONDUCTOR_TASTE_CONCURRENCY must be a whole number, got {raw!r}") from exc
+    if value < 1:
+        raise ConductorError("CONDUCTOR_OPUS_CONCURRENCY must be at least 1")
+    return value
+
+
+def _is_cursor_slug(model: str) -> bool:
+    from . import cursor_agent
+
+    try:
+        cursor_agent.cursor_model(model)
+    except ConductorError:
+        return False
+    return True
+
+
+def choose_backend(environ: Mapping[str, str] | None = None) -> tuple[str | None, str]:
+    """``(backend, "")`` for the backend to use, or ``(None, why there is none)``.
+
+    Auto sends a Cursor or Opus slug to the Cursor CLI. A missing binary or
+    ``CURSOR_API_KEY`` leaves creative calls as review markers. It does not
+    fall through to another host.
+    """
+    from . import cursor_agent
+
+    env = os.environ if environ is None else environ
+    wanted = setting(env, "CONDUCTOR_TASTE_BACKEND", "CONDUCTOR_OPUS_BACKEND", default=AUTO).lower()
+    if wanted not in BACKENDS:
+        raise ConductorError(
+            f"CONDUCTOR_TASTE_BACKEND (or CONDUCTOR_OPUS_BACKEND) must be one of {list(BACKENDS)}, got {wanted!r}"
+        )
     model = taste_model(env)
-    if uses_anthropic(model):
-        return bool(env.get("ANTHROPIC_API_KEY", "").strip())
-    return bool(env.get("XAI_API_KEY", "").strip() or env.get("CONDUCTOR_TASTE_KEY", "").strip())
+    cursor_missing = cursor_agent.unavailable_reason(env)
+    anthropic_key = bool(env.get("ANTHROPIC_API_KEY", "").strip())
+    xai_key = bool(env.get("XAI_API_KEY", "").strip() or env.get("CONDUCTOR_TASTE_KEY", "").strip())
+
+    def cursor_choice() -> tuple[str | None, str]:
+        if cursor_missing:
+            return None, f"Cursor CLI: {cursor_missing}"
+        return CURSOR, ""
+
+    if wanted == CURSOR or (wanted == AUTO and _is_cursor_slug(model)):
+        return cursor_choice()
+    if wanted == ANTHROPIC:
+        if not anthropic_key:
+            return None, "ANTHROPIC_API_KEY is unset"
+        return ANTHROPIC, ""
+    if xai_key and not uses_anthropic(model):
+        return GROK, ""
+    cursor_agent.cursor_model(model)
+    return None, f"no taste backend (Cursor CLI: {cursor_missing})"
 
 
 def resolve_endpoint(environ: Mapping[str, str] | None = None) -> Endpoint:

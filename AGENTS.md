@@ -234,9 +234,11 @@ is the default; `CONDUCTOR_DRY_RUN=1` forces the mock even with `--live`.
 
 Product rule: a linear, logical decision (a bounded choice with clear
 criteria) must call **Jev**. An open-ended creative or taste decision goes
-to **Grok 4.7** (`conductor/opus.py`, default `grok-4.7-medium` via
-`CONDUCTOR_TASTE_MODEL`). Set that variable to a Claude id to use Opus
-instead (`ANTHROPIC_API_KEY`). Room bots orchestrate. They do not decide.
+to the taste model. The default is **Grok 4.7** (`grok-4.7-medium`,
+`CONDUCTOR_TASTE_MODEL`) through the Cursor CLI. Opus stays selectable
+(`claude-opus-5-5-medium`). A missing CLI or `CURSOR_API_KEY` turns creative
+calls into review markers. Linear calls stay on Jev. `jev.refuse_xai` still
+rejects a Grok or xAI id on the Jev path. Room bots orchestrate. They do not decide.
 
 - The classification is `router.DECISION_TYPES`. Each type has an engine, a
   question, and a reason. Add a type with `register_decision`. Do not branch
@@ -254,6 +256,13 @@ instead (`ANTHROPIC_API_KEY`). Room bots orchestrate. They do not decide.
   to what Anthropic accepts (`schema.wire`). The answer is validated against
   the full schema (`schema.validate`). Opus 5.5 rejects forced `tool_choice`
   and disabled thinking. Use `output_config.format`.
+- Opus has two backends, chosen by `opus.choose_backend`
+  (`CONDUCTOR_OPUS_BACKEND`, default `auto`, which prefers Cursor). The
+  Cursor CLI backend lives in `cursor_agent.py`: always `--mode ask` in an
+  empty temp workspace, never `CURSOR_AUTH_TOKEN` in the child env, and the
+  answer is validated locally. Tests replace `subprocess.run`
+  (`tests/test_conductor_cursor.py`). `python -m conductor doctor` is the
+  live-engine check.
 - Fallbacks are not negotiable. If Jev is down, the linear call goes to the
   deterministic rules at `FALLBACK_DISCOUNT` (0.85×), never to an LLM, and
   a rules answer is never `auto`. If

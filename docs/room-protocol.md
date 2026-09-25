@@ -2,7 +2,7 @@
 
 How the byjwu Grok Bot room drives the editing engine (the `conductor` package, `python -m conductor`). The repo holds the engine and the CLI. No bot is implemented here, and nothing in this repo talks to Final Cut or to a bot API. This file is the contract those bots call.
 
-The bots coordinate. They do not make editorial decisions. Bounded, logical calls come from Jev (`conductor/jev.py`). Open-ended creative and taste calls come from Grok 4.7 through the decision router (`CONDUCTOR_TASTE_MODEL`, default `grok-4.7-medium`). Opus stays selectable.
+The bots coordinate. They do not make editorial decisions. Bounded, logical calls come from Jev (`conductor/jev.py`). Open-ended creative and taste calls come from Grok 4.7 through the Cursor CLI by default (`CONDUCTOR_TASTE_MODEL`, default `grok-4.7-medium`). Opus stays selectable. The room bots do not make those calls.
 
 the editor, the owner, does not use the command line. He drops a selects folder, an FCPXML export, a `.fcpxmld` bundle, or a zip in the room or in `~/Desktop/byjwu-in`, and opens the FCPXML that lands in `~/Desktop/byjwu-out` in Final Cut Pro himself. The CLI below is what the bots run for him. The legacy-folder fallback is described under [Desktop folders](#desktop-folders).
 
@@ -262,7 +262,7 @@ Candidate ids (`c0001`, …) are assigned after the passes that actually ran, in
 
 ## Who decides
 
-`conductor.router` sends each candidate to one engine by its decision type. Linear, logical calls go to Jev. Open-ended creative calls go to the taste model, Grok 4.7 by default. The list and the reason for each entry are `router.DECISION_TYPES`. Bots in this room run the commands and relay the payload. They do not make the call themselves.
+`conductor.router` sends each candidate to one engine by its decision type. Linear, logical calls go to Jev. Open-ended creative calls go to the taste model (Grok 4.7 through the Cursor CLI by default; Opus remains selectable). The list and the reason for each entry are `router.DECISION_TYPES`. Jev still refuses a Grok or xAI model id. Bots in this room run the commands and relay the payload. They do not make the call themselves.
 
 | pass | kinds | engine |
 |---|---|---|

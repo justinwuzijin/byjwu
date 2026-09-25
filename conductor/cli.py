@@ -69,6 +69,11 @@ def main(argv: list[str] | None = None) -> int:
             help="bot entry: detect a drop, iterate, and write a chat summary",
         )
     )
+    doctor = sub.add_parser(
+        "doctor",
+        help="check that Jev and Opus via the Cursor CLI are live from this machine (no secrets printed)",
+    )
+    doctor.add_argument("--json", action="store_true", help="print the result as JSON")
     ui = sub.add_parser("ui", help="local page that runs ingest on a folder path")
     ui.add_argument("--port", type=int, default=8765, help="localhost port (default: 8765)")
     feedback = sub.add_parser(
@@ -98,6 +103,8 @@ def main(argv: list[str] | None = None) -> int:
             return _feedback(args)
         if args.command == "ui":
             return _ui(args)
+        if args.command == "doctor":
+            return _doctor(args)
         if args.command == "ingest":
             return _ingest(args)
         if args.command == "iterate":
@@ -165,7 +172,7 @@ def _add_analyze(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--live",
         action="store_true",
-        help="call live engines: Jev (OPENROUTER_API_KEY or TYPESAFE_API_KEY) for linear calls, Claude Opus (ANTHROPIC_API_KEY) for creative calls. Off by default.",
+        help="call live engines: Jev (OPENROUTER_API_KEY or TYPESAFE_API_KEY) for linear calls, Claude Opus (cursor-agent with CURSOR_API_KEY, or ANTHROPIC_API_KEY) for creative calls. Off by default.",
     )
     parser.add_argument("--html", action="store_true", help="also write a single-file HTML report")
     _add_signals(parser)
@@ -195,7 +202,7 @@ def _add_ingest(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--live",
         action="store_true",
-        help="call live engines: Jev (OPENROUTER_API_KEY or TYPESAFE_API_KEY) for linear calls, Claude Opus (ANTHROPIC_API_KEY) for creative calls. Off by default.",
+        help="call live engines: Jev (OPENROUTER_API_KEY or TYPESAFE_API_KEY) for linear calls, Claude Opus (cursor-agent with CURSOR_API_KEY, or ANTHROPIC_API_KEY) for creative calls. Off by default.",
     )
     parser.add_argument("--html", action="store_true", help="also write a single-file HTML report")
     parser.add_argument(
@@ -253,7 +260,7 @@ def _add_iterate(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--live",
         action="store_true",
-        help="call live engines: Jev (OPENROUTER_API_KEY or TYPESAFE_API_KEY) for linear calls, Claude Opus (ANTHROPIC_API_KEY) for creative calls. Off by default.",
+        help="call live engines: Jev (OPENROUTER_API_KEY or TYPESAFE_API_KEY) for linear calls, Claude Opus (cursor-agent with CURSOR_API_KEY, or ANTHROPIC_API_KEY) for creative calls. Off by default.",
     )
     parser.add_argument("--html", action="store_true", help="also write a single-file HTML report each round")
     parser.add_argument("--max-rounds", type=int, default=5, help="stop after this many rounds (default: 5)")
@@ -601,6 +608,14 @@ def _ui(args) -> int:
 
     serve(args.port)
     return 0
+
+
+def _doctor(args) -> int:
+    from . import doctor
+
+    result = doctor.run()
+    print(doctor.format_json(result) if args.json else doctor.format_text(result))
+    return 0 if result["ok"] else 1
 
 
 def _print_report(report: Report, starter: Path | None = None) -> None:

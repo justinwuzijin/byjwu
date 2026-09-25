@@ -11,6 +11,12 @@ inner clips are mapped through that window, including a nested compound.
 Audio slip (``audioStart`` / ``audioDuration``) is the map used for silence
 and words. The picture's ``start`` is the map used when a cut rewrites the
 element. With no slip and no time map, the two maps are the same.
+
+A connected item's ``offset`` is on its parent's local clock, which begins at
+the parent's ``start``. A ``timeMap`` point's ``time`` is on the same local
+clock and its ``value`` is asset time. Asset time begins at the asset's own
+``start`` (camera timecode), so ``AudibleSpan`` pieces subtract it and carry
+seconds into the file, which is what ffmpeg seeks.
 """
 
 from __future__ import annotations
@@ -22,7 +28,7 @@ from pathlib import Path
 from urllib.parse import unquote, urlparse
 
 from .fcpxml import CLIP_TAGS, Document, local
-from .timeutil import format_time, parse_time
+from .timeutil import parse_time
 
 #: Final Cut writes these names for NTSC rates. The value is the real rate.
 _NTSC = {
@@ -67,7 +73,7 @@ class MapPiece:
 
 @dataclass(frozen=True)
 class AudibleSpan:
-    """One heard region, already in the parent sequence's timeline."""
+    """One heard region. Piece timelines are the sequence clock; media is seconds into the file."""
 
     sequence: str
     clip_id: str
@@ -79,6 +85,7 @@ class AudibleSpan:
     reachable: bool
     pieces: tuple[MapPiece, ...]
     error: str | None = None
+    role: str | None = None
 
     def media_bounds(self) -> tuple[Fraction, Fraction] | None:
         if not self.pieces:
@@ -207,38 +214,29 @@ def kept_media(
     return start, end
 
 
-def rewrite_time_map(elem: ET.Element, local_start: Fraction, local_end: Fraction) -> None:
-    """Shift a time map so the kept piece starts at local 0.
+def local_window(
+    elem: ET.Element, local_start: Fraction, local_end: Fraction, fps: Fraction
+) -> tuple[Fraction, Fraction]:
+    """A kept timeline-local range on the element's own clock.
 
-    Points between the cuts are kept. The curve between points is linear;
-    a smooth interp on the source is sampled at the same points.
+    That clock is what ``start``, inner markers, and connected offsets use.
+    With a time map it is the map's ``time`` axis, so the map itself is left
+    as it is and only ``start`` moves.
     """
-    node = _child(elem, "timeMap")
-    if node is None:
-        return
-    pieces = _time_map_pieces(elem, Fraction(0)) or []
-    samples = [local_start, local_end]
-    for piece in pieces:
-        for moment in (piece.timeline_start, piece.timeline_end):
-            if local_start < moment < local_end:
-                samples.append(moment)
-    ordered = sorted(set(samples))
-    for child in list(node):
-        if local(child.tag) == "timept":
-            node.remove(child)
-    for moment in ordered:
-        value = media_at(pieces, moment)
-        if value is None:
-            continue
-        ET.SubElement(
-            node,
-            "timept",
-            {
-                "time": format_time(moment - local_start),
-                "value": format_time(value),
-                "interp": "linear",
-            },
-        )
+    if has_time_map(elem):
+        origin = parse_time(elem.get("start"), Fraction(0))
+        return origin + local_start, origin + local_end
+    return kept_media(elem, local_start, local_end, fps, audio=False)
+
+
+def anchor_time(parent: ET.Element, parent_start: Fraction, offset: Fraction, fps: Fraction) -> Fraction:
+    """Where a connected item begins, given its ``offset`` on the parent's local clock."""
+    if local(parent.tag) == "spine":
+        return parent_start + offset
+    delta = offset - parse_time(parent.get("start"), Fraction(0))
+    if has_time_map(parent):
+        return parent_start + delta
+    return parent_start + delta * _conform_scale(parent, fps)
 
 
 def media_at(pieces: list[MapPiece], timeline: Fraction) -> Fraction | None:
@@ -307,309 +305,190 @@ def project_span(inner: MapPiece, window: MapPiece) -> MapPiece | None:
     return MapPiece(outer_left, outer_right, asset_left, asset_right)
 
 
+@dataclass(frozen=True)
+class _Context:
+    document: Document
+    media_index: dict[str, tuple[ET.Element, Fraction]]
+    has_audio: dict[str, str | None]
+    sequence: str
+
+
 def audible_spans(document: Document, sequences) -> list[AudibleSpan]:
-    """Every asset a sequence can hear, in that sequence's timeline."""
+    """Every asset a sequence can hear, in that sequence's timeline.
+
+    Spine items, their audio components, connected items (including those on
+    a gap), secondary storylines, and compounds are walked. ``enabled="0"``
+    items are not heard. Connected items and storylines carry
+    ``connected=True``; only the rest can become a mechanical trim.
+    """
     index = _media_index(document)
+    has_audio = _asset_audio_flags(document)
     found: list[AudibleSpan] = []
     for sequence in sequences:
+        context = _Context(document, index, has_audio, sequence.name)
         fps = sequence_fps(sequence.frame_duration)
         for clip in sequence.spine:
+            if clip.element is None:
+                continue
             found.extend(
-                _walk_clip(
-                    clip,
-                    sequence_name=sequence.name,
+                _walk(
+                    context,
+                    clip.element,
+                    start=clip.timeline_start,
+                    windows=None,
                     fps=fps,
-                    document=document,
-                    media_index=index,
+                    clip_id=clip.id,
+                    name=clip.name,
                     mechanical=True,
+                    role=None,
+                    own_ids=True,
                 )
             )
     return found
 
 
-def _walk_clip(clip, *, sequence_name, fps, document, media_index, mechanical: bool):
-    found: list[AudibleSpan] = []
-    elem = clip.element
-    if elem is None or clip.kind == "gap":
-        return found
-    if clip.ref and clip.ref in media_index and clip.kind in {"ref-clip", "mc-clip", "sync-clip"}:
-        found.extend(
-            _expand_ref(
-                elem,
-                timeline_start=clip.timeline_start,
-                fps=fps,
-                sequence_name=sequence_name,
-                clip_id=clip.id,
-                clip_name=clip.name,
-                mechanical=mechanical,
-                document=document,
-                media_index=media_index,
-            )
-        )
-    elif clip.ref and clip.ref in document.assets:
-        span = _asset_span(
-            elem,
-            timeline_start=clip.timeline_start,
-            fps=fps,
-            sequence_name=sequence_name,
-            clip_id=clip.id,
-            clip_name=clip.name,
-            kind=clip.kind,
-            connected=not mechanical,
-            document=document,
-            ref=clip.ref,
-        )
-        if span is not None:
-            found.append(span)
-    for child in clip.connected_clips:
-        child_mechanical = mechanical and _component(clip.kind, child.lane, child.kind)
-        found.extend(
-            _walk_clip(
-                child,
-                sequence_name=sequence_name,
-                fps=fps,
-                document=document,
-                media_index=media_index,
-                mechanical=child_mechanical,
-            )
-        )
-    return found
-
-
-def _expand_ref(
-    elem,
+def _walk(
+    context: _Context,
+    elem: ET.Element,
     *,
-    timeline_start,
-    fps,
-    sequence_name,
-    clip_id,
-    clip_name,
-    mechanical,
-    document,
-    media_index,
-):
-    ref = elem.get("ref")
-    media = media_index.get(ref or "")
-    if media is None:
-        return [
-            AudibleSpan(
-                sequence=sequence_name,
-                clip_id=clip_id,
-                clip_name=clip_name,
-                connected=not mechanical,
-                kind=local(elem.tag),
-                src=None,
-                path=None,
-                reachable=False,
-                pieces=(),
-                error="compound clip has no media resource in this XML",
-            )
-        ]
-    seq_el, inner_fps = media
-    windows = audio_pieces(elem, timeline_start, fps)
-    if not windows:
-        return []
-    spine = _child(seq_el, "spine")
-    if spine is None:
-        return []
-    found: list[AudibleSpan] = []
-    for child in spine:
-        if local(child.tag) not in CLIP_TAGS:
-            continue
-        found.extend(
-            _walk_inner(
-                child,
-                parent_origin=Fraction(0),
-                windows=windows,
-                fps=inner_fps,
-                sequence_name=sequence_name,
-                clip_id=clip_id,
-                parent_name=clip_name,
-                mechanical=mechanical,
-                document=document,
-                media_index=media_index,
-            )
-        )
-    return found
+    start: Fraction,
+    windows: list[MapPiece] | None,
+    fps: Fraction,
+    clip_id: str,
+    name: str,
+    mechanical: bool,
+    role: str | None,
+    own_ids: bool,
+) -> list[AudibleSpan]:
+    """``start`` is where ``elem`` begins on the current clock.
 
-
-def _walk_inner(
-    elem,
-    *,
-    parent_origin,
-    windows,
-    fps,
-    sequence_name,
-    clip_id,
-    parent_name,
-    mechanical,
-    document,
-    media_index,
-):
-    offset = parse_time(elem.get("offset"), Fraction(0))
-    container_start = parent_origin + offset
+    ``windows`` is None on a project sequence. Inside a compound it maps the
+    compound's own clock onto the project sequence.
+    """
+    if elem.get("enabled") == "0":
+        return []
     kind = local(elem.tag)
-    found: list[AudibleSpan] = []
-    if kind == "gap":
-        return found
+    label = elem.get("name") or name
+    role = elem.get("audioRole") or (elem.get("role") if kind == "audio" else None) or role
     ref = elem.get("ref")
-    if ref and ref in media_index and kind in {"ref-clip", "mc-clip", "sync-clip"}:
-        projected: list[MapPiece] = []
-        for piece in audio_pieces(elem, container_start, fps):
-            for window in windows:
-                hit = project_span(piece, window)
-                if hit is not None:
-                    projected.append(hit)
-        if projected:
-            found.extend(
-                _expand_projected(
-                    elem,
-                    windows=projected,
-                    sequence_name=sequence_name,
-                    clip_id=clip_id,
-                    clip_name=elem.get("name") or parent_name,
-                    mechanical=mechanical,
-                    document=document,
-                    media_index=media_index,
+    found: list[AudibleSpan] = []
+    if kind == "mc-clip":
+        found.append(_error_span(context, clip_id, label, kind, mechanical, role, "multicam audio is not read"))
+    elif kind == "ref-clip" and ref:
+        media = context.media_index.get(ref)
+        if media is None:
+            found.append(
+                _error_span(
+                    context, clip_id, label, kind, mechanical, role, "compound clip has no media resource in this XML"
                 )
             )
-    elif ref and ref in document.assets:
-        outer: list[MapPiece] = []
-        for piece in audio_pieces(elem, container_start, fps):
-            for window in windows:
-                hit = project_span(piece, window)
-                if hit is not None:
-                    outer.append(hit)
-        if outer:
-            span = _span_from_pieces(
-                outer,
-                sequence_name=sequence_name,
-                clip_id=clip_id,
-                clip_name=elem.get("name") or parent_name,
-                kind=kind,
-                connected=not mechanical,
-                document=document,
-                ref=ref,
-            )
+        else:
+            inner_windows = _project(audio_pieces(elem, start, fps), windows)
+            seq_el, inner_fps = media
+            spine = _child(seq_el, "spine")
+            if inner_windows and spine is not None:
+                for child in spine:
+                    if local(child.tag) not in CLIP_TAGS:
+                        continue
+                    found.extend(
+                        _walk(
+                            context,
+                            child,
+                            start=parse_time(child.get("offset"), Fraction(0)),
+                            windows=inner_windows,
+                            fps=inner_fps,
+                            clip_id=clip_id,
+                            name=label,
+                            mechanical=mechanical,
+                            role=role,
+                            own_ids=False,
+                        )
+                    )
+    elif kind != "gap" and ref and ref in context.document.assets:
+        heard = _project(audio_pieces(elem, start, fps), windows)
+        if heard:
+            span = _span_from_pieces(context, heard, clip_id, label, kind, not mechanical, ref, role)
             if span is not None:
                 found.append(span)
+
+    index = 0
     for child in elem:
-        if local(child.tag) not in CLIP_TAGS:
-            continue
-        lane = child.get("lane")
-        child_mechanical = mechanical and _component(kind, _lane(lane), local(child.tag))
-        found.extend(
-            _walk_inner(
-                child,
-                parent_origin=container_start,
-                windows=windows,
-                fps=fps,
-                sequence_name=sequence_name,
-                clip_id=clip_id,
-                parent_name=elem.get("name") or parent_name,
-                mechanical=child_mechanical,
-                document=document,
-                media_index=media_index,
+        tag = local(child.tag)
+        if tag in CLIP_TAGS:
+            component = _component(kind, _lane(child.get("lane")), tag)
+            child_id = clip_id if component or not own_ids else f"{clip_id}k{index}"
+            index += 1
+            found.extend(
+                _walk(
+                    context,
+                    child,
+                    start=anchor_time(elem, start, parse_time(child.get("offset"), Fraction(0)), fps),
+                    windows=windows,
+                    fps=fps,
+                    clip_id=child_id,
+                    name=label,
+                    mechanical=mechanical and component,
+                    role=role if component else None,
+                    own_ids=own_ids and not component,
+                )
             )
-        )
+        elif tag == "spine":
+            if child.get("enabled") == "0":
+                continue
+            story = anchor_time(elem, start, parse_time(child.get("offset"), Fraction(0)), fps)
+            items = [item for item in child if local(item.tag) in CLIP_TAGS]
+            for position, item in enumerate(items):
+                found.extend(
+                    _walk(
+                        context,
+                        item,
+                        start=story + parse_time(item.get("offset"), Fraction(0)),
+                        windows=windows,
+                        fps=fps,
+                        clip_id=f"{clip_id}y{position}" if own_ids else clip_id,
+                        name=label,
+                        mechanical=False,
+                        role=None,
+                        own_ids=own_ids,
+                    )
+                )
     return found
 
 
-def _expand_projected(
-    elem,
-    *,
-    windows,
-    sequence_name,
-    clip_id,
-    clip_name,
-    mechanical,
-    document,
-    media_index,
-):
-    """Like ``_expand_ref``, but ``windows`` are already on the parent timeline."""
-    ref = elem.get("ref")
-    media = media_index.get(ref or "")
-    if media is None:
-        return [
-            AudibleSpan(
-                sequence=sequence_name,
-                clip_id=clip_id,
-                clip_name=clip_name,
-                connected=not mechanical,
-                kind=local(elem.tag),
-                src=None,
-                path=None,
-                reachable=False,
-                pieces=(),
-                error="compound clip has no media resource in this XML",
-            )
-        ]
-    seq_el, inner_fps = media
-    spine = _child(seq_el, "spine")
-    if spine is None:
-        return []
-    found: list[AudibleSpan] = []
-    for child in spine:
-        if local(child.tag) not in CLIP_TAGS:
-            continue
-        found.extend(
-            _walk_inner(
-                child,
-                parent_origin=Fraction(0),
-                windows=windows,
-                fps=inner_fps,
-                sequence_name=sequence_name,
-                clip_id=clip_id,
-                parent_name=clip_name,
-                mechanical=mechanical,
-                document=document,
-                media_index=media_index,
-            )
-        )
-    return found
+def _project(pieces: list[MapPiece], windows: list[MapPiece] | None) -> list[MapPiece]:
+    if windows is None:
+        return pieces
+    projected: list[MapPiece] = []
+    for piece in pieces:
+        for window in windows:
+            hit = project_span(piece, window)
+            if hit is not None:
+                projected.append(hit)
+    return projected
 
 
-def _asset_span(
-    elem,
-    *,
-    timeline_start,
-    fps,
-    sequence_name,
-    clip_id,
-    clip_name,
-    kind,
-    connected,
-    document,
-    ref,
-):
-    pieces = audio_pieces(elem, timeline_start, fps)
-    if not pieces:
-        return None
-    return _span_from_pieces(
-        pieces,
-        sequence_name=sequence_name,
+def _error_span(context: _Context, clip_id, clip_name, kind, mechanical, role, error) -> AudibleSpan:
+    return AudibleSpan(
+        sequence=context.sequence,
         clip_id=clip_id,
         clip_name=clip_name,
+        connected=not mechanical,
         kind=kind,
-        connected=connected,
-        document=document,
-        ref=ref,
+        src=None,
+        path=None,
+        reachable=False,
+        pieces=(),
+        error=error,
+        role=role,
     )
 
 
-def _span_from_pieces(
-    pieces,
-    *,
-    sequence_name,
-    clip_id,
-    clip_name,
-    kind,
-    connected,
-    document,
-    ref,
-):
-    asset = document.assets.get(ref)
+def _span_from_pieces(context: _Context, pieces, clip_id, clip_name, kind, connected, ref, role) -> AudibleSpan | None:
+    if context.has_audio.get(ref) == "0":
+        return None
+    asset = context.document.assets.get(ref)
     src = asset.src if asset is not None else None
+    origin = asset.start if asset is not None else Fraction(0)
     path = path_from_file_url(src)
     reachable = bool(path is not None and path.is_file())
     error = None
@@ -617,18 +496,32 @@ def _span_from_pieces(
         error = "media src is not a local file URL"
     elif path is not None and not reachable:
         error = "media file is not on this machine"
+    in_file = tuple(
+        MapPiece(piece.timeline_start, piece.timeline_end, piece.media_start - origin, piece.media_end - origin)
+        for piece in pieces
+    )
     return AudibleSpan(
-        sequence=sequence_name,
+        sequence=context.sequence,
         clip_id=clip_id,
         clip_name=clip_name,
         connected=connected,
         kind=kind,
         src=src,
-        path=path if path is not None else None,
+        path=path,
         reachable=reachable,
-        pieces=tuple(pieces),
+        pieces=in_file,
         error=error,
+        role=role,
     )
+
+
+def _asset_audio_flags(document: Document) -> dict[str, str | None]:
+    """Raw ``hasAudio`` per asset. Only an explicit ``0`` means silent."""
+    found: dict[str, str | None] = {}
+    for elem in document.tree.getroot().iter():
+        if local(elem.tag) == "asset" and elem.get("id"):
+            found[elem.get("id") or ""] = elem.get("hasAudio")
+    return found
 
 
 def _media_index(document: Document) -> dict[str, tuple[ET.Element, Fraction]]:
@@ -676,6 +569,7 @@ def _conform_scale(elem: ET.Element, fps: Fraction) -> Fraction:
 
 
 def _time_map_pieces(elem: ET.Element, timeline_start: Fraction) -> list[MapPiece] | None:
+    """The part of the map this item plays, from its ``start`` for ``duration``."""
     node = _child(elem, "timeMap")
     if node is None:
         return None
@@ -692,17 +586,18 @@ def _time_map_pieces(elem: ET.Element, timeline_start: Fraction) -> list[MapPiec
     if len(points) < 2:
         return None
     points.sort()
+    origin = parse_time(elem.get("start"), Fraction(0))
+    duration = parse_time(elem.get("duration"), Fraction(0))
+    limit = timeline_start + duration if duration > 0 else None
     pieces: list[MapPiece] = []
     for (t0, v0), (t1, v1) in zip(points, points[1:]):
         if t1 == t0:
             continue
-        start = timeline_start + t0
-        end = timeline_start + t1
-        if end < start:
-            start, end = end, start
-            v0, v1 = v1, v0
-        if end > start:
-            pieces.append(MapPiece(start, end, v0, v1))
+        whole = MapPiece(timeline_start + t0 - origin, timeline_start + t1 - origin, v0, v1)
+        left = max(whole.timeline_start, timeline_start)
+        right = whole.timeline_end if limit is None else min(whole.timeline_end, limit)
+        if right > left:
+            pieces.append(MapPiece(left, right, whole.media_at(left), whole.media_at(right)))
     return pieces or None
 
 

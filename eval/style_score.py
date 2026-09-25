@@ -62,7 +62,7 @@ def score_timeline(
         "hygiene": _hygiene(payload),
         "beat": _beat(reading, profile),
         "broll": _broll(reading, profile),
-        "ducking": _ducking(metrics, profile),
+        "ducking": _ducking(metrics, profile, reading),
         "type": _type(path, reading),
         "colour": _colour(path),
         "structure": _structure(reading),
@@ -272,15 +272,63 @@ def _broll(reading, profile) -> float:
     return score
 
 
-def _ducking(metrics: dict, profile) -> float:
+def _ducking(metrics: dict, profile, reading) -> float:
     duck = metrics.get("ducking") or {}
     checked = int(duck.get("checked") or 0)
     if checked:
         return 100.0 * int(duck.get("compliant") or 0) / checked
-    # The measured profile silences the bed under talk. That is the duck.
-    music = metrics.get("music") or {}
-    if int(music.get("clips") or 0) >= 1:
-        return 100.0 if profile.get("music.sections.talking.bed_db") <= -60 else 70.0
+    # A silent bed is only credit when the music on the timeline is actually quiet
+    # under dialogue. A full-volume bed does not inherit the profile number.
+    bed = float(profile.get("music.sections.talking.bed_db"))
+    dialogue = [item for item in reading.spine if str(item.element.get("audioRole") or "") == "dialogue"]
+    music = [
+        item for item in reading.connected
+        if item.tag == "asset-clip" and str(item.element.get("audioRole") or "").startswith("music")
+    ]
+    if not music or not dialogue:
+        return 0.0
+    if bed > -60:
+        return 70.0
+    limit = bed + 6.0
+    hits = ok = 0
+    for speech in dialogue:
+        mid = (speech.start + speech.end) / 2
+        for clip in music:
+            if clip.start <= mid < clip.end:
+                hits += 1
+                if _music_level(clip, mid) <= limit:
+                    ok += 1
+    if not hits:
+        return 0.0
+    return 100.0 * ok / hits
+
+
+def _music_level(clip, moment) -> float:
+    from conductor.fcpxml import local
+    from conductor.timeutil import parse_time
+
+    keys = []
+    for el in clip.element.iter():
+        if local(el.tag) != "keyframe" or not str(el.get("value") or "").endswith("dB"):
+            continue
+        when = clip.local_to_timeline(parse_time(el.get("time"), 0))
+        keys.append((when, float(str(el.get("value"))[:-2])))
+    if len(keys) >= 2:
+        keys.sort()
+        earlier = [pair for pair in keys if pair[0] <= moment]
+        later = [pair for pair in keys if pair[0] >= moment]
+        if earlier and later and earlier[-1][0] != later[0][0]:
+            left, right = earlier[-1], later[0]
+            span = float(right[0] - left[0])
+            if span > 0:
+                weight = float(moment - left[0]) / span
+                return left[1] + (right[1] - left[1]) * weight
+        if earlier:
+            return earlier[-1][1]
+        return later[0][1]
+    for el in clip.element.iter():
+        if local(el.tag) == "adjust-volume" and str(el.get("amount") or "").endswith("dB"):
+            return float(str(el.get("amount"))[:-2])
     return 0.0
 
 

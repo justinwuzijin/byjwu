@@ -148,6 +148,15 @@ def test_confidence_apply_removes_only_the_gap(tmp_path):
     assert any(clip.name == "Gap" for clip in shadow)
     log = json_log(report.out_taste)
     assert log["log"][0]["event"] == "accept"
+    flash = next(clip for clip in applied if clip.name == "Flash frame")
+    cut_marks = [marker for marker in flash.markers if marker.value.startswith("CC cut")]
+    assert len(cut_marks) == 1
+    assert cut_marks[0].start == flash.start
+    assert cut_marks[0].duration == parse_fcpxml(report.out_applied).sequences[0].frame_duration
+    assert "silence gap" in cut_marks[0].value and "2.5s" in cut_marks[0].value
+    assert cut_marks[0].note.startswith("Cut Conductor applied cut.")
+    assert "rule=" in cut_marks[0].note and "confidence=" in cut_marks[0].note
+    assert not any(marker.value.startswith("CC cut") for marker in applied[0].markers)
     assert log["log"][0]["candidate_id"] == "c0001"
     assert "Cuts were written" in report.out_markdown.read_text()
 

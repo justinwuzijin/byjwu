@@ -18,7 +18,7 @@ from .errors import ConductorError
 from .fcpxml import Document, parse_fcpxml, write_document
 from .feedback import bind_pending, diff_fcpxml, ingest_notes
 from .jev import dry_run_forced
-from .markers import apply_markers
+from .markers import apply_markers, mark_applied_cuts
 from .metrics import measure
 from .passes import collect, resolve_names
 from .report import build_payload, dumps, render_html, render_markdown
@@ -196,6 +196,7 @@ def analyze(
         if deletions:
             applied_doc = parse_fcpxml(source)
             result = apply_edits(applied_doc, deletions)
+            mark_applied_cuts(applied_doc, result.deletions, proposals, candidates)
             cuts = result.cuts
             apply_warnings = result.warnings
             by_candidate = {item.id: item for item in candidates}

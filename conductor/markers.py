@@ -14,13 +14,15 @@ from __future__ import annotations
 import xml.etree.ElementTree as ET
 from fractions import Fraction
 
+from .apply import Deletion, _deleted_before
 from .candidates import Candidate
 from .decide import Proposal
 from .errors import ConductorError
-from .fcpxml import Document, local
-from .timeutil import format_time
+from .fcpxml import CLIP_TAGS, Document, local
+from .timeutil import clock, format_time, parse_time, seconds
 
 _SHADOW = "Cut Conductor shadow proposal"
+_APPLIED = "Cut Conductor applied cut."
 
 #: FCPXML 1.14 places these after ``(%marker_item;)*`` on clip-like elements.
 #: Inserting a marker before the first of them keeps the content model.
@@ -73,6 +75,93 @@ def apply_markers(
             raise ConductorError("refusing to write: an existing marker was modified")
         added += 1
     return added
+
+
+def mark_applied_cuts(
+    document: Document,
+    deletions: list[Deletion],
+    proposals: list[Proposal],
+    candidates: list[Candidate],
+) -> int:
+    """One-frame marker on the clip that now starts where a cut was made.
+
+    The name is ``CC cut`` plus what was removed, its duration, and the
+    timeline timecode it came from. The note carries the rule and confidence.
+    """
+    by_proposal = {item.candidate_id: item for item in proposals}
+    by_candidate = {item.id: item for item in candidates}
+    frames = {sequence.name: sequence.frame_duration for sequence in document.sequences}
+    added = 0
+    for deletion in deletions:
+        proposal = by_proposal.get(deletion.candidate_id)
+        candidate = by_candidate.get(deletion.candidate_id)
+        if proposal is None or candidate is None:
+            continue
+        sequence = next((item for item in document.sequences if item.name == deletion.sequence), None)
+        if sequence is None or sequence.element is None:
+            continue
+        frame = frames.get(deletion.sequence) or Fraction(1, 24)
+        cut_at = deletion.start - _deleted_before(deletion.start, deletions)
+        host, at_in_point = _clip_at_cut(sequence, cut_at)
+        if host is None:
+            continue
+        source = parse_time(host.get("start"), Fraction(0))
+        duration = parse_time(host.get("duration"), Fraction(0))
+        if at_in_point:
+            marker_start = source
+        else:
+            marker_start = source + max(duration - frame, Fraction(0))
+        name = _cut_name(candidate, deletion)
+        note = _cut_note(candidate, deletion, proposal)
+        if _already_present(host, name):
+            continue
+        _append_marker(
+            host,
+            start=marker_start,
+            duration=frame if duration <= 0 or duration >= frame else duration,
+            value=name,
+            note=note,
+            completed=None,
+        )
+        added += 1
+    return added
+
+
+def _clip_at_cut(sequence, cut_at: Fraction) -> tuple[ET.Element | None, bool]:
+    """The spine item that starts at the cut, or the one that ends there."""
+    spine = next(child for child in sequence.element if local(child.tag) == "spine")
+    ending = None
+    for child in spine:
+        if local(child.tag) not in CLIP_TAGS:
+            continue
+        offset = parse_time(child.get("offset"), Fraction(0))
+        duration = parse_time(child.get("duration"), Fraction(0))
+        if offset == cut_at:
+            return child, True
+        if offset + duration == cut_at:
+            ending = child
+    return ending, False
+
+
+def _cut_name(candidate: Candidate, deletion: Deletion) -> str:
+    return (
+        f"CC cut · {candidate.label} {seconds(deletion.duration)}s @ {clock(deletion.start)}"
+    )
+
+
+def _cut_note(candidate: Candidate, deletion: Deletion, proposal: Proposal) -> str:
+    rule = (proposal.rule or {}).get("name") or proposal.decision_type or candidate.kind
+    parts = [
+        _APPLIED,
+        f"rule={rule}",
+        f"confidence={proposal.confidence:.2f}",
+        f"removed={candidate.label}",
+        f"duration={seconds(deletion.duration)}s",
+        f"source={clock(deletion.start)}-{clock(deletion.end)}",
+        f"action={deletion.action}",
+        f"id={candidate.id}",
+    ]
+    return " | ".join(parts)
 
 
 def _already_present(element: ET.Element, value: str) -> bool:

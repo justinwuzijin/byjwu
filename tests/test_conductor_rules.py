@@ -163,6 +163,19 @@ def test_logic_first_cuts_bare_gaps_when_the_model_returns_half(env, tmp_path):
     assert [clip.name for clip in gap.connected_clips if clip.lane is not None] == [
         "broll_a", "broll_b", "broll_c", "broll_d",
     ]
+    marks = [
+        marker
+        for clip in applied.sequences[0].spine
+        for marker in clip.markers
+        if marker.value.startswith("CC cut")
+    ]
+    assert len(marks) == 2
+    frame = applied.sequences[0].frame_duration
+    assert all(marker.duration == frame for marker in marks)
+    assert all(marker.note and "rule=bare_uncovered_gap" in marker.note for marker in marks)
+    assert all("confidence=" in marker.note for marker in marks)
+    assert any("100.1s" in marker.value for marker in marks)
+    assert any("12.012s" in marker.value for marker in marks)
 
 
 def test_model_veto_becomes_a_review_marker(env, tmp_path):

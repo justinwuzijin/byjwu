@@ -85,8 +85,10 @@ def dress(
         if item.tags.get("cutaway"):
             item.lane = lanes.cutaway
     by_unit = {unit.id: unit for unit in units}
-    cards = _subtitle_cards(timeline, by_unit, profile, adjustments)
-    title_cards = [item for item in timeline.spine if item.tags.get("card")]
+    # Type and the rectangle layer are conductor.graphics, applied to the
+    # written FCPXML. Dress does not place a second copy of either.
+    cards: list = []
+    title_cards: list = []
     items, questions = _dress_questions(timeline, cards, title_cards, by_unit, profile, brief)
     dress_decisions, receipts = decide(
         "dress",
@@ -100,11 +102,7 @@ def dress(
         prior=prior,
         signatures={item["id"]: item["signature"] for item in items},
     )
-    _place_subtitles(timeline, cards, dress_decisions, profile, lanes)
-    _place_cards(timeline, title_cards, dress_decisions, items, profile, lanes)
     _place_music(timeline, segments, profile, lanes)
-    if profile.get("background.enabled"):
-        warnings.extend(_place_background(timeline, segments, profile, lanes, assets_dir))
     _inset(timeline, profile)
     _notes(timeline, decisions, profile)
     return dress_decisions, receipts, warnings

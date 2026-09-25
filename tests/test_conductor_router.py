@@ -45,8 +45,12 @@ def env(monkeypatch):
         "CONDUCTOR_JEV_MODEL",
         "CONDUCTOR_OPUS_MODEL",
         "CONDUCTOR_OPUS_EFFORT",
+        "CONDUCTOR_TASTE_MODEL",
+        "CONDUCTOR_TASTE_KEY",
+        "XAI_API_KEY",
     ):
         monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("CONDUCTOR_TASTE_MODEL", "claude-opus-5-5")
     monkeypatch.setattr(opus, "_BACKOFF", 0.0)
     return monkeypatch
 
@@ -213,16 +217,15 @@ def test_pass_defaults_and_unknown_kinds():
         DECISION_TYPES.update(saved)
 
 
-def test_grok_and_xai_models_are_refused(env):
-    env.setenv("OPENROUTER_API_KEY", JEV_KEY)
-    env.setenv("CONDUCTOR_JEV_MODEL", "x-ai/grok-4")
-    with pytest.raises(ConductorError, match="Grok/xAI"):
-        Router(live=True)
-    env.delenv("CONDUCTOR_JEV_MODEL")
+def test_grok_is_the_default_taste_model_and_opus_stays_selectable(env):
+    env.delenv("CONDUCTOR_TASTE_MODEL", raising=False)
+    env.setenv("XAI_API_KEY", "xai-test")
+    with Router(live=True) as router:
+        assert router._models["opus"] == "grok-4.7-medium"
+    env.setenv("CONDUCTOR_TASTE_MODEL", "claude-opus-5-5")
     env.setenv("ANTHROPIC_API_KEY", OPUS_KEY)
-    env.setenv("CONDUCTOR_OPUS_MODEL", "grok-4-fast")
-    with pytest.raises(ConductorError, match="Grok/xAI"):
-        Router(live=True)
+    with Router(live=True) as router:
+        assert router._models["opus"] == "claude-opus-5-5"
 
 
 # --------------------------------------------------------------------------

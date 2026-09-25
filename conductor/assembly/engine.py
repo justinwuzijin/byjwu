@@ -38,6 +38,55 @@ from .timeline import Timeline
 
 PROTOCOL = "jevid.assembly"
 PROTOCOL_VERSION = 1
+
+
+def _adopt(rows: list) -> dict:
+    """Graphics router decisions, in the assembly decision shape."""
+    from .select import Decision
+
+    adopted = {}
+    for row in rows:
+        lane = "linear" if row.engine == "jev" else "creative"
+        adopted[row.id] = Decision(
+            key=row.id,
+            item=row.id,
+            field="value",
+            value=row.value,
+            confidence=float(row.confidence),
+            reason=row.why,
+            source=f"{row.engine}:{row.source}",
+            model=row.model or "",
+            review=bool(row.needs_review),
+            lane=lane,
+        )
+    return adopted
+
+
+def _speech_words(timeline: Timeline, units: list) -> list:
+    """Cue text as evenly timed words on the sequence clock, for graphics subtitles."""
+    from fractions import Fraction
+
+    from ..graphics.subtitles import Word
+
+    by_id = {unit.id: unit for unit in units}
+    words: list[Word] = []
+    for item in timeline.spine:
+        unit = by_id.get(item.tags.get("unit"))
+        if unit is None:
+            continue
+        for cue in unit.cues:
+            tokens = str(cue.text).split()
+            if not tokens or cue.end <= cue.start:
+                continue
+            step = (cue.end - cue.start) / len(tokens)
+            for index, token in enumerate(tokens):
+                src_start = cue.start + step * index
+                src_end = cue.start + step * (index + 1)
+                start = item.offset + (src_start - item.start)
+                end = item.offset + (src_end - item.start)
+                if end > start:
+                    words.append(Word(token, Fraction(start), Fraction(end), ""))
+    return words
 _MINUTES = re.compile(r"(\d+(?:\.\d+)?)\s*-?\s*(?:min|mins|minute|minutes)\b", re.IGNORECASE)
 _SECONDS = re.compile(r"(\d+(?:\.\d+)?)\s*-?\s*(?:s|sec|secs|second|seconds)\b", re.IGNORECASE)
 
@@ -186,6 +235,24 @@ def assemble(
         ),
         out_fcpxml,
     )
+    graphic_decisions: dict = {}
+    if profile.get("typography.subtitle.enabled") or profile.get("background.enabled"):
+        from ..graphics import apply_graphics, load_graphics_profile
+
+        graphic = apply_graphics(
+            out_fcpxml,
+            out_path=out_fcpxml,
+            words=_speech_words(timeline, units),
+            beats=[float(beat) for beat in timeline_beats(layout.segments)],
+            profile=load_graphics_profile(profile.data),
+            router=router,
+            brief=brief,
+            enabled=True,
+            ledger=router.ledger,
+        )
+        warnings.extend(graphic.notes)
+        graphic_decisions = _adopt(graphic.decisions)
+    dress_decisions = {**dress_decisions, **graphic_decisions}
     dtd_errors = validate_fcpxml(out_fcpxml)
     if dtd_errors is None:
         warnings.append("lxml is not installed; the FCPXML was not checked against the DTD.")
@@ -355,7 +422,7 @@ def render_markdown(payload: dict) -> str:
         ]
     lines += [
         f"- Brief: {payload['brief']}",
-        f"- Mode: `{payload['mode']}` (live decisions use Claude Opus 5.5; dry-run uses the local mock)",
+        f"- Mode: `{payload['mode']}` (live taste decisions use Grok 4.7; dry-run uses the local mock)",
         f"- Decisions: {payload.get('decision_usage_summary') or 'none'}",
         f"- Length: {payload['timeline']['duration_seconds']:.2f}s against a {payload['target_seconds']:.0f}s target",
         f"- FCPXML: `{payload['files']['fcpxml']}`",

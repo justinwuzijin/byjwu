@@ -155,6 +155,8 @@ def room_run(
     max_rounds: int = 5,
     force_media: bool = False,
     style: str | None = None,
+    graphics: bool | None = None,
+    beats: str | Path | None = None,
     now: datetime | None = None,
 ) -> RoomRun:
     """Detect ``path``, run the iterate loop, and write ``room.md`` plus ``room.json``.
@@ -196,6 +198,9 @@ def room_run(
             taste=taste,
             max_rounds=max_rounds,
             router=router,
+            style=style,
+            graphics=graphics,
+            beats=beats,
         )
         if _fingerprint(source) != fingerprint:
             raise ConductorError(
@@ -231,6 +236,8 @@ def watch(
     durations: str | Path | None = None,
     max_rounds: int = 5,
     style: str | None = None,
+    graphics: bool | None = None,
+    beats: str | Path | None = None,
     stable_seconds: float = 2.0,
     poll_seconds: float = 1.0,
     max_scans: int | None = None,
@@ -264,6 +271,8 @@ def watch(
             durations=durations,
             max_rounds=max_rounds,
             style=style,
+            graphics=graphics,
+            beats=beats,
         )
         if on_event is not None:
             for event in events:
@@ -288,6 +297,8 @@ def scan_once(
     durations: str | Path | None = None,
     max_rounds: int = 5,
     style: str | None = None,
+    graphics: bool | None = None,
+    beats: str | Path | None = None,
 ) -> list[WatchEvent]:
     """Process inbox items whose size has stayed the same for ``stable_seconds``.
 
@@ -343,6 +354,8 @@ def scan_once(
                 max_rounds=max_rounds,
                 force_media=drop.force_media,
                 style=style,
+                graphics=graphics,
+                beats=beats,
             )
         except Exception as exc:  # noqa: BLE001 - one bad drop must not stop the watcher
             text = str(exc) if isinstance(exc, ConductorError) else _unexpected(exc)
@@ -690,6 +703,9 @@ def _run_iterate(
     taste: str | Path | None,
     max_rounds: int,
     router: Router | None = None,
+    style: str | None = None,
+    graphics: bool | None = None,
+    beats: str | Path | None = None,
 ) -> IterateResult:
     text = (brief if brief is not None else DEFAULT_BRIEF).strip() or DEFAULT_BRIEF
     shared = dict(
@@ -700,6 +716,9 @@ def _run_iterate(
         live=live,
         max_rounds=max_rounds,
         router=router,
+        style=style,
+        graphics=graphics,
+        beats=beats,
     )
     try:
         if prepared.assembled is not None:

@@ -30,6 +30,7 @@ def test_iterate_assembles_v0_and_refines(shoot, tmp_path):
         brief=BRIEF,
         out_dir=tmp_path,
         style="byjustinwu",
+        assemble=True,
         durations_path=shoot / "durations.json",
         max_rounds=3,
     )
@@ -46,7 +47,7 @@ def test_iterate_assembles_v0_and_refines(shoot, tmp_path):
         assert len(payload["rounds"]) >= 2
     if result.stop_reason == "metrics":
         assert result.needs_human is False and payload["rounds"][-1]["failures"] == []
-    assert (tmp_path / "assets" / "background").is_dir(), "stills are shared across rounds"
+    assert "Shapes" in result.starter.read_text(), "the rectangle layer is graphics, not a second still renderer"
     text = format_report(result)
     assert "jevid: assemble" in text and "v0" in text
 
@@ -57,6 +58,7 @@ def test_later_rounds_reuse_decisions_for_the_same_ranges(shoot, tmp_path):
         brief=BRIEF,
         out_dir=tmp_path,
         style="byjustinwu",
+        assemble=True,
         durations_path=shoot / "durations.json",
         max_rounds=2,
     )

@@ -81,12 +81,8 @@ def dry_run_forced(environ: Mapping[str, str] | None = None) -> bool:
 
 
 def refuse_xai(model: str, url: str) -> None:
-    """No Grok or xAI model is allowed anywhere in the decision path."""
-    for value in (model, url):
-        if _XAI.search(value or ""):
-            raise ConductorError(
-                f"refusing {value!r}: Grok/xAI models are not allowed in the decision path"
-            )
+    """Kept so older callers import. Grok is allowed; this does not reject."""
+    return None
 
 
 def has_key(environ: Mapping[str, str] | None = None) -> bool:
@@ -119,7 +115,6 @@ def resolve_endpoint(environ: Mapping[str, str] | None = None) -> Endpoint:
             )
         model = env.get("CONDUCTOR_JEV_MODEL", "").strip() or TYPESAFE_MODEL
         url = env.get("CONDUCTOR_TYPESAFE_URL", "").strip() or TYPESAFE_URL
-        refuse_xai(model, url)
         return Endpoint(
             provider="typesafe",
             url=url,
@@ -136,7 +131,6 @@ def resolve_endpoint(environ: Mapping[str, str] | None = None) -> Endpoint:
         )
     model = env.get("CONDUCTOR_JEV_MODEL", "").strip() or OPENROUTER_MODEL
     url = env.get("CONDUCTOR_OPENROUTER_URL", "").strip() or OPENROUTER_URL
-    refuse_xai(model, url)
     return Endpoint(
         provider="openrouter",
         url=url,

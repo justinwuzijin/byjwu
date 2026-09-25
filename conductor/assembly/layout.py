@@ -669,13 +669,19 @@ class Layout:
 
 
 def section_note(section: Section, profile: StyleProfile) -> Note:
+    value = section.label
+    if section.kind == "end_card":
+        value = str(profile.get("structure.end_card.text", None) or value)
+    elif section.kind == "title_card":
+        text = profile.get("structure.title_card.text", None)
+        value = str(text) if text else value
     lines = [f"jevid.section={section.kind}", f"budget={float(section.budget):.2f}s"]
     if section.kind in CUT_SECTIONS:
         pacing = profile.pacing(section.kind)
         lines.append(f"asl_target={pacing['asl_seconds']}s")
         lines.append(f"cut_on_beat={pacing['cut_on_beat']}")
     lines.extend(section.notes)
-    return Note(section.start, section.label, "; ".join(lines), chapter=True)
+    return Note(section.start, value, "; ".join(lines), chapter=True)
 
 
 def _split(units: list[Unit], count: int) -> list[list[Unit]]:

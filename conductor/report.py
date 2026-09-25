@@ -369,7 +369,7 @@ def _usage_section(payload: dict) -> list[str]:
     lines = [
         "## Decision engines",
         "",
-        "Linear calls go to Jev, creative calls to Claude Opus. `rules` means Jev was "
+        "Linear calls go to Jev, creative calls to the taste model (Grok 4.7 by default). `rules` means Jev was "
         "unavailable and the deterministic rules answered at reduced confidence. "
         "`unavailable` means Opus could not answer and the call is a review marker.",
         "",

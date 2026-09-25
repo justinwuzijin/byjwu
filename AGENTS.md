@@ -285,10 +285,12 @@ connected clip covers it, and `apply` will not remove a spine item wholesale
 while a connected clip still covers part of it. Holds are judged against the
 local average shot. Repeated source ranges, rhythm shifts, mixed frame rates,
 an untrimmed string-out, a silent generator card, and a music bed that ends
-early are pacing notes (`span="note"`); the mock will not lift them. The
+early are pacing notes (`span="note"`); the mock will not lift them. Each of
+those kinds is a registered decision type in `conductor/router.py`. The
 lane-less media inside a compound `clip` is the clip's picture, not an
-anchored item. Real Final Cut exports store an anchored `offset` in the
-parent clip's timebase. Markers are inserted before `audio-channel-source`
-and filter elements, which is where the 1.14 content model requires them.
-`fcpxml.anchored_local` also accepts the hand-built seconds-from-in-point
-fixtures in this repo.
+anchored item. A connected item's `offset` is on the parent's clock, which
+begins at the parent's `start`. The parser, apply, and the media path all
+place connected items, items on a gap, secondary storylines, and disabled
+clips with `timing.anchor_time`; hand-built fixtures must follow the same
+rule. Markers are inserted before `audio-channel-source` and filter
+elements, which is where the 1.14 content model requires them.

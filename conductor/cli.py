@@ -9,6 +9,7 @@ from pathlib import Path
 from .errors import ConductorError
 from .feedback import apply_note_items, bind_pending, diff_fcpxml, load_notes
 from .fcpxml import parse_fcpxml
+from .folders import DROP_IN, DROP_OUT, drop_folder, drop_input
 from .ingest import DEFAULT_BRIEF, ingest
 from .iterate import format_report, iterate
 from .passes import PASSES, collect
@@ -207,14 +208,20 @@ def _add_ingest(parser: argparse.ArgumentParser) -> None:
 
 def _add_iterate(parser: argparse.ArgumentParser) -> None:
     ready = ", ".join(name for name, spec in PASSES.items() if spec.implemented)
-    parser.add_argument("--fcpxml", help="FCPXML to iterate. Not with --media.")
+    parser.add_argument(
+        "--fcpxml",
+        help=f"FCPXML to iterate. Not with --media. With neither, reads ~/Desktop/{DROP_IN}.",
+    )
     parser.add_argument(
         "--media",
         help="folder of clips. Writes a starter FCPXML, then iterates. Not with --fcpxml.",
     )
     parser.add_argument("--brief", required=True, help="what this cut is for")
     parser.add_argument("--transcript", help="optional SRT or WebVTT aligned to the sequence")
-    parser.add_argument("--out-dir", default="out", help="directory for vN/ rounds (default: out)")
+    parser.add_argument(
+        "--out-dir",
+        help=f"directory for vN/ rounds (default: ~/Desktop/{DROP_OUT} when reading ~/Desktop/{DROP_IN}, else out)",
+    )
     parser.add_argument("--project", help="project name, when the XML holds more than one")
     parser.add_argument("--sequence", help="with --media, project name (default: the folder name)")
     parser.add_argument(
@@ -302,7 +309,11 @@ def _add_signals(parser: argparse.ArgumentParser) -> None:
 def _add_room(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "path",
-        help="a .fcpxml, .fcpxmld, .zip of either, or a folder of clips. With --watch, the drop folder.",
+        nargs="?",
+        help=(
+            "a .fcpxml, .fcpxmld, .zip of either, or a folder of clips. "
+            f"With --watch, the drop folder (default: ~/Desktop/{DROP_IN})."
+        ),
     )
     parser.add_argument(
         "--watch",
@@ -312,8 +323,7 @@ def _add_room(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--brief", help="what this cut is for (default: a filename-order assembly line)")
     parser.add_argument(
         "--out-root",
-        default=str(Path.home() / "Desktop" / "jevid-out"),
-        help="folder for timestamped results (default: ~/Desktop/jevid-out)",
+        help=f"folder for timestamped results (default: ~/Desktop/{DROP_OUT})",
     )
     parser.add_argument("--transcript", help="SRT or WebVTT. Default: one sitting next to the timeline")
     parser.add_argument("--taste", help="taste JSON carried into round 1")
@@ -348,6 +358,12 @@ def _add_room(parser: argparse.ArgumentParser) -> None:
 def _room(args) -> int:
     if args.stable_seconds < 0 or args.poll_seconds < 0:
         raise ConductorError("--stable-seconds and --poll-seconds must be >= 0")
+    if args.path is None:
+        if not args.watch:
+            raise ConductorError("room-run needs a drop path, or --watch")
+        args.path = _drop_folder(DROP_IN)
+    if args.out_root is None:
+        args.out_root = _drop_folder(DROP_OUT)
     if args.watch:
         return _watch_room(args)
     result = room_run(
@@ -394,9 +410,15 @@ def _watch_room(args) -> int:
 
 
 def _iterate(args) -> int:
+    source = {"fcpxml": args.fcpxml, "media": args.media}
+    out_dir = args.out_dir or "out"
+    if not args.fcpxml and not args.media:
+        source = {"fcpxml": None, "media": None, **drop_input(_drop_folder(DROP_IN))}
+        if not args.out_dir:
+            out_dir = _drop_folder(DROP_OUT)
     result = iterate(
-        fcpxml=args.fcpxml,
-        media=args.media,
+        fcpxml=source["fcpxml"],
+        media=source["media"],
         brief=args.brief,
         transcript_path=args.transcript,
         taste_path=args.taste,
@@ -404,7 +426,7 @@ def _iterate(args) -> int:
         sequence=args.sequence,
         project=args.project,
         passes=args.passes,
-        out_dir=args.out_dir,
+        out_dir=out_dir,
         live=args.live,
         html=args.html,
         max_rounds=args.max_rounds,
@@ -427,6 +449,13 @@ def _iterate(args) -> int:
     for warning in result.warnings:
         print(f"  warning {warning}", file=sys.stderr)
     return 0
+
+
+def _drop_folder(name: str) -> Path:
+    folder, note = drop_folder(name)
+    if note:
+        print(f"cut-conductor: {note}", file=sys.stderr)
+    return folder
 
 
 def _accept(value: str | None) -> list[str] | None:

@@ -45,7 +45,7 @@ DEFAULT_BRIEF = (
 RELINK = (
     "media-rep src values are absolute file:// URLs from this machine. "
     "Final Cut finds the files only when those paths resolve. Otherwise use "
-    "Relink Files. jevid does not copy media and does not edit the originals."
+    "Relink Files. byjwu does not copy media and does not edit the originals."
 )
 
 ProbeFn = Callable[[Path], "Probe | Skip | None"]

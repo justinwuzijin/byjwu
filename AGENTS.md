@@ -1,13 +1,21 @@
 # AGENTS.md
 
-The product in this repo is **jevid**: an editorial co-pilot for Final Cut.
-Human docs are `README.md` and `docs/room-protocol.md`. The package you edit
-for that product is `conductor/`.
+The product in this repo is **byjwu** (the engine was once called Cut
+Conductor). It edits Justin's (@byjustinwu) YouTube videos: raw footage and
+music in, a finished FCPXML out that he opens in Final Cut Pro himself. Jev
+makes bounded, logical decisions. Claude Opus 5.5 makes open-ended taste
+decisions and builds graphics through code. A Grok Bot room coordinates, and
+no Grok model makes editorial decisions. Human docs are `README.md` (short),
+`docs/technical.md`, and `docs/room-protocol.md`. The package you edit for that product is
+`conductor/`. Do not rename it, `python -m conductor`, or the console
+scripts. Other work depends on those names. The drop folders are
+`~/Desktop/byjwu-in` / `byjwu-out` (`conductor/folders.py`), with a fallback
+to the legacy folder names on machines set up before the rename.
 
 What follows is the design rule for **cutmcp**, the older raw-footage MCP
 cutter that still lives here. `conductor/` does not follow that tier rule.
-Read the Cut Conductor section at the bottom of this file before changing
-Final Cut behavior.
+Read the byjwu engine section at the bottom of this file before
+changing Final Cut behavior.
 
 Works as-is for Cursor and Codex; `cp AGENTS.md CLAUDE.md` for Claude Code.
 
@@ -19,7 +27,7 @@ are made by Jev (TypeSafe's System One model) and turned into an EDL by
 deterministic code.
 
 Human-facing setup for cutmcp lives in `docs/cutmcp.md`. The product README
-is `README.md`. This file is about **how to change the code without breaking
+is `README.md`, and its technical docs are `docs/technical.md`. This file is about **how to change the code without breaking
 the design**.
 
 ---
@@ -196,11 +204,12 @@ text plus question text would make brief edits nearly free.
 
 ---
 
-## Cut Conductor (`conductor/`)
+## byjwu engine (`conductor/`)
 
-A second package in this repo. It is an FCPXML co-pilot: named passes,
+A second package in this repo, historically called Cut Conductor (Cut
+Conductor is now the room bot that runs it). It is an FCPXML co-pilot: named passes,
 Jev decisions, proposal markers, and an explicit apply that writes a new
-file. Human docs are `README.md` and `docs/room-protocol.md`.
+file. Human docs are `docs/technical.md` and `docs/room-protocol.md`.
 
 `python -m conductor ingest` inventories a folder of clips, writes a starter
 FCPXML (filename order, absolute `file://` paths), and calls `analyze`.
@@ -210,7 +219,7 @@ placeholder when the file cannot be probed. `python -m conductor ui` is a
 localhost page that posts a folder path to that command. It does not upload
 media.
 
-Cut Conductor does **not** follow the tier rule above, and it is not a sixth MCP tool.
+The engine does **not** follow the tier rule above, and it is not a sixth MCP tool.
 Do not fold its pipeline into `cutmcp/decide.py` or `cutmcp/assemble.py`.
 Do not route its Jev calls through `cutmcp/jev.py`'s `ask` — the Decisions
 client, the mock, and the action set live in `conductor/jev.py`. The one

@@ -1,15 +1,19 @@
 # Room protocol
 
-How a Grok bot room drives Cut Conductor. v1 is the library and the CLI. No bot is implemented here, and nothing in this repo talks to Final Cut or to a bot API. This file is the contract those bots call.
+How the byjwu Grok Bot room drives the editing engine (the `conductor` package, `python -m conductor`). The repo holds the engine and the CLI. No bot is implemented here, and nothing in this repo talks to Final Cut or to a bot API. This file is the contract those bots call.
+
+The bots coordinate. They do not make editorial decisions. Bounded, logical calls come from Jev (`conductor/jev.py`). Open-ended creative and taste calls come from Claude Opus 5.5 through the Jev/Opus decision router, which is in progress. No Grok model makes an editing decision.
+
+Justin, the owner, does not use the command line. He drops a selects folder, an FCPXML export, a `.fcpxmld` bundle, or a zip in the room or in `~/Desktop/byjwu-in`, and opens the FCPXML that lands in `~/Desktop/byjwu-out` in Final Cut Pro himself. The CLI below is what the bots run for him. The legacy-folder fallback is described under [Desktop folders](#desktop-folders).
 
 The shared object is one timeline plus one brief. The timeline is a Final Cut export, or a starter sequence built from a selects folder. The shared artifact is the JSON report (`protocol` `cut-conductor.room`, `protocol_version` 1).
 
 ```text
-~/Desktop/jevid-in  (export, bundle, zip, or a selects folder)
+~/Desktop/byjwu-in  (export, bundle, zip, or a selects folder)
     → room-run detects which
-    → Transcript supplies SRT/VTT when one is sitting next to the timeline
-    → Conductor iterate: analyze, then auto-apply mechanical cuts only
-    → ~/Desktop/jevid-out/<name>-<timestamp>/vN
+    → Type & Subs supplies SRT/VTT when one is sitting next to the timeline
+    → Cut Conductor iterate: analyze, then auto-apply mechanical cuts only
+    → ~/Desktop/byjwu-out/<name>-<timestamp>/vN
     → room.md and room.json for the chat
     → stop on metrics, no further mechanical cut, or the round cap
     → a person only for escalate, or when the cap hits
@@ -23,24 +27,26 @@ The person does not run the CLI. The bots do.
 
 | folder | who writes it | what it holds |
 |---|---|---|
-| `~/Desktop/jevid-in` | the person | a selects folder, one FCPXML export, a `.fcpxmld` bundle, or a zip of either |
-| `~/Desktop/jevid-out/<name>-<timestamp>/` | the Conductor bot | `room.md`, `room.json`, `starter.fcpxml` when the input was a folder, `v1/` … `vN/`, and `iterate.json` |
+| `~/Desktop/byjwu-in` | the person | a selects folder, one FCPXML export, a `.fcpxmld` bundle, or a zip of either |
+| `~/Desktop/byjwu-out/<name>-<timestamp>/` | the Cut Conductor bot | `room.md`, `room.json`, `starter.fcpxml` when the input was a folder, `v1/` … `vN/`, and `iterate.json` |
 
 The bot runs one command. It detects the drop, calls `iterate`, and does not modify the input. A second run writes a new timestamped folder.
 
 ```bash
-python -m conductor room-run ~/Desktop/jevid-in/cut.fcpxml \
+python -m conductor room-run ~/Desktop/byjwu-in/cut.fcpxml \
   --brief "A tight interview. Keep the guest's story, lose dead air." \
-  --out-root ~/Desktop/jevid-out
+  --out-root ~/Desktop/byjwu-out
 ```
 
 A folder of clips, a `.fcpxmld` bundle, or a `.zip` uses the same command. A drop with music goes to the style assembler first when one is installed (`flow` `assemble+iterate`); otherwise it takes the usual path with a warning. The hook contract is in [room-run.md](room-run.md). Dry-run is the default. `--live` calls Jev. `room.md` is what the bot pastes into chat. `room.json` is `protocol` `cut-conductor.room-run`, `protocol_version` 1. It points at `iterate.json` and the per-round `*.conductor.json` files. It does not replace them.
 
-`room-run --watch ~/Desktop/jevid-in` is the optional inbox process (debounce, skip already processed, log). Operators set that up from [room-run.md](room-run.md). The editor does not run it. Final Cut is still opened by a person, and only to import the FCPXML named in the summary.
+`room-run --watch ~/Desktop/byjwu-in` is the optional inbox process (debounce, skip already processed, log). Operators set that up from [room-run.md](room-run.md). The editor does not run it. Final Cut is still opened by a person, and only to import the FCPXML named in the summary.
+
+With no path, `room-run --watch` watches `~/Desktop/byjwu-in`. `--out-root` defaults to `~/Desktop/byjwu-out`. `iterate` with neither `--fcpxml` nor `--media` reads the same inbox and writes to the same outbox. When `byjwu-in` / `byjwu-out` don't exist but the legacy `jevid-in` / `jevid-out` do, the legacy folders are used and the CLI prints one note line per folder on stderr.
 
 ## Selects folder
 
-A Conductor bot can start from a folder of clips, not only from an export.
+The Cut Conductor bot can start from a folder of clips, not only from an export.
 
 ```bash
 python -m conductor ingest --media selects/ \
@@ -69,7 +75,7 @@ Order is filename, case-insensitive, and only the folder itself is scanned. Dura
 
 ## Iterate
 
-`python -m conductor iterate` is the loop the Conductor bot owns. A person is not in the round.
+`python -m conductor iterate` is the loop the Cut Conductor bot owns. A person is not in the round.
 
 Each round writes `<out-dir>/vN/`:
 
@@ -135,7 +141,7 @@ Code that renders subtitles reads the same data through `conductor.words`: `time
 
 ### What the operator installs
 
-This is for the machine the bot runs on. The person who drops a folder in `~/Desktop/jevid-in` does not install these.
+This is for the machine the bot runs on. The person who drops a folder in `~/Desktop/byjwu-in` does not install these.
 
 ffmpeg (silence, loudness, and the wav extract a local transcript needs):
 
@@ -176,7 +182,18 @@ echo "$CONDUCTOR_WHISPER_MODEL"
 
 ## Roles
 
-### Conductor
+| bot | owns |
+|---|---|
+| byjwu | the build: orchestrates code work and merges it into this repo |
+| Cut Conductor | runs edits: the brief, which passes run, taste, shadow vs apply |
+| Pacing | pace preferences and the `pacing` pass |
+| Colour | colour, and the review-only `colour` pass |
+| Style | the byjustinwu style profile |
+| Type & Subs | transcripts, SF Pro subtitles, text treatments, and the `dialogue` pass |
+
+Style has no pass in the engine yet. The sections below cover the roles the engine already serves.
+
+### Cut Conductor
 
 Owns the brief, which passes run, the taste file, the iterate loop, and whether a one-shot run is shadow or apply.
 
@@ -187,14 +204,14 @@ Owns the brief, which passes run, the taste file, the iterate loop, and whether 
 - Applies a review call only when a person named that candidate id with `--accept`. Iterate does not do this.
 - Writes `*.conductor.json` per round, `iterate.json` for the loop, and `room.json` / `room.md` for the chat summary. Do not invent another schema.
 
-### Transcript
+### Type & Subs
 
-Owns the SRT or WebVTT. Times are sequence time, the same clock as the spine, not source-clip time.
+Owns the transcript (SRT or WebVTT), subtitles, and text treatments. Times are sequence time, the same clock as the spine, not source-clip time.
 
 - Drives `dialogue` (`--pass dialogue`): a whole filler cue, or a pause of at least 0.80s sitting next to filler.
 - Filler is the same whole-cue list cutmcp uses (`um`, `you know`, `i mean`, and their spelling variants). `like`, `yeah`, and `okay` are not filler.
-- Dialogue is creative. A confident `tighten` still lands in review. Transcript does not auto-apply it.
-- When a person keeps a breath or a filler, Transcript appends a `reject` (or the Conductor does, on the person's behalf). The next dialogue pass sees that event in taste state.
+- Dialogue is creative. A confident `tighten` still lands in review. Type & Subs does not auto-apply it.
+- When a person keeps a breath or a filler, Type & Subs appends a `reject` (or Cut Conductor does, on the person's behalf). The next dialogue pass sees that event in taste state.
 
 ### Pacing
 
@@ -217,7 +234,7 @@ Owns picture notes that can be read from the XML, and the honest limit where the
 
 ### Human
 
-Opens the FCPXML from `~/Desktop/jevid-out` when `iterate.json` says `needs_human`. That is an escalate, or a loop that hit `--max-rounds`. Other stops are the bot finishing.
+Opens the FCPXML from `~/Desktop/byjwu-out` when `iterate.json` says `needs_human`. That is an escalate, or a loop that hit `--max-rounds`. Other stops are the bot finishing.
 
 - `eligible` — high-confidence mechanical calls. Iterate already applied these when they cleared the gate. A one-shot `apply` can do the same with `--min-confidence` on the `mechanical` pass.
 - `review` — creative calls, including colour, and mechanical calls that missed the auto gate. Left marked. A person may `--accept` an id whose raw action is `tighten` or `remove`. The loop does not wait on these.
@@ -230,8 +247,8 @@ A pass is a named slice. Omit `--pass` and the room runs `mechanical`, then `dia
 
 | pass | typical owner | creative | v1 |
 |---|---|---|---|
-| `mechanical` | Conductor | no | bare silence gaps, clips under half a second. The only pass `iterate` auto-applies. |
-| `dialogue` | Transcript | yes | transcript filler and the pauses around it |
+| `mechanical` | Cut Conductor | no | bare silence gaps, clips under half a second. The only pass `iterate` auto-applies. |
+| `dialogue` | Type & Subs | yes | transcript filler and the pauses around it |
 | `pacing` | Pacing | yes | long holds, plus review notes for covered gaps, repeated source, rhythm, frame rates, untrimmed runs, silent cards, and a music bed that ends early |
 | `colour` | Colour | yes | missing roles, extreme aspect mismatches in the XML, placeholder for exposure and skin. Never an unattended cut. |
 | `story` | later | yes | reserved |
@@ -353,38 +370,38 @@ The report row carries `confidence` (after the prior), `confidence_raw` (what Je
 ```bash
 python -m conductor analyze reexport.fcpxml \
   --brief "..." \
-  --taste ~/Desktop/jevid-out/project.taste.json \
-  --global-taste ~/Desktop/jevid-out/global.taste.json \
-  --learn-from ~/Desktop/jevid-out/v1/timeline.conductor.fcpxml \
-  --feedback ~/Desktop/jevid-in/notes.json \
-  --out-dir ~/Desktop/jevid-out/v2
+  --taste ~/Desktop/byjwu-out/project.taste.json \
+  --global-taste ~/Desktop/byjwu-out/global.taste.json \
+  --learn-from ~/Desktop/byjwu-out/v1/timeline.conductor.fcpxml \
+  --feedback ~/Desktop/byjwu-in/notes.json \
+  --out-dir ~/Desktop/byjwu-out/v2
 ```
 
 `iterate` takes the same three flags. `--learn-from` and `--feedback` apply on round 1 only. `--global-taste` is read every round. Later rounds keep using the taste file the previous round wrote.
 
 ### Diff the re-export
 
-`--learn-from` is the shadow FCPXML the room handed back (the one with Conductor markers). The main file is what the person re-exported after editing in Final Cut. The same pair can be recorded first:
+`--learn-from` is the shadow FCPXML the room handed back (the one with Cut Conductor markers). The main file is what the person re-exported after editing in Final Cut. The same pair can be recorded first:
 
 ```bash
 python -m conductor feedback \
   --taste project.taste.json \
-  --out ~/Desktop/jevid-out/project.taste.json \
-  --proposed ~/Desktop/jevid-out/v1/timeline.conductor.fcpxml \
-  --edited ~/Desktop/jevid-in/reexport.fcpxml
+  --out ~/Desktop/byjwu-out/project.taste.json \
+  --proposed ~/Desktop/byjwu-out/v1/timeline.conductor.fcpxml \
+  --edited ~/Desktop/byjwu-in/reexport.fcpxml
 ```
 
-Matching uses the media URL and source time, so Final Cut can renumber asset ids. For each Conductor marker:
+Matching uses the media URL and source time, so Final Cut can renumber asset ids. For each Cut Conductor marker:
 
 | what the re-export did | event |
 |---|---|
 | suggested range is gone | `accept` |
 | suggested range is only partly gone | `modify` |
-| picture remains, that marker is gone, and some other Conductor marker survived | `reject` |
+| picture remains, that marker is gone, and some other Cut Conductor marker survived | `reject` |
 | picture remains and the marker is still there | nothing (still open) |
 | a cut that matches no suggestion | `extra` |
 
-If the re-export has zero Conductor markers, rejects are not inferred. A stripped note is not a reject-all. Accepts, modifies, and extras still are. The bot says so from the warning.
+If the re-export has zero Cut Conductor markers, rejects are not inferred. A stripped note is not a reject-all. Accepts, modifies, and extras still are. The bot says so from the warning.
 
 `extra` events name a kind when the cut is recognizable (`silence_gap`, `short_clip`, `long_static`). Anything else is `editor_cut` and does not move the known kinds. Checked-in pair: `fixtures/feedback/proposed.fcpxml` and `fixtures/feedback/edited.fcpxml`.
 
@@ -426,11 +443,11 @@ Write one JSON object per thing the person said. `at` is a timecode on the seque
 ```bash
 python -m conductor feedback \
   --taste project.taste.json \
-  --out ~/Desktop/jevid-out/project.taste.json \
+  --out ~/Desktop/byjwu-out/project.taste.json \
   --global-taste global.taste.json \
-  --global-out ~/Desktop/jevid-out/global.taste.json \
-  --notes ~/Desktop/jevid-in/notes.json \
-  --fcpxml ~/Desktop/jevid-in/reexport.fcpxml
+  --global-out ~/Desktop/byjwu-out/global.taste.json \
+  --notes ~/Desktop/byjwu-in/notes.json \
+  --fcpxml ~/Desktop/byjwu-in/reexport.fcpxml
 ```
 
 `--fcpxml` is how `at` finds a candidate. Without it, timed notes stay pending until the next analyze.
@@ -483,8 +500,8 @@ Who appends what:
 
 | event | who writes it | when |
 |---|---|---|
-| `accept` | Conductor, during `apply` or `iterate` | after the new FCPXML is built, one event per cut |
-| `accept`, `reject`, `modify`, `extra` | Conductor, from `--learn-from` or `feedback --proposed` | the re-export differs from the shadow file |
+| `accept` | Cut Conductor, during `apply` or `iterate` | after the new FCPXML is built, one event per cut |
+| `accept`, `reject`, `modify`, `extra` | Cut Conductor, from `--learn-from` or `feedback --proposed` | the re-export differs from the shadow file |
 | `accept` / `reject` | the bot, via `feedback --event` or a notes file | the person said so in the room |
 | rule | the bot, via a notes item with a `kind` and no `at` | a standing preference, including `loosen_auto` |
 
@@ -525,8 +542,8 @@ Who appends what:
 ## What this room does not do
 
 - No Final Cut plugin, Apple Events, or watch-folder rewrite of the open library.
-- No sixth tool on the cutmcp MCP server. Conductor is a sibling package.
+- No sixth tool on the cutmcp MCP server. `conductor` is a sibling package.
 - No story, audio, or b-roll judgments until a generator is registered. Colour is registered and review-only; it does not decode the picture.
 - No unattended cut outside the mechanical auto gate. Iterate does not accept review ids on its own.
-- No Desktop watcher in this repo. `~/Desktop/jevid-in` and `~/Desktop/jevid-out` are the folders the bot is told to use.
+- No Desktop watcher in this repo. `~/Desktop/byjwu-in` and `~/Desktop/byjwu-out` are the folders the bot is told to use.
 - No trained model on the taste log. Priors are a bounded count, recomputed from the log, and they cannot loosen mechanical auto-apply without `loosen_auto`.

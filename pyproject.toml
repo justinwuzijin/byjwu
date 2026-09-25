@@ -3,9 +3,9 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "cutmcp"
+name = "byjwu"
 version = "0.1.0"
-description = "jevid: a Final Cut editorial co-pilot (Cut Conductor), plus the cutmcp EDL cutter"
+description = "byjwu: edits byjustinwu YouTube videos to FCPXML with TypeSafe Jev, Claude Opus 5.5, and a Grok Bot room, plus the cutmcp EDL cutter"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [

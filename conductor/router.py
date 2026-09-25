@@ -104,7 +104,7 @@ _SECRET_ENV = ("OPENROUTER_API_KEY", "TYPESAFE_API_KEY", "ANTHROPIC_API_KEY")
 _TOKEN = re.compile(r"(sk-|Bearer\s+)[A-Za-z0-9_\-.]{6,}")
 
 OPUS_SYSTEM = (
-    "You are the creative editor on a Final Cut Pro timeline for jevid. You make "
+    "You are the creative editor on a Final Cut Pro timeline for byjwu. You make "
     "taste decisions only: story shape, which moments carry the piece, music feel "
     "and placement, typography and visual treatment, montage. Mechanical checks "
     "are decided elsewhere. Answer every object in `items` exactly once, by `id`. "

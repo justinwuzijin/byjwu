@@ -17,7 +17,7 @@ reach Jev and its creative calls reach Opus through the same cache and
 fallbacks as the passes. ``room.json`` has the combined ``decision_usage``.
 
 Each run writes a new timestamped folder under ``--out-root`` (default
-``~/Desktop/jevid-out``). ``room.md`` is the chat text. ``room.json`` is the
+``~/Desktop/byjwu-out``). ``room.md`` is the chat text. ``room.json`` is the
 same summary. The shadow FCPXML from the last round is always on disk; the
 summary names the file to import in Final Cut.
 
@@ -46,6 +46,7 @@ from urllib.parse import unquote, urlparse
 from . import __version__
 from .errors import ConductorError
 from .fcpxml import Document, parse_fcpxml
+from .folders import DROP_OUT, drop_folder
 from .ingest import DEFAULT_BRIEF, VIDEO_EXTENSIONS
 from .iterate import IterateResult, iterate
 from .jev import dry_run_forced
@@ -198,8 +199,8 @@ def room_run(
         )
         if _fingerprint(source) != fingerprint:
             raise ConductorError(
-                "The drop changed while jevid was reading it. "
-                "The original was not written by jevid. Drop it again once the copy has finished."
+                "The drop changed while byjwu was reading it. "
+                "The original was not written by byjwu. Drop it again once the copy has finished."
             )
         summary = _summarize(prepared, result, dest, router)
         _write_success(dest, summary)
@@ -242,7 +243,7 @@ def watch(
     if not folder.is_dir():
         raise ConductorError(
             f"The drop folder {folder} is not there. "
-            "Create ~/Desktop/jevid-in and drop a Final Cut XML or a folder of clips into it."
+            "Create ~/Desktop/byjwu-in and drop a Final Cut XML or a folder of clips into it."
         )
     if stable_seconds < 0 or poll_seconds < 0:
         raise ConductorError("--stable-seconds and --poll-seconds must be >= 0")
@@ -298,7 +299,7 @@ def scan_once(
     if not folder.is_dir():
         raise ConductorError(
             f"The drop folder {folder} is not there. "
-            "Create ~/Desktop/jevid-in and drop a Final Cut XML or a folder of clips into it."
+            "Create ~/Desktop/byjwu-in and drop a Final Cut XML or a folder of clips into it."
         )
     if stable_seconds < 0:
         raise ConductorError("--stable-seconds must be >= 0")
@@ -661,7 +662,7 @@ def _inspect_timeline(prepared: Prepared) -> None:
         supported = ", ".join(SUPPORTED_FCPXML)
         shown = version or "missing"
         raise ConductorError(
-            f"This Final Cut XML is version {shown}, which jevid cannot read. "
+            f"This Final Cut XML is version {shown}, which byjwu cannot read. "
             f"Supported versions are {supported}. "
             "In Final Cut, choose File → Export XML… and export a current XML, then drop that file again."
         )
@@ -933,7 +934,7 @@ def _markdown(payload: dict) -> str:
     if payload["input"].get("contained"):
         kind = f"{kind}, {payload['input']['contained']} inside"
     lines = [
-        "# jevid",
+        "# byjwu",
         "",
         f"Input: {payload['input']['name']} ({kind})",
         f"Flow: {payload['flow']}" + (f" (style {payload['style']})" if payload.get("style") else ""),
@@ -1302,7 +1303,7 @@ def _existing_file(path: str | Path, label: str) -> Path:
 
 def _out_root(path: str | Path | None) -> Path:
     if path is None:
-        return (Path.home() / "Desktop" / "jevid-out").resolve()
+        return drop_folder(DROP_OUT)[0].resolve()
     return Path(path).expanduser().resolve()
 
 
@@ -1312,7 +1313,7 @@ def _refuse_inside(source: Path, out_root: Path) -> None:
     if root == src or _is_under(root, src):
         raise ConductorError(
             "Refusing to write results inside the drop. "
-            "Pass --out-root pointing at a different folder, usually ~/Desktop/jevid-out."
+            "Pass --out-root pointing at a different folder, usually ~/Desktop/byjwu-out."
         )
 
 
@@ -1459,8 +1460,8 @@ def _fraction(value: float) -> Fraction:
 
 def _unexpected(exc: Exception) -> str:
     return (
-        f"jevid stopped on this drop ({type(exc).__name__}: {exc}). "
-        "The original was not written by jevid. Check the drop can be read and the output folder written, "
+        f"byjwu stopped on this drop ({type(exc).__name__}: {exc}). "
+        "The original was not written by byjwu. Check the drop can be read and the output folder written, "
         "then drop it again."
     )
 

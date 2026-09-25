@@ -72,6 +72,7 @@ def _isolated_env(tmp_path_factory):
     """No API key, no shared cache, no cross-test contamination."""
     os.environ["JEV_MOCK"] = "1"
     os.environ["CUTMCP_CACHE"] = str(tmp_path_factory.mktemp("cutmcp-cache"))
+    os.environ["HOME"] = str(tmp_path_factory.mktemp("home"))
     os.environ.pop("TYPESAFE_API_KEY", None)
     yield
 

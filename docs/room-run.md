@@ -1,15 +1,15 @@
 # room-run for bot operators
 
-This note is for the person who runs the Grok bot on the editor's Mac. The editor does not run these commands. They drop a file in `~/Desktop/jevid-in` and open the FCPXML the room names.
+This note is for the person who runs the Grok bot on the editor's Mac. The editor does not run these commands. They drop a file in `~/Desktop/byjwu-in` and open the FCPXML the room names.
 
 `room-run` is the one command the bot should shell out to. It detects the drop, calls `iterate`, and writes a folder the bot can describe in chat.
 
 ## One drop
 
 ```bash
-python -m conductor room-run ~/Desktop/jevid-in/cut.fcpxml \
+python -m conductor room-run ~/Desktop/byjwu-in/cut.fcpxml \
   --brief "A tight interview. Keep the guest's story, lose dead air." \
-  --out-root ~/Desktop/jevid-out
+  --out-root ~/Desktop/byjwu-out
 ```
 
 Accepted inputs:
@@ -21,7 +21,7 @@ Accepted inputs:
 | `.zip` of either | unzip into the output folder, then iterate |
 | folder of clips | starter FCPXML, then iterate |
 
-The drop is only read. Each run creates `~/Desktop/jevid-out/<name>-<YYYYMMDD-HHMMSS>/`. Running it again creates another folder.
+The drop is only read. Each run creates `~/Desktop/byjwu-out/<name>-<YYYYMMDD-HHMMSS>/`. Running it again creates another folder.
 
 `room.md` is the chat text: input kind, flow, duration before and after, cuts with timecodes, rows flagged for the editor, stop reason, signals (`transcript`, `media`, `music`, `audio` when ffmpeg read the clips, `words` when a local transcript ran, or `none`), an `Audio and words:` line with the media-signal summary, and the absolute path to open in Final Cut. `room.json` is the same object (`protocol` `cut-conductor.room-run`). It also carries `media_signals` (the last round's `signals` summary and skip reasons) and `words` (the words file for the FCPXML to open, or null). `room-run` runs media signals with the `auto` defaults; see [Media signals](room-protocol.md#media-signals). Paste `room.md`. Do not re-sort the flagged list; it follows the round report. Cut timecodes are positions on the timeline before that cut. Flagged times are positions on the file to open.
 
@@ -57,12 +57,14 @@ Media that the XML names on another volume is not a failure. The summary says th
 ## Watch the inbox
 
 ```bash
-python -m conductor room-run --watch ~/Desktop/jevid-in \
-  --out-root ~/Desktop/jevid-out \
+python -m conductor room-run --watch ~/Desktop/byjwu-in \
+  --out-root ~/Desktop/byjwu-out \
   --brief "A tight interview. Keep the guest's story, lose dead air."
 ```
 
-The process scans the top of `jevid-in`. A file or folder is processed only after its size has stayed the same for `--stable-seconds` (default 2). That waits out a copy that is still writing. Already processed bytes are stored in `~/Desktop/jevid-out/.room-run.json` and skipped. Results are appended to `~/Desktop/jevid-out/room-run.log`.
+With no path, `--watch` watches `~/Desktop/byjwu-in`. Without `--out-root`, results go to `~/Desktop/byjwu-out`. If `byjwu-in` / `byjwu-out` don't exist but the legacy `jevid-in` / `jevid-out` do, the legacy folders are used and one note line per folder goes to stderr. Rename the folders to stop the note.
+
+The process scans the top of the inbox. A file or folder is processed only after its size has stayed the same for `--stable-seconds` (default 2). That waits out a copy that is still writing. Already processed bytes are stored in `~/Desktop/byjwu-out/.room-run.json` and skipped. Results are appended to `~/Desktop/byjwu-out/room-run.log`.
 
 Loose video files dropped straight into the inbox are one clip-folder run. A `.fcpxml`, a `.zip`, a `.fcpxmld`, or a subfolder is its own run. Sidecar `.srt`, `.vtt`, `durations.json`, and music files are not runs; they travel with the loose clips.
 
@@ -74,18 +76,18 @@ Stop with Ctrl-C. A launchd job exits when the process is stopped and, with `Kee
 
 ## launchd
 
-`docs/com.jevid.room-run.plist` is an example. Replace every `CHANGE_ME` path. Install it for the macOS user who owns `~/Desktop`, so the paths resolve as that person:
+`docs/com.byjwu.room-run.plist` is an example. Replace every `CHANGE_ME` path. `/Users/CHANGE_ME/byjwu` stands for your checkout of this repo. Install it for the macOS user who owns `~/Desktop`, so the paths resolve as that person:
 
 ```bash
-cp docs/com.jevid.room-run.plist ~/Library/LaunchAgents/com.jevid.room-run.plist
+cp docs/com.byjwu.room-run.plist ~/Library/LaunchAgents/com.byjwu.room-run.plist
 # edit the copy, then:
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.jevid.room-run.plist
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.byjwu.room-run.plist
 ```
 
-The example does not pass `--live` and does not set an API key. Leave it that way unless you have decided the room should call Jev. Logs from launchd go to `~/Library/Logs/jevid/`. The run log the bot can read is still `~/Desktop/jevid-out/room-run.log`.
+The example does not pass `--live` and does not set an API key. Leave it that way unless you have decided the room should call Jev. Logs from launchd go to `~/Library/Logs/byjwu/`. The run log the bot can read is still `~/Desktop/byjwu-out/room-run.log`.
 
 Unload with:
 
 ```bash
-launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.jevid.room-run.plist
+launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.byjwu.room-run.plist
 ```

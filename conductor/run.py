@@ -7,6 +7,7 @@ path is only ever read.
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -15,11 +16,14 @@ from .apply import apply_edits
 from .decide import deletions_for, judge
 from .errors import ConductorError
 from .fcpxml import Document, parse_fcpxml, write_document
+from .feedback import bind_pending, diff_fcpxml, ingest_notes
 from .jev import dry_run_forced
 from .markers import apply_markers
+from .metrics import measure
 from .passes import collect, resolve_names
 from .report import build_payload, dumps, render_html, render_markdown
 from .taste import Taste, feedback_event, load_taste, write_taste
+from .timeutil import seconds
 from .transcript import load_transcript
 
 
@@ -60,25 +64,56 @@ def analyze(
     apply: bool = False,
     accept: list[str] | None = None,
     min_confidence: float | None = None,
+    apply_passes: list[str] | None = None,
+    allow_empty_apply: bool = False,
+    skip_apply: Callable[[dict], bool] | None = None,
+    global_taste_path: str | Path | None = None,
+    feedback_path: str | Path | None = None,
+    learn_from: str | Path | None = None,
 ) -> Report:
     """Run the named passes and write a shadow proposal.
 
     ``live=False`` (the default) uses the local mock and does not read an API
     key. ``apply=True`` writes a second FCPXML. It requires ``accept`` or
-    ``min_confidence`` together with ``passes``.
+    ``min_confidence`` together with ``passes`` (or ``apply_passes``).
+
+    ``apply_passes`` limits which passes may be cut. The report still contains
+    every pass in ``passes``. ``allow_empty_apply`` writes the shadow and
+    skips the cut file when the gate matches nothing. ``skip_apply`` sees the
+    pre-cut metrics and can decline the cut.
+
+    ``learn_from`` is the previous conductor shadow FCPXML. ``fcpxml_path``
+    is the editor's re-export. The diff is appended to the project taste
+    before this run judges. ``feedback_path`` is a notes file from a room
+    bot. ``global_taste_path`` is read-only.
     """
     source = Path(fcpxml_path)
     source_bytes = source.read_bytes()
     document = parse_fcpxml(source)
     sequences = _select(document, project)
     cues = load_transcript(transcript_path) if transcript_path else []
-    taste = load_taste(taste_path)
+    taste = load_taste(taste_path, global_path=global_taste_path)
+    learned: list[dict] = []
+    learn_warnings: list[str] = []
+    if learn_from:
+        events, diff_warnings = diff_fcpxml(learn_from, source)
+        learn_warnings.extend(diff_warnings)
+        for event in events:
+            if taste.append(event):
+                learned.append(event)
+    if feedback_path:
+        noted, note_warnings = ingest_notes(taste, feedback_path)
+        learn_warnings.extend(note_warnings)
+        learned.extend(noted)
     candidates = collect(
         sequences,
         cues,
         transcript_present=transcript_path is not None,
         requested=passes,
     )
+    bound, bind_warnings = bind_pending(taste, candidates)
+    learn_warnings.extend(bind_warnings)
+    learned.extend(bound)
     use_live = bool(live) and not dry_run_forced()
     proposals, receipts = judge(candidates, brief, live=use_live, taste=taste)
     mode = "live" if use_live else "dry-run"
@@ -87,28 +122,48 @@ def analyze(
     cuts: list[dict] = []
     apply_warnings: list[str] = []
     applied_doc = None
-    if apply:
-        deletions = deletions_for(
-            proposals,
-            candidates,
-            accept=accept,
-            min_confidence=min_confidence,
-            passes=passes,
-            hold=taste.hold(),
-        )
-        applied_doc = parse_fcpxml(source)
-        result = apply_edits(applied_doc, deletions)
-        cuts = result.cuts
-        apply_warnings = result.warnings
-        for deletion in deletions:
-            taste.append(
-                feedback_event(
-                    event="accept",
-                    candidate_id=deletion.candidate_id,
-                    action=deletion.action,
-                    pass_name=deletion.pass_name,
-                )
+    perform_apply = apply
+    if perform_apply and skip_apply is not None:
+        if skip_apply(measure(sequences, proposals=proposals)):
+            perform_apply = False
+    if perform_apply:
+        try:
+            deletions = deletions_for(
+                proposals,
+                candidates,
+                accept=accept,
+                min_confidence=min_confidence,
+                passes=apply_passes if apply_passes is not None else passes,
+                hold=taste.hold(),
             )
+        except ConductorError as exc:
+            if allow_empty_apply and str(exc).startswith("no cuts matched"):
+                deletions = []
+            else:
+                raise
+        if deletions:
+            applied_doc = parse_fcpxml(source)
+            result = apply_edits(applied_doc, deletions)
+            cuts = result.cuts
+            apply_warnings = result.warnings
+            by_candidate = {item.id: item for item in candidates}
+            for deletion in deletions:
+                candidate = by_candidate[deletion.candidate_id]
+                taste.append(
+                    feedback_event(
+                        event="accept",
+                        candidate_id=deletion.candidate_id,
+                        action=deletion.action,
+                        pass_name=deletion.pass_name,
+                        fields={
+                            "clip_name": candidate.clip_name,
+                            "kind": candidate.kind,
+                            "timeline_start_seconds": seconds(deletion.start),
+                            "timeline_end_seconds": seconds(deletion.end),
+                            "source": "person" if accept else "auto",
+                        },
+                    )
+                )
 
     out_fcpxml = out_applied = out_json = out_md = out_html = out_taste = None
     markers_added = 0
@@ -156,9 +211,10 @@ def analyze(
         taste=taste.to_state(),
         gates=taste.gates.to_dict(),
         cuts=cuts,
-        apply_warnings=apply_warnings,
-        shadow=not apply,
-        applied=apply,
+        apply_warnings=[*learn_warnings, *apply_warnings],
+        shadow=not bool(cuts),
+        applied=bool(cuts),
+        learned=learned,
     )
     if source.read_bytes() != source_bytes:
         raise ConductorError("refusing to finish: the source FCPXML changed during the run")
@@ -185,7 +241,7 @@ def analyze(
         out_markdown=out_md,
         out_html=out_html,
         out_taste=out_taste,
-        warnings=apply_warnings,
+        warnings=[*learn_warnings, *apply_warnings],
     )
 
 

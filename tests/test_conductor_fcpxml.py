@@ -27,6 +27,7 @@ def test_sample_project_clips_assets_markers_and_roles():
     assert sequence.event == "Interview"
     assert sequence.tc_start == 0
     assert sequence.duration == Fraction(377, 6)
+    assert sequence.width == 1920 and sequence.height == 1080
     assert [clip.name for clip in sequence.spine] == [
         "Cold open",
         "Gap",
@@ -37,6 +38,8 @@ def test_sample_project_clips_assets_markers_and_roles():
     ]
     cold, gap, flash, guest, broll, button = sequence.spine
     assert cold.offset == 0 and cold.start == 12 and cold.duration == 8
+    assert cold.width == 1920 and cold.height == 1080
+    assert gap.width is None and gap.height is None
     assert cold.audio_role == "dialogue"
     assert cold.roles == ("dialogue.dialogue-1",)
     assert cold.markers[0].value == "Keep this"

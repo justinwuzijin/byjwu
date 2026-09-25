@@ -87,6 +87,8 @@ class Clip:
     markers: list[XmlMarker] = field(default_factory=list)
     connected_clips: list[Clip] = field(default_factory=list)
     element: ET.Element | None = None
+    width: int | None = None
+    height: int | None = None
 
     @property
     def timeline_start(self) -> Fraction:
@@ -118,6 +120,8 @@ class Sequence:
     frame_duration: Fraction
     spine: list[Clip]
     element: ET.Element | None = None
+    width: int | None = None
+    height: int | None = None
 
 
 @dataclass
@@ -180,8 +184,11 @@ def _document(root: ET.Element, tree: ET.ElementTree, source: Path | None) -> Do
         name = project.get("name") or "Untitled"
         format_id = sequence_el.get("format")
         frame = Fraction(1, 24)
+        seq_width = seq_height = None
         if format_id and format_id in formats:
             frame = formats[format_id].frame_duration
+            seq_width = formats[format_id].width
+            seq_height = formats[format_id].height
         spine_el = next(
             (child for child in sequence_el if local(child.tag) == "spine"), None
         )
@@ -196,6 +203,8 @@ def _document(root: ET.Element, tree: ET.ElementTree, source: Path | None) -> Do
                     clip_id=f"s{len(sequences)}c{index}",
                     parent_offset=Fraction(0),
                     connected=False,
+                    assets=assets,
+                    formats=formats,
                 )
                 _index(clips, clip)
                 spine.append(clip)
@@ -212,6 +221,8 @@ def _document(root: ET.Element, tree: ET.ElementTree, source: Path | None) -> Do
                 frame_duration=frame,
                 spine=spine,
                 element=sequence_el,
+                width=seq_width,
+                height=seq_height,
             )
         )
     if not sequences:
@@ -287,7 +298,14 @@ def _assets(root: ET.Element) -> dict[str, Asset]:
     return found
 
 
-def _clip(elem: ET.Element, clip_id: str, parent_offset: Fraction, connected: bool) -> Clip:
+def _clip(
+    elem: ET.Element,
+    clip_id: str,
+    parent_offset: Fraction,
+    connected: bool,
+    assets: dict[str, Asset],
+    formats: dict[str, FormatInfo],
+) -> Clip:
     offset = parse_time(elem.get("offset"), Fraction(0))
     start = parse_time(elem.get("start"), Fraction(0))
     duration = parse_time(elem.get("duration"), Fraction(0))
@@ -309,11 +327,14 @@ def _clip(elem: ET.Element, clip_id: str, parent_offset: Fraction, connected: bo
                     clip_id=f"{clip_id}k{child_index}",
                     parent_offset=timeline_start,
                     connected=True,
+                    assets=assets,
+                    formats=formats,
                 )
             )
             child_index += 1
     name = elem.get("name") or elem.get("ref") or local(elem.tag)
     lane_raw = elem.get("lane")
+    width, height = _frame_size(elem.get("ref"), assets, formats)
     return Clip(
         id=clip_id,
         kind=local(elem.tag),
@@ -331,7 +352,25 @@ def _clip(elem: ET.Element, clip_id: str, parent_offset: Fraction, connected: bo
         markers=markers,
         connected_clips=connected_clips,
         element=elem,
+        width=width,
+        height=height,
     )
+
+
+def _frame_size(
+    ref: str | None,
+    assets: dict[str, Asset],
+    formats: dict[str, FormatInfo],
+) -> tuple[int | None, int | None]:
+    if not ref:
+        return None, None
+    asset = assets.get(ref)
+    if asset is None or not asset.format_id:
+        return None, None
+    info = formats.get(asset.format_id)
+    if info is None:
+        return None, None
+    return info.width, info.height
 
 
 def _marker(elem: ET.Element) -> XmlMarker:

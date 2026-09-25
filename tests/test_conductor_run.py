@@ -47,14 +47,16 @@ def test_shadow_adds_markers_and_keeps_every_edit(tmp_path):
         (c.name, c.offset, c.start, c.duration, c.ref) for c in original
     ]
     cold = shadow[0]
-    assert [marker.value for marker in cold.markers] == ["Keep this"]
+    assert [marker.value for marker in cold.markers if not marker.value.startswith("CC ")] == [
+        "Keep this"
+    ]
     assert cold.markers[0].note == "human marker"
     assert cold.connected_clips[0].name == "Lower third"
     guest = next(clip for clip in shadow if clip.name == "Guest explains")
     assert guest.element is not None
     keywords = [child.get("value") for child in guest.element if child.tag == "keyword"]
     assert keywords == ["interview"]
-    assert conductor_marker_count(parse_fcpxml(report.out_fcpxml).tree.getroot()) == 6
+    assert conductor_marker_count(parse_fcpxml(report.out_fcpxml).tree.getroot()) == 7
     gap = next(clip for clip in shadow if clip.name == "Gap")
     proposal = [marker for marker in gap.markers if marker.value.startswith("CC ")]
     assert len(proposal) == 1
@@ -71,17 +73,22 @@ def test_ranked_report_keeps_creative_calls_in_review(tmp_path):
     report = _run(tmp_path)
     eligible = [row for row in report.changes if row["section"] == "eligible"]
     review = [row for row in report.changes if row["section"] == "review"]
-    assert [row["candidate_id"] for row in eligible] == ["c0001"]
+    assert [row["candidate_id"] for row in eligible] == ["c0002"]
+    assert eligible[0]["kind"] == "silence_gap"
     assert eligible[0]["action"] == "remove" and eligible[0]["pass"] == "mechanical"
     assert eligible[0]["timecode"] == "00:00:08:00"
+    colour = next(row for row in review if row["pass"] == "colour")
+    assert colour["candidate_id"] == "c0001"
+    assert colour["raw_action"] == "mark_review" and colour["disposition"] == "review"
     assert [row["candidate_id"] for row in review] == [
-        "c0002",
-        "c0004",
-        "c0005",
         "c0003",
+        "c0001",
+        "c0005",
         "c0006",
+        "c0004",
+        "c0007",
     ]
-    assert {row["pass"] for row in review} >= {"dialogue", "pacing", "mechanical"}
+    assert {row["pass"] for row in review} >= {"dialogue", "pacing", "mechanical", "colour"}
     assert report.payload["receipts"][0]["state"]["taste"]["prefs"]["target_pace"] == "measured"
     action = report.payload["receipts"][0]["questions"]["c0001_action"]
     assert set(action["criteria"]) == {
@@ -106,7 +113,7 @@ def test_running_on_the_shadow_file_does_not_duplicate_markers(tmp_path):
     )
     assert second.marker_count == 0
     root = parse_fcpxml(second.out_fcpxml).tree.getroot()
-    assert conductor_marker_count(root) == 6
+    assert conductor_marker_count(root) == 7
 
 
 def test_confidence_apply_removes_only_the_gap(tmp_path):
@@ -137,7 +144,7 @@ def test_confidence_apply_removes_only_the_gap(tmp_path):
 
 
 def test_accept_lifts_a_review_filler(tmp_path):
-    report = _run(tmp_path, apply=True, accept=["c0003"])
+    report = _run(tmp_path, apply=True, accept=["c0004"])
     applied = _spine(report.out_applied)
     guests = [clip for clip in applied if clip.name == "Guest explains"]
     assert len(guests) == 2
@@ -151,7 +158,7 @@ def test_accept_lifts_a_review_filler(tmp_path):
 
 
 def test_accept_and_confidence_path_can_stack(tmp_path):
-    report = _run(tmp_path, apply=True, accept=["c0001", "c0003"])
+    report = _run(tmp_path, apply=True, accept=["c0002", "c0004"])
     applied = _spine(report.out_applied)
     assert "Gap" not in {clip.name for clip in applied}
     guests = [clip for clip in applied if clip.name == "Guest explains"]
@@ -162,6 +169,8 @@ def test_accept_and_confidence_path_can_stack(tmp_path):
 def test_creative_pass_is_not_auto_applied(tmp_path):
     with pytest.raises(ConductorError, match="no cuts matched"):
         _run(tmp_path, apply=True, min_confidence=0.8, passes=["dialogue"])
+    with pytest.raises(ConductorError, match="no cuts matched"):
+        _run(tmp_path, apply=True, min_confidence=0.8, passes=["colour"])
 
 
 def test_apply_requires_an_explicit_selector(tmp_path):
@@ -173,7 +182,7 @@ def test_unknown_accept_id_and_non_cut(tmp_path):
     with pytest.raises(ConductorError, match="unknown candidate"):
         _run(tmp_path, apply=True, accept=["c9999"])
     with pytest.raises(ConductorError, match="no cut to apply"):
-        _run(tmp_path, apply=True, accept=["c0002"])
+        _run(tmp_path, apply=True, accept=["c0001"])
 
 
 def test_loose_pace_drops_the_gap_out_of_auto(tmp_path):
@@ -185,7 +194,7 @@ def test_loose_pace_drops_the_gap_out_of_auto(tmp_path):
     report = _run(tmp_path / "out", taste_path=taste)
     eligible = [row for row in report.changes if row["section"] == "eligible"]
     assert eligible == []
-    gap = next(row for row in report.changes if row["candidate_id"] == "c0001")
+    gap = next(row for row in report.changes if row["kind"] == "silence_gap")
     assert gap["section"] == "review"
     assert gap["raw_action"] == "tighten"
 

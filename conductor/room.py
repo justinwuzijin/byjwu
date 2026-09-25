@@ -1122,13 +1122,13 @@ def _across_rounds(rounds: list[dict]) -> tuple[int, int]:
     rules = 0
     cuts = 0
     for row in rounds:
-        fired, applied = _rules_from_round(row)
+        fired, applied = _rule_counts(row)
         rules += fired
         cuts += applied
     return rules, cuts
 
 
-def _rules_from_round(row: dict) -> tuple[int, int]:
+def _rule_counts(row: dict) -> tuple[int, int]:
     """``(rules fired, cuts applied)`` for one round.
 
     Rules are changes the deterministic fallback answered (``engine_source``

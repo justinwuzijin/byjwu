@@ -1,4 +1,7 @@
-"""Style profiles: the editorial taste of one creator, as data.
+"""Style profiles: editorial taste, plus retake and word-gap thresholds.
+
+Retake and gap ideas come from public descriptions of Descript, Gling,
+Selects, ButterCut, auto-editor, and Mosaic. Reimplemented; no code copied.
 
 A profile is ``styles/<name>/profile.json`` (or ``profile.yaml`` when PyYAML
 is installed). ``extends`` names a parent profile; dicts merge key by key,
@@ -20,10 +23,50 @@ import os
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from fractions import Fraction
 from pathlib import Path
 from typing import Any
 
 from .errors import ConductorError
+
+# Conversational words per second when the channel has not been measured.
+DEFAULT_SPEECH_RATE = 2.5
+
+# Retake and word-gap thresholds. A profile file may carry these keys.
+# Missing keys use the defaults. Times are seconds.
+HYGIENE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "utterance_pause": {"type": "number", "minimum": 0, "default": 0.35},
+        "group_window": {"type": "number", "minimum": 0, "default": 45},
+        "similarity": {"type": "number", "minimum": 0, "maximum": 1, "default": 0.6},
+        "prefix_tokens": {"type": "integer", "minimum": 1, "default": 3},
+        "incomplete_coverage": {"type": "number", "minimum": 0, "maximum": 1, "default": 0.70},
+        "cutoff_window": {"type": "number", "minimum": 0, "default": 0.15},
+        "cutoff_confidence": {"type": "number", "minimum": 0, "maximum": 1, "default": 0.5},
+        "take_score_margin": {"type": "number", "minimum": 0, "default": 0.08},
+        "speech_rate_median": {"type": "number", "minimum": 0, "default": DEFAULT_SPEECH_RATE},
+        "dead_air_shorten_min": {"type": "number", "minimum": 0, "default": 0.5},
+        "dead_air_remove_min": {"type": "number", "minimum": 0, "default": 1.25},
+        "gap_target": {"type": "number", "minimum": 0, "default": 0.18},
+        "pre_roll": {"type": "number", "minimum": 0, "default": 0.12},
+        "post_roll": {"type": "number", "minimum": 0, "default": 0.20},
+        "min_cut": {"type": "number", "minimum": 0, "default": 0.20},
+        "min_clip": {"type": "number", "minimum": 0, "default": 0.30},
+        "filler_silence": {"type": "number", "minimum": 0, "default": 0.08},
+        "dissolve_min_removed": {"type": "number", "minimum": 0, "default": 1.0},
+        "allow_dissolves": {"type": "boolean", "default": False},
+    },
+}
+
+
+def _hygiene_defaults() -> dict[str, Any]:
+    return {name: spec["default"] for name, spec in HYGIENE_SCHEMA["properties"].items()}
+
+
+def _frac(value: Any) -> Fraction:
+    return Fraction(str(value))
 
 SCHEMA = "jevid.style"
 SCHEMA_VERSION = 1
@@ -68,13 +111,70 @@ _MISSING = object()
 
 @dataclass(frozen=True)
 class StyleProfile:
-    name: str
-    version: str
-    provisional: bool
-    data: dict
+    """Editorial taste profile, plus retake and word-boundary thresholds.
+
+    ``load_style`` fills ``name`` / ``data`` from ``styles/<name>/profile.json``.
+    ``StyleProfile()`` and ``StyleProfile.from_dict`` are the cut-hygiene
+    thresholds (pre-roll, gap target, retake window). Hygiene fields keep
+    their defaults on a loaded taste profile unless ``from_dict`` overrides them.
+    """
+
+    name: str = "hygiene"
+    version: str = "0"
+    provisional: bool = True
+    data: dict = field(default_factory=dict)
     source: Path | None = None
     chain: tuple[str, ...] = ()
     warnings: tuple[str, ...] = field(default_factory=tuple)
+    utterance_pause: Fraction = Fraction("0.35")
+    group_window: Fraction = Fraction(45)
+    similarity: float = 0.6
+    prefix_tokens: int = 3
+    incomplete_coverage: float = 0.70
+    cutoff_window: Fraction = Fraction("0.15")
+    cutoff_confidence: float = 0.5
+    take_score_margin: float = 0.08
+    speech_rate_median: float = DEFAULT_SPEECH_RATE
+    dead_air_shorten_min: Fraction = Fraction("0.5")
+    dead_air_remove_min: Fraction = Fraction("1.25")
+    gap_target: Fraction = Fraction("0.18")
+    pre_roll: Fraction = Fraction("0.12")
+    post_roll: Fraction = Fraction("0.20")
+    min_cut: Fraction = Fraction("0.20")
+    min_clip: Fraction = Fraction("0.30")
+    filler_silence: Fraction = Fraction("0.08")
+    dissolve_min_removed: Fraction = Fraction(1)
+    allow_dissolves: bool = False
+
+    @classmethod
+    def from_dict(cls, raw: dict | None = None) -> StyleProfile:
+        """Hygiene thresholds. Missing keys use the defaults. Unknown keys fail."""
+        from .schema import validate as validate_schema
+
+        data = _hygiene_defaults()
+        if raw:
+            data.update(validate_schema(dict(raw), HYGIENE_SCHEMA))
+        return cls(
+            utterance_pause=_frac(data["utterance_pause"]),
+            group_window=_frac(data["group_window"]),
+            similarity=float(data["similarity"]),
+            prefix_tokens=int(data["prefix_tokens"]),
+            incomplete_coverage=float(data["incomplete_coverage"]),
+            cutoff_window=_frac(data["cutoff_window"]),
+            cutoff_confidence=float(data["cutoff_confidence"]),
+            take_score_margin=float(data["take_score_margin"]),
+            speech_rate_median=float(data["speech_rate_median"]),
+            dead_air_shorten_min=_frac(data["dead_air_shorten_min"]),
+            dead_air_remove_min=_frac(data["dead_air_remove_min"]),
+            gap_target=_frac(data["gap_target"]),
+            pre_roll=_frac(data["pre_roll"]),
+            post_roll=_frac(data["post_roll"]),
+            min_cut=_frac(data["min_cut"]),
+            min_clip=_frac(data["min_clip"]),
+            filler_silence=_frac(data["filler_silence"]),
+            dissolve_min_removed=_frac(data["dissolve_min_removed"]),
+            allow_dissolves=bool(data["allow_dissolves"]),
+        )
 
     def get(self, dotted: str, default: Any = _MISSING) -> Any:
         node: Any = self.data

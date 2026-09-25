@@ -20,3 +20,15 @@ Each applied cut leaves a one-frame marker on the clip that now sits at the cut.
 Graphics stay off unless the room turns them on. When on, they are added on a free connected lane of the file you open. Subtitles, and titles with no distortion or a scale move, are Basic Title clips. Glitch, RGB split, wave, and blur-in titles are transparent movies in a folder named `<that file>.assets` beside the XML. Rectangles are Shapes generator clips, with position and scale keyframes, a blur, and a hue shift. Nothing already on the timeline is retimed. Grades are never written.
 
 An assembled timeline (raw footage and music, not a marked export) is a spine of the selected shots, connected lanes for cutaways and graphics, and a music bed whose fades and ducking are `adjust-volume` keyframes. A cross dissolve appears only where the style profile asks for one.
+
+## Retakes and word gaps
+
+Two cut types can land on a timeline when a clip has word timings.
+
+**Retake.** An earlier take, or a false start, is lifted. The marker on the shadow timeline is titled "Retake". The note reads "Earlier take removed. The last complete take was kept." The kept take is the last complete reading of the line, unless the taste call had to choose between complete takes that scored too close to separate and named a different one.
+
+**Retake kept.** When that cut is vetoed, nothing is lifted. The marker is titled "Retake kept". The note starts "Both takes kept." and then gives the reason, in plain words.
+
+**Pause shortened.** Dead air between half a second and 1.25 seconds is not removed. The cut leaves the style-profile pause (0.18 seconds unless the profile says otherwise). A bare gap of 1.25 seconds or more is still removed, which is the silence cut the mechanical pass already makes. A cross dissolve is written only when the removed stretch is at least one second and the style profile allows dissolves. Anything shorter stays a hard cut.
+
+**Filler.** "um" and "uh" are cut only when there is at least 80 milliseconds of silence on one side. "like", "you know", and "so" are not cut until the taste call approves them. Until then they are only a proposal.

@@ -8,6 +8,9 @@ proposal, a review, or an escalation. The raw action stays on the proposal
 either way, and so does the engine that made it.
 
 A creative call Opus could not make is a review marker with no action.
+
+Retake grouping follows Descript, Gling, Selects, and ButterCut; the taste
+call only picks or vetoes, and word-boundary hygiene runs before apply.
 """
 
 from __future__ import annotations
@@ -25,7 +28,7 @@ from .rules import resolve_thresholds
 from .taste import Taste
 from .timeutil import short_clock
 
-__all__ = ["Proposal", "deletions_for", "judge", "questions_for"]
+__all__ = ["Proposal", "deletions_for", "judge", "questions_for", "word_cuts"]
 
 ACTION_COLOR = {
     "keep": "green",
@@ -225,6 +228,54 @@ def _accepted(candidate_id, proposals, candidates, hold: Fraction) -> Deletion:
             "so there is no cut to apply"
         )
     return _deletion(candidate, proposal.raw_action, hold)
+
+
+def word_cuts(
+    words: list,
+    *,
+    sequence: str,
+    frame_duration: Fraction,
+    router: Router | None = None,
+    profile=None,
+    vetoes: dict | None = None,
+    picks: dict | None = None,
+) -> tuple[list[Deletion], list[dict]]:
+    """Retake and filler cuts after vetoes, then word-boundary hygiene.
+
+    A clip with no word timings contributes nothing. Taste and veto go
+    through the router when one is passed. ``vetoes`` and ``picks`` are
+    fixtures the logic honors before the router.
+    """
+    from .hygiene import hygienize
+    from .rules import apply_router, plan_retakes, retake_asks
+    from .style import StyleProfile
+
+    profile = profile or StyleProfile()
+    if not words:
+        return [], []
+    plan = plan_retakes(words, profile=profile, vetoes=vetoes, picks=picks)
+    if router is not None and not vetoes and not picks:
+        asks = retake_asks(plan)
+        if asks:
+            decisions, _receipts = router.decide(asks)
+            plan = apply_router(plan, decisions)
+    raw = list(plan.cuts)
+    raw.extend(item for item in plan.filler_proposals if item.get("auto"))
+    cleaned = hygienize(raw, words, profile=profile, frame_duration=frame_duration)
+    deletions = [
+        Deletion(
+            candidate_id=item["id"],
+            sequence=sequence,
+            start=item["start"],
+            end=item["end"],
+            action="remove",
+            pass_name="dialogue",
+            transition=item.get("transition"),
+        )
+        for item in cleaned
+        if item["end"] > item["start"]
+    ]
+    return deletions, plan.markers
 
 
 def _deletion(candidate: Candidate, action: str, hold: Fraction) -> Deletion:

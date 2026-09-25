@@ -89,3 +89,30 @@ def test_no_sidecar_room_run_matches_the_style(tmp_path):
     assert report["critic"]["passed"], report["critic"]
     assert report["overall"] >= 88, report["dimensions"]
     assert min(report["dimensions"].values()) >= 80, report["dimensions"]
+
+
+def test_one_short_song_room_run_matches_the_style(tmp_path):
+    espeak = shutil.which("espeak-ng")
+    if espeak is None:
+        pytest.skip("espeak-ng is not installed")
+    shoot = tmp_path / "shoot"
+    info = generate(shoot, sidecars=False, beds="short")
+    assert info["songs"] == [{"name": "bed_120bpm.wav", "bpm": 120.0, "seconds": 48.0}]
+    assert info["tts"] is True
+
+    from conductor.room import room_run
+
+    result = room_run(shoot, out_root=tmp_path / "out", brief=BRIEF, style="byjustinwu")
+    assert result.ok
+    if result.payload["cuts_applied"] == 0:
+        assert "nothing further to trim" in result.markdown
+    else:
+        assert f"Cuts applied: {result.payload['cuts_applied']}" in result.markdown
+    opened = Path(result.payload["open_in_final_cut"])
+    assembly = result.out_dir / "assemble" / "assembly.json"
+    report = score_timeline(opened, style="byjustinwu", assembly=assembly)
+    (result.out_dir / "style-score.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    assert report["lint"]["passed"], report["lint"]["hard"]
+    assert report["critic"]["passed"], report["critic"]
+    assert report["overall"] >= 88, report["dimensions"]
+    assert min(report["dimensions"].values()) >= 80, report["dimensions"]

@@ -56,6 +56,8 @@ class Proposal:
     eligible: bool
     marker_name: str | None
     marker_note: str | None
+    confidence_raw: float = 0.0
+    taste_reason: str | None = None
 
 
 def questions_for(candidate_id: str) -> dict:
@@ -107,7 +109,7 @@ def judge(
         batch = ask(state, questions, live=live)
         receipts.append(_receipt(batch, state, questions))
         for item in window:
-            proposals.append(_proposal(item, batch, gates))
+            proposals.append(_proposal(item, batch, gates, taste))
     return proposals, receipts
 
 
@@ -194,20 +196,26 @@ def _deletion(candidate: Candidate, action: str, hold: Fraction) -> Deletion:
     )
 
 
-def _proposal(candidate: Candidate, batch: BatchResult, gates: Gates) -> Proposal:
+def _proposal(candidate: Candidate, batch: BatchResult, gates: Gates, taste: Taste) -> Proposal:
     action_answer = batch.answers[f"{candidate.id}_action"]
     risk_answer = batch.answers[f"{candidate.id}_risk"]
     raw = str(action_answer.value)
     if raw not in ACTIONS:
         raw = "mark_review"
-    confidence = float(action_answer.confidence)
+    adjustment = taste.adjust(candidate.kind, candidate.signals, float(action_answer.confidence), gates)
+    confidence = adjustment.confidence
     risk = float(risk_answer.value)
+    kind_gates = Gates(
+        auto_confidence=adjustment.auto_confidence,
+        review_confidence=gates.review_confidence,
+        auto_risk_max=gates.auto_risk_max,
+    )
     action, disposition = route(
         raw,
         confidence,
         risk,
         creative=is_creative(candidate.pass_name or "mechanical"),
-        gates=gates,
+        gates=kind_gates,
     )
     human = disposition in {"review", "escalate"}
     name = None
@@ -217,7 +225,16 @@ def _proposal(candidate: Candidate, batch: BatchResult, gates: Gates) -> Proposa
             f"CC {ACTION_TITLE[action]} · {candidate.label} @ "
             f"{short_clock(candidate.timeline_start)}"
         )
-        note = _note(candidate, raw, action, disposition, confidence, risk)
+        note = _note(
+            candidate,
+            raw,
+            action,
+            disposition,
+            confidence,
+            risk,
+            confidence_raw=adjustment.confidence_raw,
+            taste_reason=adjustment.reason,
+        )
     return Proposal(
         candidate_id=candidate.id,
         raw_action=raw,
@@ -231,6 +248,8 @@ def _proposal(candidate: Candidate, batch: BatchResult, gates: Gates) -> Proposa
         eligible=disposition == "auto",
         marker_name=name,
         marker_note=note,
+        confidence_raw=adjustment.confidence_raw,
+        taste_reason=adjustment.reason,
     )
 
 
@@ -241,6 +260,9 @@ def _note(
     disposition: str,
     confidence: float,
     risk: float,
+    *,
+    confidence_raw: float,
+    taste_reason: str | None,
 ) -> str:
     from .timeutil import clock
 
@@ -258,6 +280,10 @@ def _note(
         f"range={clock(candidate.timeline_start)}-{clock(candidate.timeline_end)}",
         f"why={_trim(candidate.reason, 160)}",
     ]
+    if abs(confidence_raw - confidence) > 1e-9:
+        parts.append(f"confidence_raw={confidence_raw:.2f}")
+    if taste_reason:
+        parts.append(f"taste={_trim(taste_reason.replace('|', '/'), 180)}")
     if disposition in {"review", "escalate"}:
         parts.append("needs_human=yes")
     return " | ".join(parts)

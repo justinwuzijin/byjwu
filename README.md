@@ -42,7 +42,7 @@ Jev picks from options the code defines. The note on a marker is assembled after
         →  stop when the metrics hold, when nothing mechanical is left, or at the round cap
         →  a person, only for escalate or max rounds
         →  you open the FCPXML in Final Cut
-        →  accept / reject is logged for the next decide call
+        →  a re-export or a note in the room updates taste, and the next gate moves
 ```
 
 On the checked-in interview, round 1 lifts the long silence. The “um”, the hold, and the colour placeholder stay marked and are not cut. Round 2 finds no further mechanical cut and stops. The export you made in Final Cut is still sitting there, unchanged. No plugin was attached.
@@ -228,7 +228,9 @@ python -m conductor apply cut.fcpxml --transcript cut.srt \
 
 A `tighten` on a whole clip keeps the first `hold_seconds` (default 4) and lifts the tail. A `remove`, a filler, or a hole lifts that range and closes the gap. A transition on the spine is refused rather than left at a stale offset.
 
-Taste is a JSON file: `jump_cut_tolerance`, `target_pace` (`tight`, `measured`, `loose`), `cold_open_bias` (`keep`, `neutral`, `cut`), `hold_seconds`, plus an accept/reject log. Pass it with `--taste`. The prefs and the last 20 events go into Jev’s state. Nothing is trained on the log. See `fixtures/taste.json`.
+Taste is a JSON file: `jump_cut_tolerance`, `target_pace` (`tight`, `measured`, `loose`), `cold_open_bias` (`keep`, `neutral`, `cut`), `hold_seconds`, plus a feedback log. Pass it with `--taste`. An optional `--global-taste` is read-only and does not replace the project file.
+
+The log is not a training set. It becomes a per-kind prior: rejections lower confidence and can only make the mechanical auto gate stricter. Accepts may raise confidence, and they cannot newly open auto-apply unless a standing rule sets `loosen_auto`. The report says why, in a sentence on the row (`taste_reason`). A re-export diff and a notes file are how that log gets written. The room contract is in [docs/room-protocol.md](docs/room-protocol.md). See `fixtures/taste.json` and `fixtures/feedback/`.
 
 ```bash
 python -m conductor feedback \
@@ -255,7 +257,7 @@ Roles, the accept loop, and the payload fields are in [docs/room-protocol.md](do
 
 ## The Grok Bot room
 
-Conductor, Pacing, Transcript, and Colour are how a cut moves. A person drops a path in `~/Desktop/jevid-in` and opens whatever lands in `~/Desktop/jevid-out` when the room asks. v1 of the software is the library and the CLI those bots call. The contract is [docs/room-protocol.md](docs/room-protocol.md): who owns which pass, how `iterate` stops, and how accept/reject events land in taste.
+Conductor, Pacing, Transcript, and Colour are how a cut moves. A person drops a path in `~/Desktop/jevid-in` and opens whatever lands in `~/Desktop/jevid-out` when the room asks. v1 of the software is the library and the CLI those bots call. The contract is [docs/room-protocol.md](docs/room-protocol.md): who owns which pass, how `iterate` stops, and how a re-export or a chat note becomes a prior on the next gate.
 
 The Conductor bot runs `python -m conductor iterate` (or `analyze` / `ingest` for a single shadow pass). It does not invent a sixth action. It does not apply a cut the gate did not allow unless a person accepted that id. Unattended cuts are mechanical only. The per-round JSON report (`protocol` `cut-conductor.room`) is the state the room posts. `iterate.json` (`protocol` `cut-conductor.iterate`) is the stop record. Bots do not re-sort either list.
 
@@ -264,7 +266,7 @@ When the input is a folder, the room is woken with the starter FCPXML path, the 
 ## Roadmap
 
 - **Ordering.** Ingest is filename order. A brief does not reorder clips yet.
-- **Taste.** The log is already in the decide state. Learning from it — actually shifting later calls — is not built.
+- **Taste.** Per-kind priors shift later confidence from rejections, accepts, and editor re-exports. They do not train a model, and they do not loosen mechanical auto-apply unless a rule opts in.
 - **More passes.** `colour` is a review-only scaffold: roles and aspect from the XML, and an honest placeholder where exposure and skin would need the picture. `story`, `audio`, and `broll` are still reserved. A new check is a `register_pass`, not a new product.
 - **A Mac drop helper.** The local page is a browser on 127.0.0.1. A Finder drop that never opens a terminal is not built. Still FCPXML out, still no plugin.
 

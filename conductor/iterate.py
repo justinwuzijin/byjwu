@@ -76,6 +76,9 @@ def iterate(
     max_silence_seconds: float | None = None,
     min_shot_seconds: float | None = None,
     max_cuts_per_minute: float | None = None,
+    global_taste_path: str | Path | None = None,
+    feedback_path: str | Path | None = None,
+    learn_from: str | Path | None = None,
 ) -> IterateResult:
     """Run the unattended mechanical loop. Dry-run unless ``live`` is set."""
     if bool(fcpxml) == bool(media):
@@ -153,6 +156,9 @@ def iterate(
             apply_passes=list(MECHANICAL),
             allow_empty_apply=True,
             skip_apply=(targets.clear if targets.configured() else None),
+            global_taste_path=global_taste_path,
+            feedback_path=feedback_path if number == 1 else None,
+            learn_from=learn_from if number == 1 else None,
         )
         metrics = _metrics(report)
         cuts = _cuts(report, number)
@@ -168,6 +174,7 @@ def iterate(
             "cuts": cuts,
             "metrics": metrics,
             "mode": report.mode,
+            "learned": report.payload.get("learned") or [],
             "next": str(report.out_applied or report.out_fcpxml or staged),
         }
         rounds.append(row)

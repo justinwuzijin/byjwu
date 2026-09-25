@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "items": [
+    {
+      "event": "reject",
+      "at": "12:30",
+      "kind": "long_static",
+      "note": "keep the long hold"
+    },
+    {
+      "scope": "rule",
+      "event": "accept",
+      "kind": "short_clip",
+      "action": "remove",
+      "when": {"flash": true},
+      "note": "always cut flash frames",
+      "loosen_auto": true
+    }
+  ]
+}

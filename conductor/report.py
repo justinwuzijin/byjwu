@@ -45,6 +45,7 @@ def build_payload(
     apply_warnings: list[str],
     shadow: bool,
     applied: bool,
+    learned: list[dict] | None = None,
 ) -> dict:
     by_id = {item.id: item for item in candidates}
     proposal_by_id = {item.candidate_id: item for item in proposals}
@@ -96,6 +97,7 @@ def build_payload(
         "markers_added": markers_added,
         "cuts": cuts,
         "apply_warnings": apply_warnings,
+        "learned": learned or [],
         "receipts": receipts,
     }
 
@@ -147,6 +149,9 @@ def render_markdown(payload: dict) -> str:
         lines.append("No candidate was judged `keep`. Regions that were not candidates are untouched.")
     else:
         lines.append(_table(kept))
+    taste_lines = _taste_lines(payload)
+    if taste_lines:
+        lines.extend(["", "## Taste", "", *taste_lines])
     lines.extend(
         [
             "",
@@ -270,6 +275,8 @@ def _row(proposal: Proposal, candidate: Candidate, sequence: Sequence, section: 
         "eligible": proposal.eligible,
         "color": proposal.color,
         "confidence": proposal.confidence,
+        "confidence_raw": proposal.confidence_raw,
+        "taste_reason": proposal.taste_reason,
         "risk": proposal.risk,
         "needs_human": proposal.needs_human,
         "timecode": smpte(candidate.timeline_start, frame, origin),
@@ -349,6 +356,25 @@ def _table(rows: list[dict]) -> str:
             + " |"
         )
     return "\n".join([header, rule, *body])
+
+
+def _taste_lines(payload: dict) -> list[str]:
+    changes = payload.get("changes") or []
+    kept = payload.get("kept") or []
+    rows = [row for row in [*changes, *kept] if row.get("taste_reason")]
+    if not rows:
+        return []
+    lines = [
+        "Confidence here is the mock or Jev score after the taste prior. "
+        "`confidence_raw` in the JSON is the score before that shift.",
+        "",
+    ]
+    for row in rows:
+        lines.append(
+            f"- `{row['candidate_id']}` `{row['kind']}`: {row['taste_reason']} "
+            f"(confidence {row['confidence_raw']:.2f} → {row['confidence']:.2f})"
+        )
+    return lines
 
 
 def _cell(value: object) -> str:

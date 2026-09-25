@@ -125,7 +125,7 @@ SONG_SLOW_SECONDS = 160.0
 BPM_SLOW = 96.0
 
 
-def generate(folder: Path, *, use_ffmpeg: bool = True) -> dict:
+def generate(folder: Path, *, use_ffmpeg: bool = True, sidecars: bool = True) -> dict:
     folder.mkdir(parents=True, exist_ok=True)
     ffmpeg = shutil.which("ffmpeg") if use_ffmpeg else None
     espeak = shutil.which("espeak-ng") or shutil.which("espeak")
@@ -136,7 +136,7 @@ def generate(folder: Path, *, use_ffmpeg: bool = True) -> dict:
             made += 1
         else:
             path.write_bytes(b"synthetic placeholder\n")
-        if clip.lines:
+        if clip.lines and sidecars:
             path.with_suffix(".srt").write_text(_srt(clip.lines), encoding="utf-8")
             path.with_suffix(".json").write_text(_whisper(clip.lines), encoding="utf-8")
     durations = {clip.name: f"{clip.seconds}s" for clip in CLIPS}
@@ -193,35 +193,49 @@ def _ffmpeg_clip(ffmpeg: str, espeak: str | None, path: Path, clip: Clip) -> boo
 
 
 def _speech_wav(espeak: str, dest: Path, clip: Clip) -> bool:
-    """One wav of silence with each line spoken at its start time."""
+    """Silence with each line spoken at its start, so a transcriber can hear it."""
+    ffmpeg = shutil.which("ffmpeg")
+    if ffmpeg is None or not clip.lines:
+        return False
     dest.parent.mkdir(parents=True, exist_ok=True)
-    parts: list[Path] = []
-    cursor = 0.0
-    for index, line in enumerate(clip.lines):
-        gap = max(0.0, line.start - cursor)
-        spoken = dest.with_name(f".{dest.stem}-{index}.wav")
-        try:
-            subprocess.run(
-                [espeak, "-w", str(spoken), "-s", "150", line.text],
+    spoken: list[tuple[Path, Line]] = []
+    try:
+        for index, line in enumerate(clip.lines):
+            part = dest.with_name(f".{dest.stem}-{index}.wav")
+            completed = subprocess.run(
+                [espeak, "-w", str(part), "-s", "132", line.text],
                 capture_output=True, timeout=30, check=False,
             )
-        except (OSError, subprocess.TimeoutExpired):
-            return False
-        if not spoken.is_file():
-            return False
-        parts.append(spoken)
-        cursor = line.end
-        if gap:
-            pass
-    # espeak writes each line alone. Muxing precise gaps needs ffmpeg later;
-    # the SRT still carries the timing. Concat is good enough when it works.
-    if not parts:
+            if completed.returncode != 0 or not part.is_file():
+                return False
+            spoken.append((part, line))
+        labels = ["[0:a]"]
+        filters = []
+        for index, (_part, line) in enumerate(spoken):
+            delay = max(0, int(round(line.start * 1000)))
+            filters.append(
+                f"[{index + 1}:a]adelay={delay}:all=1,apad=whole_dur={clip.seconds}[s{index}]"
+            )
+            labels.append(f"[s{index}]")
+        mix = (
+            "".join(labels)
+            + f"amix=inputs={len(labels)}:duration=first:dropout_transition=0:normalize=0[a]"
+        )
+        command = [
+            ffmpeg, "-y", "-v", "error",
+            "-f", "lavfi", "-i",
+            f"sine=frequency=80:sample_rate=22050,volume=0.2,atrim=duration={clip.seconds}",
+        ]
+        for part, _line in spoken:
+            command += ["-i", str(part)]
+        command += ["-filter_complex", ";".join(filters + [mix]), "-map", "[a]", str(dest)]
+        completed = subprocess.run(command, capture_output=True, timeout=60, check=False)
+        return completed.returncode == 0 and dest.is_file() and dest.stat().st_size > 0
+    except (OSError, subprocess.TimeoutExpired):
         return False
-    # Leave the first line's wav only when a single line; otherwise give up
-    # and let the caller use the gated tone, which follows the SRT exactly.
-    for part in parts:
-        part.unlink(missing_ok=True)
-    return False
+    finally:
+        for part, _line in spoken:
+            part.unlink(missing_ok=True)
 
 
 def _srt(lines: tuple[Line, ...]) -> str:

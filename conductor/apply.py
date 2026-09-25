@@ -302,6 +302,18 @@ def _place_connected(child, window_start: Fraction, window_end: Fraction, clip_n
     if offset + duration <= window_start or offset >= window_end:
         return None
     if offset < window_start or offset + duration > window_end:
+        role = str(child.get("audioRole") or "")
+        if role.startswith("music"):
+            kept_start = max(offset, window_start)
+            kept_end = min(offset + duration, window_end)
+            if kept_end - kept_start < Fraction(1, 100):
+                return None
+            placed = copy.deepcopy(child)
+            placed.set("offset", format_time(kept_start))
+            placed.set("duration", format_time(kept_end - kept_start))
+            src = parse_time(child.get("start"), Fraction(0))
+            placed.set("start", format_time(src + (kept_start - offset)))
+            return placed
         warnings.append(
             f"dropped connected clip {child.get('name') or local(child.tag)!r} "
             f"on {clip_name!r}; it crossed a cut"

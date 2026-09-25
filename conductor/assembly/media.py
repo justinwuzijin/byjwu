@@ -221,6 +221,15 @@ def gather(
     if not songs:
         warnings.append("no music files found; the timeline has no music bed and no beat grid.")
     footage = [_footage(clip, signals) for clip in clips]
+    bare = [item for item in footage if item.role == "a_roll" and item.clip.has_audio and not item.signals.has_transcript]
+    if bare:
+        from ..signals import _whisper_skip_reason, resolve_whisper
+
+        if resolve_whisper() is None:
+            warnings.append(
+                f"{len(bare)} talking clip(s) have no sidecar. {_whisper_skip_reason()} "
+                "Silence ranges are used instead, which do not carry words."
+            )
     if transcript_path:
         warnings.extend(_apply_transcript(footage, Path(transcript_path)))
     first = clips[0]
@@ -286,6 +295,9 @@ def default_signals(clip: MediaClip) -> ClipSignals:
     if sidecar is not None:
         return sidecar
     if clip.has_audio and clip.duration_source != "fallback" and clip.path.is_file():
+        heard = _local_transcript(clip)
+        if heard is not None:
+            return heard
         silences = ffmpeg_silences(clip.path)
         if silences is not None:
             return ClipSignals(silences=silences, source="ffmpeg:silencedetect")
@@ -407,6 +419,27 @@ def _footage(clip: MediaClip, provider: SignalProvider | None) -> Footage:
         found = default_signals(clip)
     role, reason = role_for(clip, found)
     return Footage(clip=clip, signals=found, role=role, role_reason=reason)
+
+
+def _local_transcript(clip: MediaClip) -> ClipSignals | None:
+    """Word timings from a local whisper, when one is installed and a model is on disk."""
+    from ..signals import resolve_whisper, words_to_cues
+
+    resolved = resolve_whisper()
+    if resolved is None:
+        return None
+    tool, run = resolved
+    try:
+        heard = run(clip.path, Fraction(0), clip.duration)
+    except Exception:
+        return None
+    if not heard:
+        return None
+    words = [Word(item.start, item.end, item.text) for item in heard if item.text.strip()]
+    cues = words_to_cues(heard)
+    if not cues:
+        return None
+    return ClipSignals(cues=list(cues), words=words, source=f"whisper:{tool}")
 
 
 def _sidecar(path: Path) -> ClipSignals | None:

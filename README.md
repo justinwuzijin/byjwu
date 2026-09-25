@@ -1,24 +1,24 @@
-# byjwu-editor
+# byjwu
 
-byjwu-editor helps Justin ([@byjustinwu](https://www.youtube.com/@byjustinwu) on YouTube) edit his YouTube videos using TypeSafe Jev and Claude Opus 5.5. A full Grok Bot orchestration, a room of specialist bots, works out everything stylistic and taste-related about his editing: typography, pacing, style, colours, subtitles, digital assets (the abstract rectangle background layer), and music fades and ducking.
+byjwu helps Justin ([@byjustinwu](https://www.youtube.com/@byjustinwu) on YouTube) edit his YouTube videos using TypeSafe Jev and Claude Opus 5.5. A full Grok Bot orchestration, a room of specialist bots, works out everything stylistic and taste-related about his editing: typography, pacing, style, colours, subtitles, digital assets (the abstract rectangle background layer), and music fades and ducking.
 
 The goal is raw footage and music in, and a finished FCPXML out that imports into Final Cut Pro and feels like a byjustinwu video. The style is learned from his published YouTube videos and gets better each time he re-exports a corrected cut.
 
 Every Jev call has a confidence and a receipt. Nothing here is remote control of the Final Cut window. The handoff is FCPXML.
 
-Formerly **jevid** / **Cut Conductor**. The engine module is still called `conductor` and still runs as `python -m conductor`. That name stays so work already in flight keeps merging. The GitHub repo is still `justinwuzijin/jevid` and may be renamed later.
+The engine module is still called `conductor` and still runs as `python -m conductor`, and the `cutmcp` / `cut-conductor` console scripts are unchanged. Those names stay so work already in flight keeps merging. Cut Conductor is now the name of the room bot that runs edits. Links to the GitHub repo still use `github.com/justinwuzijin/jevid` until Justin renames it.
 
 ## How Justin uses it
 
 Justin does not use the command line. The room bots do.
 
-1. He drops a selects folder, or a Final Cut **File → Export XML…** file, in the Grok Bot room or in `~/Desktop/jevid-in`.
+1. He drops a selects folder, or a Final Cut **File → Export XML…** file, in the Grok Bot room or in `~/Desktop/byjwu-in`.
 2. The Cut Conductor bot runs `python -m conductor iterate` on that path.
-3. Each round is written under `~/Desktop/jevid-out` (`v1/`, `v2/`, …). The applied FCPXML in the last round that cut something is the cut so far.
+3. Each round is written under `~/Desktop/byjwu-out` (`v1/`, `v2/`, …). The applied FCPXML in the last round that cut something is the cut so far.
 4. He steps in when a row is an escalate, or the loop hits its round cap. Review markers stay on the timeline. The loop does not apply them.
 5. He opens the FCPXML in Final Cut Pro himself (**File → Import → XML…**). Import creates a new event. It does not patch the project he already has open.
 
-FCPXML goes in and FCPXML comes out. `~/Desktop/jevid-in` and `~/Desktop/jevid-out` are ordinary folders on the machine the bot runs on. Nothing in this repo watches the Desktop, uploads picture or sound, or drives Final Cut. The bot reads a path and writes a new file. The folders keep their `jevid-in` / `jevid-out` names because Justin's Mac already uses them. Renaming them is a later migration. A watcher is still in progress (see [Roadmap](#roadmap)).
+FCPXML goes in and FCPXML comes out. `~/Desktop/byjwu-in` and `~/Desktop/byjwu-out` are ordinary folders on the machine the bot runs on. Nothing in this repo watches the Desktop, uploads picture or sound, or drives Final Cut. The bot reads a path and writes a new file. If `byjwu-in` / `byjwu-out` don't exist but the older `jevid-in` / `jevid-out` do, the engine uses the legacy folders and prints a one-line note. A watcher is still in progress (see [Roadmap](#roadmap)).
 
 A folder of clips becomes a starter sequence first (filename order, absolute `file://` paths), then the same loop. An export is iterated as it stands. Source clips and the file he dropped are only read.
 
@@ -29,7 +29,7 @@ A folder of clips becomes a starter sequence first (filename order, absolute `fi
 | **Jev** (TypeSafe) | Linear, logical, bounded calls: keep, tighten, remove, mark for review, or escalate, each with a confidence and a risk. It picks from options the code defines (`conductor/jev.py`). | Write text, or make open-ended taste calls. |
 | **Claude Opus 5.5** | Open-ended creative and taste calls, and graphics built through code (text treatments, the rectangle background layer). | Generate video. Opus does not generate video natively. |
 | **Grok Bot room** | Coordination: routes work, runs the engine, posts paths and reports, and asks Justin when a call needs him. | Editorial work. No Grok model makes an editing decision. |
-| **Final Cut Pro** | The timeline is the truth. Justin imports the FCPXML byjwu-editor writes, and exports XML when he already has a cut. | — |
+| **Final Cut Pro** | The timeline is the truth. Justin imports the FCPXML byjwu writes, and exports XML when he already has a cut. | — |
 
 Jev's calls are live in the engine today. Opus taste calls go through the Jev/Opus decision router, which is in progress. The note on a marker is assembled afterwards from the action, the confidence, and the reason. No model writes it.
 
@@ -37,7 +37,7 @@ Jev's calls are live in the engine today. Opus taste calls go through the Jev/Op
 
 | Bot | Job |
 |---|---|
-| **jevid** | Build orchestrator. Merges code into this repo. |
+| **byjwu** | Build orchestrator. Merges code into this repo. |
 | **Cut Conductor** | Runs edits. Runs the `iterate` loop (or a single `analyze` / `ingest` shadow pass), posts the report, and applies only cuts that passed the gate or that Justin accepted. |
 | **Pacing** | Pace preferences and the `pacing` pass. |
 | **Colour** | Colour, and the review-only `colour` pass. |
@@ -49,10 +49,10 @@ The bots coordinate. The editorial decisions come from Jev and Opus. The contrac
 ## The loop
 
 ```text
-~/Desktop/jevid-in  (a folder, or an FCPXML export)
+~/Desktop/byjwu-in  (a folder, or an FCPXML export)
         →  starter sequence when the input is a folder
         →  iterate: analyze, then auto-apply only mechanical cuts the gate allows
-        →  ~/Desktop/jevid-out/vN
+        →  ~/Desktop/byjwu-out/vN
         →  stop when the metrics hold, when nothing mechanical is left, or at the round cap
         →  a person, only for escalate or max rounds
         →  you open the FCPXML in Final Cut
@@ -73,16 +73,18 @@ The loop the room owns:
 
 ```bash
 python -m conductor iterate \
-  --media ~/Desktop/jevid-in \
+  --media ~/Desktop/byjwu-in \
   --brief "A tight interview. Keep the guest's story, lose dead air." \
-  --transcript ~/Desktop/jevid-in/interview.srt \
-  --out-dir ~/Desktop/jevid-out \
+  --transcript ~/Desktop/byjwu-in/interview.srt \
+  --out-dir ~/Desktop/byjwu-out \
   --max-rounds 5
 ```
 
-An export instead of a folder uses `--fcpxml ~/Desktop/jevid-in/cut.fcpxml` and omits `--media`. One of those two inputs, not both. Dry-run is the default. `--live` is how a bot calls Jev.
+An export instead of a folder uses `--fcpxml ~/Desktop/byjwu-in/cut.fcpxml` and omits `--media`. One of those two inputs, not both. Dry-run is the default. `--live` is how a bot calls Jev.
 
-Each round writes `~/Desktop/jevid-out/vN/`: a shadow FCPXML, and an applied FCPXML only when a mechanical auto-gate cut landed. The next round reads the applied file, or the shadow when nothing was cut. `iterate.json` in the output folder is the stop record: the per-round metrics, the cuts, and `stop_reason` (`metrics`, `no-progress`, or `max-rounds`).
+With neither `--fcpxml` nor `--media`, `iterate` reads `~/Desktop/byjwu-in`: a single `.fcpxml` there is treated as the export, otherwise the folder is the selects. Rounds then go to `~/Desktop/byjwu-out` unless `--out-dir` says otherwise. The folder names live in `conductor/folders.py`, along with the legacy fallback.
+
+Each round writes `~/Desktop/byjwu-out/vN/`: a shadow FCPXML, and an applied FCPXML only when a mechanical auto-gate cut landed. The next round reads the applied file, or the shadow when nothing was cut. `iterate.json` in the output folder is the stop record: the per-round metrics, the cuts, and `stop_reason` (`metrics`, `no-progress`, or `max-rounds`).
 
 Stop when every metric you set is true, when a round applies nothing, or at `--max-rounds` (default 5). Metrics are optional. Leave them unset and the loop runs until the mechanical cuts run out or the cap hits.
 
@@ -150,7 +152,7 @@ What you get:
 
 Import the starter or the shadow file with **File → Import → XML…**. Import creates a new event. It does not patch a project you already have open, and it does not change the clip files.
 
-**Relink.** Each `media-rep` `src` is an absolute `file://` URL, the path on the machine that ran ingest. Final Cut can open the media when that path resolves. If you generated the XML somewhere else, or the volume is not mounted, use **File → Relink Files…**. byjwu-editor does not copy media into a library.
+**Relink.** Each `media-rep` `src` is an absolute `file://` URL, the path on the machine that ran ingest. Final Cut can open the media when that path resolves. If you generated the XML somewhere else, or the volume is not mounted, use **File → Relink Files…**. byjwu does not copy media into a library.
 
 **Durations.** `--durations` wins when it names the file (`8`, `8s`, or `1/8s`). Otherwise the engine runs ffprobe. If ffprobe is missing or cannot read the file, that clip is **10 seconds** in the XML. That placeholder is not the picture's length. Final Cut will use the 10s written in the XML until you set a real duration and run again. Install ffmpeg so ffprobe is on `PATH` before you ingest a real folder.
 
@@ -271,7 +273,7 @@ Roles, the accept loop, and the payload fields are in [docs/room-protocol.md](do
 
 ## The Grok Bot room
 
-The room bots (see [the bot roster](#the-bot-roster)) are how a cut moves. Justin drops a path in `~/Desktop/jevid-in` and opens whatever lands in `~/Desktop/jevid-out` when the room asks. The software in this repo is the engine and the CLI those bots call. The contract is [docs/room-protocol.md](docs/room-protocol.md): who owns which pass, how `iterate` stops, and how a re-export or a chat note becomes a prior on the next gate.
+The room bots (see [the bot roster](#the-bot-roster)) are how a cut moves. Justin drops a path in `~/Desktop/byjwu-in` and opens whatever lands in `~/Desktop/byjwu-out` when the room asks. The software in this repo is the engine and the CLI those bots call. The contract is [docs/room-protocol.md](docs/room-protocol.md): who owns which pass, how `iterate` stops, and how a re-export or a chat note becomes a prior on the next gate.
 
 The Cut Conductor bot runs `python -m conductor iterate` (or `analyze` / `ingest` for a single shadow pass). It does not invent a sixth action. It does not apply a cut the gate did not allow unless a person accepted that id. Unattended cuts are mechanical only. The per-round JSON report (`protocol` `cut-conductor.room`) is the state the room posts. `iterate.json` (`protocol` `cut-conductor.iterate`) is the stop record. Bots do not re-sort either list.
 
@@ -284,7 +286,7 @@ In progress:
 - **Real-export hardening.** Parse and write back real Final Cut exports, not only the checked-in fixtures.
 - **Media signals.** Measurements taken from the picture and the sound, passed to decisions as structured state. The `colour` pass has an honest placeholder where exposure and skin would need the picture.
 - **Taste learning.** Per-kind priors already shift later confidence from rejections, accepts, and editor re-exports. They do not train a model, and they do not loosen mechanical auto-apply unless a rule opts in. Learning from Justin's published videos belongs to the style profile below.
-- **Room run and watcher.** `iterate` is the loop the room runs today, on paths the bot is given. A watcher on `~/Desktop/jevid-in`, or a Finder drop, that starts a run with no terminal is not built. The local page is a browser on 127.0.0.1. Still FCPXML out, still no plugin.
+- **Room run and watcher.** `iterate` is the loop the room runs today, on paths the bot is given. A watcher on `~/Desktop/byjwu-in`, or a Finder drop, that starts a run with no terminal is not built. The local page is a browser on 127.0.0.1. Still FCPXML out, still no plugin.
 - **Style-driven assembly.** Build the sequence from raw footage and music according to the style profile. Today ingest is filename order, and a brief does not reorder clips.
 - **Jev/Opus decision router.** Bounded, logical calls go to Jev. Open-ended creative and taste calls go to Opus 5.5.
 - **byjustinwu style profile.** Typography, pacing, colour, SF Pro subtitles, the rectangle background layer, and music fades and ducking, learned from his YouTube videos. The Style bot owns it.
@@ -292,7 +294,7 @@ In progress:
 Later:
 
 - **More passes.** `colour` is a review-only scaffold: roles and aspect from the XML. `story`, `audio`, and `broll` are still reserved. A new check is a `register_pass`, not a new product.
-- **Renames.** The `jevid-in` / `jevid-out` drop folders, and possibly the GitHub repo, move to the byjwu-editor name.
+- **Renames.** The GitHub repo may move to the byjwu name. The legacy drop-folder fallback can go once no machine still uses the old folders.
 
 ## Tests
 
@@ -307,6 +309,6 @@ No API key. Engine tests cover the parser, marker write-back, the mock client, t
 
 ## Also in this repo: cutmcp
 
-cutmcp is a separate MCP server: raw interview footage in, an EDL out, five tools (`ingest`, `estimate`, `cut`, `review`, `export_timeline`). It is not the byjwu-editor engine and it is not a sixth pass. Install and tool docs: [docs/cutmcp.md](docs/cutmcp.md).
+cutmcp is a separate MCP server: raw interview footage in, an EDL out, five tools (`ingest`, `estimate`, `cut`, `review`, `export_timeline`). It is not the byjwu engine and it is not a sixth pass. Install and tool docs: [docs/cutmcp.md](docs/cutmcp.md).
 
-The Python project is `byjwu-editor`. It ships both packages, `conductor` and `cutmcp`. For Final Cut, run `python -m conductor`.
+The Python project is `byjwu`. It ships both packages, `conductor` and `cutmcp`. For Final Cut, run `python -m conductor`.

@@ -1,18 +1,20 @@
 # AGENTS.md
 
-The product in this repo is **byjwu-editor** (formerly jevid / Cut
+The product in this repo is **byjwu** (the engine was once called Cut
 Conductor). It edits Justin's (@byjustinwu) YouTube videos: raw footage and
 music in, a finished FCPXML out that he opens in Final Cut Pro himself. Jev
 makes bounded, logical decisions. Claude Opus 5.5 makes open-ended taste
 decisions and builds graphics through code. A Grok Bot room coordinates, and
 no Grok model makes editorial decisions. Human docs are `README.md` and
 `docs/room-protocol.md`. The package you edit for that product is
-`conductor/`. Do not rename it, `python -m conductor`, or the
-`~/Desktop/jevid-in` / `jevid-out` folders. Other work depends on those names.
+`conductor/`. Do not rename it, `python -m conductor`, or the console
+scripts. Other work depends on those names. The drop folders are
+`~/Desktop/byjwu-in` / `byjwu-out` (`conductor/folders.py`), with a fallback
+to the legacy folder names on machines set up before the rename.
 
 What follows is the design rule for **cutmcp**, the older raw-footage MCP
 cutter that still lives here. `conductor/` does not follow that tier rule.
-Read the byjwu-editor engine section at the bottom of this file before
+Read the byjwu engine section at the bottom of this file before
 changing Final Cut behavior.
 
 Works as-is for Cursor and Codex; `cp AGENTS.md CLAUDE.md` for Claude Code.
@@ -202,7 +204,7 @@ text plus question text would make brief edits nearly free.
 
 ---
 
-## byjwu-editor engine (`conductor/`)
+## byjwu engine (`conductor/`)
 
 A second package in this repo, historically called Cut Conductor (Cut
 Conductor is now the room bot that runs it). It is an FCPXML co-pilot: named passes,

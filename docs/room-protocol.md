@@ -1,18 +1,18 @@
 # Room protocol
 
-How the byjwu-editor Grok Bot room drives the editing engine (the `conductor` package, `python -m conductor`). The repo holds the engine and the CLI. No bot is implemented here, and nothing in this repo talks to Final Cut or to a bot API. This file is the contract those bots call.
+How the byjwu Grok Bot room drives the editing engine (the `conductor` package, `python -m conductor`). The repo holds the engine and the CLI. No bot is implemented here, and nothing in this repo talks to Final Cut or to a bot API. This file is the contract those bots call.
 
 The bots coordinate. They do not make editorial decisions. Bounded, logical calls come from Jev (`conductor/jev.py`). Open-ended creative and taste calls come from Claude Opus 5.5 through the Jev/Opus decision router, which is in progress. No Grok model makes an editing decision.
 
-Justin, the owner, does not use the command line. He drops a selects folder or an FCPXML export in the room or in `~/Desktop/jevid-in`, and opens the FCPXML that lands in `~/Desktop/jevid-out` in Final Cut Pro himself. The CLI below is what the bots run for him. The drop folders keep their `jevid-*` names for now.
+Justin, the owner, does not use the command line. He drops a selects folder or an FCPXML export in the room or in `~/Desktop/byjwu-in`, and opens the FCPXML that lands in `~/Desktop/byjwu-out` in Final Cut Pro himself. The CLI below is what the bots run for him. If `byjwu-in` / `byjwu-out` don't exist but the legacy `jevid-in` / `jevid-out` do, the engine uses the legacy folders and prints a one-line note.
 
 The shared object is one timeline plus one brief. The timeline is a Final Cut export, or a starter sequence built from a selects folder. The shared artifact is the JSON report (`protocol` `cut-conductor.room`, `protocol_version` 1).
 
 ```text
-~/Desktop/jevid-in  (export, or a selects folder)
+~/Desktop/byjwu-in  (export, or a selects folder)
     → Type & Subs supplies SRT/VTT (optional)
     → Cut Conductor iterate: analyze, then auto-apply mechanical cuts only
-    → ~/Desktop/jevid-out/vN
+    → ~/Desktop/byjwu-out/vN
     → stop on metrics, no further mechanical cut, or the round cap
     → a person only for escalate, or when the cap hits
     → accept/reject events land in taste.json
@@ -25,22 +25,22 @@ The person does not run the CLI. The bots do.
 
 | folder | who writes it | what it holds |
 |---|---|---|
-| `~/Desktop/jevid-in` | the person | a selects folder, or one FCPXML export |
-| `~/Desktop/jevid-out` | the Cut Conductor bot | `starter.fcpxml` when the input was a folder, `v1/` … `vN/`, and `iterate.json` |
+| `~/Desktop/byjwu-in` | the person | a selects folder, or one FCPXML export |
+| `~/Desktop/byjwu-out` | the Cut Conductor bot | `starter.fcpxml` when the input was a folder, `v1/` … `vN/`, and `iterate.json` |
 
 Nothing in this repo watches those folders or uploads media. The bot on that machine is what reads the path and writes the next file. Final Cut is still opened by a person, and only to import the FCPXML the room points at.
 
 ```bash
 python -m conductor iterate \
-  --media ~/Desktop/jevid-in \
+  --media ~/Desktop/byjwu-in \
   --brief "A tight interview. Keep the guest's story, lose dead air." \
-  --transcript ~/Desktop/jevid-in/interview.srt \
+  --transcript ~/Desktop/byjwu-in/interview.srt \
   --taste taste.json \
-  --out-dir ~/Desktop/jevid-out \
+  --out-dir ~/Desktop/byjwu-out \
   --max-rounds 5
 ```
 
-An export uses `--fcpxml` instead of `--media`. Exactly one of the two.
+An export uses `--fcpxml` instead of `--media`, never both. With neither, `iterate` reads `~/Desktop/byjwu-in`: a single `.fcpxml` there is the export, otherwise the folder is the selects. More than one `.fcpxml` is an error. Rounds go to `~/Desktop/byjwu-out` unless `--out-dir` is given. When only the legacy folders exist, those are used and the CLI prints one note line per folder on stderr.
 
 ## Selects folder
 
@@ -105,7 +105,7 @@ The transcript stays on the clock of the file you passed. After a ripple, later 
 
 | bot | owns |
 |---|---|
-| jevid | the build: orchestrates code work and merges it into this repo |
+| byjwu | the build: orchestrates code work and merges it into this repo |
 | Cut Conductor | runs edits: the brief, which passes run, taste, shadow vs apply |
 | Pacing | pace preferences and the `pacing` pass |
 | Colour | colour, and the review-only `colour` pass |
@@ -154,7 +154,7 @@ Owns picture notes that can be read from the XML, and the honest limit where the
 
 ### Human
 
-Opens the FCPXML from `~/Desktop/jevid-out` when `iterate.json` says `needs_human`. That is an escalate, or a loop that hit `--max-rounds`. Other stops are the bot finishing.
+Opens the FCPXML from `~/Desktop/byjwu-out` when `iterate.json` says `needs_human`. That is an escalate, or a loop that hit `--max-rounds`. Other stops are the bot finishing.
 
 - `eligible` — high-confidence mechanical calls. Iterate already applied these when they cleared the gate. A one-shot `apply` can do the same with `--min-confidence` on the `mechanical` pass.
 - `review` — creative calls, including colour, and mechanical calls that missed the auto gate. Left marked. A person may `--accept` an id whose raw action is `tighten` or `remove`. The loop does not wait on these.
@@ -267,11 +267,11 @@ The report row carries `confidence` (after the prior), `confidence_raw` (what Je
 ```bash
 python -m conductor analyze reexport.fcpxml \
   --brief "..." \
-  --taste ~/Desktop/jevid-out/project.taste.json \
-  --global-taste ~/Desktop/jevid-out/global.taste.json \
-  --learn-from ~/Desktop/jevid-out/v1/timeline.conductor.fcpxml \
-  --feedback ~/Desktop/jevid-in/notes.json \
-  --out-dir ~/Desktop/jevid-out/v2
+  --taste ~/Desktop/byjwu-out/project.taste.json \
+  --global-taste ~/Desktop/byjwu-out/global.taste.json \
+  --learn-from ~/Desktop/byjwu-out/v1/timeline.conductor.fcpxml \
+  --feedback ~/Desktop/byjwu-in/notes.json \
+  --out-dir ~/Desktop/byjwu-out/v2
 ```
 
 `iterate` takes the same three flags. `--learn-from` and `--feedback` apply on round 1 only. `--global-taste` is read every round. Later rounds keep using the taste file the previous round wrote.
@@ -283,9 +283,9 @@ python -m conductor analyze reexport.fcpxml \
 ```bash
 python -m conductor feedback \
   --taste project.taste.json \
-  --out ~/Desktop/jevid-out/project.taste.json \
-  --proposed ~/Desktop/jevid-out/v1/timeline.conductor.fcpxml \
-  --edited ~/Desktop/jevid-in/reexport.fcpxml
+  --out ~/Desktop/byjwu-out/project.taste.json \
+  --proposed ~/Desktop/byjwu-out/v1/timeline.conductor.fcpxml \
+  --edited ~/Desktop/byjwu-in/reexport.fcpxml
 ```
 
 Matching uses the media URL and source time, so Final Cut can renumber asset ids. For each Cut Conductor marker:
@@ -340,11 +340,11 @@ Write one JSON object per thing the person said. `at` is a timecode on the seque
 ```bash
 python -m conductor feedback \
   --taste project.taste.json \
-  --out ~/Desktop/jevid-out/project.taste.json \
+  --out ~/Desktop/byjwu-out/project.taste.json \
   --global-taste global.taste.json \
-  --global-out ~/Desktop/jevid-out/global.taste.json \
-  --notes ~/Desktop/jevid-in/notes.json \
-  --fcpxml ~/Desktop/jevid-in/reexport.fcpxml
+  --global-out ~/Desktop/byjwu-out/global.taste.json \
+  --notes ~/Desktop/byjwu-in/notes.json \
+  --fcpxml ~/Desktop/byjwu-in/reexport.fcpxml
 ```
 
 `--fcpxml` is how `at` finds a candidate. Without it, timed notes stay pending until the next analyze.
@@ -435,5 +435,5 @@ Who appends what:
 - No sixth tool on the cutmcp MCP server. `conductor` is a sibling package.
 - No story, audio, or b-roll judgments until a generator is registered. Colour is registered and review-only; it does not decode the picture.
 - No unattended cut outside the mechanical auto gate. Iterate does not accept review ids on its own.
-- No Desktop watcher in this repo. `~/Desktop/jevid-in` and `~/Desktop/jevid-out` are the folders the bot is told to use.
+- No Desktop watcher in this repo. `~/Desktop/byjwu-in` and `~/Desktop/byjwu-out` are the folders the bot is told to use.
 - No trained model on the taste log. Priors are a bounded count, recomputed from the log, and they cannot loosen mechanical auto-apply without `loosen_auto`.

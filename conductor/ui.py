@@ -124,7 +124,7 @@ def page_html() -> str:
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>jevid ingest</title>
+<title>byjwu ingest</title>
 <style>
   body { font: 16px/1.45 ui-sans-serif, system-ui, sans-serif; margin: 2rem auto; max-width: 40rem; color: #1c1c1c; }
   h1 { font-size: 1.4rem; }

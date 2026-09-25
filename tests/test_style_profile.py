@@ -16,19 +16,19 @@ from conductor.style import (
 )
 
 
-def test_byjustinwu_is_provisional_and_extends_base():
+def test_byjustinwu_is_measured_and_extends_base():
     profile = load_style("byjustinwu")
-    assert profile.provisional is True
-    assert profile.version.endswith("provisional")
+    assert profile.provisional is False
+    assert profile.version == "1.0.0"
     assert profile.chain == ("byjustinwu", "base")
     assert profile.get("typography.title.font") == "SF Pro Display"
     assert profile.get("typography.subtitle.font") == "SF Pro Text"
     assert profile.get("background.enabled") is True
     assert profile.get("music.duck.depth_db") < 0
-    assert profile.get("assumptions"), "a provisional profile must say what it assumes"
+    assert profile.get("assumptions")
     # inherited from base, not restated
     assert profile.get("music.floor_db") == -96
-    assert profile.warnings == ()
+    assert profile.warnings == ("unknown top-level key 'decisions' kept but not read",)
 
 
 def test_default_style_is_byjustinwu_and_both_ship():
@@ -48,7 +48,7 @@ def test_every_treatment_the_profile_names_exists():
 def test_summary_is_numbers_for_the_decision_state():
     summary = load_style("byjustinwu").summary()
     assert summary["asl_seconds"]["montage"] < summary["asl_seconds"]["talking"]
-    assert summary["cut_on_beat"]["montage"] == "always"
+    assert summary["cut_on_beat"]["montage"] == "prefer"
 
 
 def test_extends_resolves_in_a_custom_folder(tmp_path, monkeypatch):
@@ -71,7 +71,7 @@ def test_extends_resolves_in_a_custom_folder(tmp_path, monkeypatch):
     profile = load_style("tight")
     assert profile.chain == ("tight", "byjustinwu", "base")
     assert profile.pacing("montage")["asl_seconds"] == 0.5
-    assert profile.pacing("montage")["cut_on_beat"] == "always"
+    assert profile.pacing("montage")["cut_on_beat"] == "prefer"
     assert load_style(folder).name == "tight"
     assert load_style(folder / "profile.json").name == "tight"
 

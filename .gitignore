@@ -23,3 +23,8 @@ demo/
 fixtures/*.real.*
 *.fcpxmld/
 private/
+
+# style-study inputs stay off the repo (video ids, excerpts, frame crops)
+styles/*/reference/
+styles/*/ref/
+styles/*/study/data/

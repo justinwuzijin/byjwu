@@ -43,11 +43,11 @@ WORDS = {
     "protocol": "cut-conductor.words",
     "protocol_version": 1,
     "words": [
-        {"text": "waterloo", "start": "1s", "end": "3/2s", "sequence": "Cut", "partial": False},
-        {"text": "engineering", "start": "3/2s", "end": "2s", "sequence": "Cut", "partial": False},
+        {"text": "weekday", "start": "1s", "end": "3/2s", "sequence": "Cut", "partial": False},
+        {"text": "editing", "start": "3/2s", "end": "2s", "sequence": "Cut", "partial": False},
         {"text": "is", "start": "2s", "end": "9/4s", "sequence": "Cut", "partial": False},
         {"text": "hard", "start": "9/4s", "end": "5/2s", "sequence": "Cut", "partial": False},
-        {"text": "co-op", "start": "7/2s", "end": "4s", "sequence": "Cut", "partial": True,
+        {"text": "cut", "start": "7/2s", "end": "4s", "sequence": "Cut", "partial": True,
          "file_start_seconds": 3.5, "file_end_seconds": 4.5},
         {"text": "term", "start": "5s", "end": "11/2s", "sequence": "Cut", "partial": False},
         {"text": "starts", "start": "11/2s", "end": "6s", "sequence": "Cut", "partial": False},
@@ -148,11 +148,11 @@ def test_missing_ffmpeg_skips_renders_and_keeps_subtitles(tmp_path, monkeypatch)
 def test_graphics_package_ships_no_private_material():
     """SF Pro is a font name. No font file, home path, or real export is committed."""
     root = Path("conductor/graphics")
-    home = "/Users/" + "justinwu"
+    home = "/" + "Users/" + "editor"
     for path in root.rglob("*.py"):
         text = path.read_text(encoding="utf-8")
         assert home not in text
-        assert "/Users/" not in text
+        assert "/" + "Users/" not in text
     assert home not in FIXTURE
     assert "file:///tmp/interview.mov" in FIXTURE
     assert "*.assets/" in Path(".gitignore").read_text(encoding="utf-8")

@@ -3,223 +3,1276 @@
   "schema_version": 1,
   "name": "byjustinwu",
   "extends": "base",
-  "version": "0.1.0-provisional",
-  "provisional": true,
-  "description": "PROVISIONAL placeholder for Justin Wu (YouTube @byjustinwu). Every number here is a guess from the brief, not a measurement. Replace it with the style study when it lands; keep the keys.",
+  "version": "1.0.0",
+  "provisional": false,
+  "description": "Measured video-journal style. Talking-head cold open with no music, music-led b-roll carried by silent lowercase narration captions, long unhurried talk with raw jump cuts and no music under it, loud music-only montages, glitch-collage chapter cards with lowercase date stamps, full-frame vertically stretched slam text, brand card to close.",
   "provenance": {
-    "source": "written from the jevid brief, not from footage",
-    "study": null,
-    "updated": "2026-09-25",
-    "replace_with": "the style study of the latest @byjustinwu uploads (ASL per section, fade and duck measurements, type specs, background captures)"
+    "source": "measured from three long videos (pooled) and one short (typography only)",
+    "study": "styles/byjustinwu/study",
+    "guide": "styles/byjustinwu/STYLE.md",
+    "bundle": "local style-study bundle; not committed",
+    "replaces": "0.1.0-provisional",
+    "evidence_conventions": "Keys are dotted paths in this profile. 'measured' is a dotted key in study/measured.json, recomputed by study/analyze.py; without 'adjusted' the value must match it within 5%. Evidence is an aggregate stat (for example 'median of 5 chapter cards', 'n=89 sampled frames'). Confidence: 0.8+ seen consistently in every applicable video; 0.5-0.8 consistent but few instances or one video differs; under 0.5 inferred, coarse or contradicted. Keys this profile inherits from base unchanged carry no entry.",
+    "evidence": {
+      "format.frame_rate": {
+        "confidence": 0.6,
+        "evidence": "a sampled video and a sampled video are 24000/1001; a sampled video is 30 fps. follow_footage (base: true) keeps the footage rate when there is one"
+      },
+      "structure.target_seconds": {
+        "confidence": 0.6,
+        "evidence": "long uploads run 910.1 / 1144.4 / 1113.3 s",
+        "measured": "roles.target_seconds_median",
+        "adjusted": "rounded to whole seconds"
+      },
+      "structure.tolerance_seconds": {
+        "confidence": 0.3,
+        "evidence": "interpretation: a diary length is loose, but 30 s keeps a brief's target honest"
+      },
+      "structure.order": {
+        "confidence": 0.55,
+        "evidence": "no video opens on a title (first graphic 0-12.8 s into footage); talk or b-roll open, chapters of talk then music-led b-roll/montage, chapter cards between chapters (, 365.4, 463.7, 873.4, 1074.2), reflective close, brand card. About 3 chapters per 10 min (measured chapters.per_10_min.median 3.146), so three chapter blocks for the 18.5 min target"
+      },
+      "structure.sections.intro": {
+        "confidence": 0.5,
+        "evidence": "first section of each video: 100.6 s talk (a sampled video), 9.8 s POV talk (a sampled video), 12.8 s music b-roll (a sampled video)"
+      },
+      "structure.sections.intro.share": {
+        "confidence": 0.5,
+        "evidence": "share of the 3167.8 s pooled runtime labelled intro",
+        "measured": "roles.intro.share"
+      },
+      "structure.sections.intro.min_seconds": {
+        "confidence": 0.5,
+        "evidence": "shortest cold open",
+        "measured": "roles.intro.section_seconds.min"
+      },
+      "structure.sections.intro.max_seconds": {
+        "confidence": 0.4,
+        "evidence": "longest cold open",
+        "measured": "roles.intro.section_seconds.max"
+      },
+      "structure.sections.talking": {
+        "confidence": 0.65,
+        "evidence": "talking + confessional + vlog sections, 1698.5 s of 3167.8 s; single sections 23.6-252.5 s"
+      },
+      "structure.sections.talking.share": {
+        "confidence": 0.65,
+        "evidence": "share of the 3167.8 s pooled runtime labelled talking",
+        "measured": "roles.talking.share"
+      },
+      "structure.sections.talking.min_seconds": {
+        "confidence": 0.5,
+        "evidence": "shortest talk/vlog section",
+        "measured": "roles.talking.section_seconds.min"
+      },
+      "structure.sections.montage": {
+        "confidence": 0.65,
+        "evidence": "montage + music-led b-roll, 898.7 s; single sections 18.1-228 s"
+      },
+      "structure.sections.montage.share": {
+        "confidence": 0.65,
+        "evidence": "share of the 3167.8 s pooled runtime labelled montage",
+        "measured": "roles.montage.share"
+      },
+      "structure.sections.montage.min_seconds": {
+        "confidence": 0.5,
+        "evidence": "shortest montage/b-roll section",
+        "measured": "roles.montage.section_seconds.min"
+      },
+      "structure.sections.montage.max_seconds": {
+        "confidence": 0.45,
+        "evidence": "longest (a sampled video 'weekone;')",
+        "measured": "roles.montage.section_seconds.max"
+      },
+      "structure.sections.outro": {
+        "confidence": 0.45,
+        "evidence": "last section before the end card: 69.4 s monologue (a sampled video), 54.5 s narrated b-roll (a sampled video), 244.1 s music montage (a sampled video)"
+      },
+      "structure.sections.outro.share": {
+        "confidence": 0.45,
+        "evidence": "share of the 3167.8 s pooled runtime labelled outro",
+        "measured": "roles.outro.share"
+      },
+      "structure.sections.outro.min_seconds": {
+        "confidence": 0.45,
+        "evidence": "shortest close",
+        "measured": "roles.outro.section_seconds.min"
+      },
+      "structure.sections.outro.max_seconds": {
+        "confidence": 0.35,
+        "evidence": "longest close",
+        "measured": "roles.outro.section_seconds.max"
+      },
+      "structure.title_card.seconds": {
+        "confidence": 0.8,
+        "evidence": "0.67 s glitch lead-in + exactly 5.714 s hold on 5/5 cards",
+        "measured": "cards.chapter_card_total_s.median"
+      },
+      "structure.title_card.bars": {
+        "confidence": 0.5,
+        "evidence": "cards play over quiet room audio (-28.7 LUFS, bass share 0.02), no music to count bars against; the identical 5.714 s hold is a template length, not a bar count"
+      },
+      "structure.end_card.seconds": {
+        "confidence": 0.6,
+        "evidence": "8.1 s (a sampled video), 9.7 s (a sampled video), 18.96 s (a sampled video incl. a 13 s colour wash)",
+        "measured": "summary.end_card_s_median"
+      },
+      "structure.end_card.bars": {
+        "confidence": 0.4,
+        "evidence": "end cards are timed as holds; none lands on an audible downbeat in the data"
+      },
+      "structure.end_card.text": {
+        "confidence": 0.6,
+        "evidence": "final sting '@byjustinwu' and '@byjustinwu'; a sampled video ends on a stacked wordmark"
+      },
+      "structure.broll_chunk_seconds": {
+        "confidence": 0.6,
+        "evidence": "music-led b-roll shot median, p10 1.69 s, p90 9.65 s",
+        "measured": "rhythm.by_section.broll.thr0p3.median"
+      },
+      "structure.speech_merge_gap_seconds": {
+        "confidence": 0.3,
+        "evidence": "he keeps pauses: 4.1 silences >= 0.5 s per minute of talk, 16.1/min in the confessional (measured levels.by_section.talking.silences_40db_per_min); a wider merge gap keeps them"
+      },
+      "structure.intro_flash_share": {
+        "confidence": 0.5,
+        "evidence": "talk cold opens have no flash b-roll before the talk (,); the music-b-roll open is decided by decisions.cold_open_kind"
+      },
+      "pacing.intro": {
+        "confidence": 0.45,
+        "evidence": "shots in the three cold opens incl. jump cuts, 19 shots; slow, not a fast hook"
+      },
+      "pacing.intro.shot_length.median": {
+        "confidence": 0.45,
+        "evidence": "median shot, intro role",
+        "measured": "roles.intro.shot_length.median"
+      },
+      "pacing.intro.asl_seconds": {
+        "confidence": 0.45,
+        "evidence": "mean shot in the cold opens",
+        "measured": "roles.intro.shot_length.mean"
+      },
+      "pacing.intro.shot_length.p10": {
+        "confidence": 0.45,
+        "evidence": "cold-open p10",
+        "measured": "roles.intro.shot_length.p10"
+      },
+      "pacing.intro.shot_length.p90": {
+        "confidence": 0.45,
+        "evidence": "cold-open p90",
+        "measured": "roles.intro.shot_length.p90"
+      },
+      "pacing.talking": {
+        "confidence": 0.6,
+        "evidence": "talking + confessional (with one-frame jump-cut spikes) + vlog, 138 shots; longest single take 91.9 s"
+      },
+      "pacing.talking.shot_length.median": {
+        "confidence": 0.6,
+        "evidence": "median shot, talking role",
+        "measured": "roles.talking.shot_length.median"
+      },
+      "pacing.talking.asl_seconds": {
+        "confidence": 0.6,
+        "evidence": "mean shot in talk/vlog",
+        "measured": "roles.talking.shot_length.mean"
+      },
+      "pacing.talking.shot_length.p10": {
+        "confidence": 0.55,
+        "evidence": "talk/vlog p10",
+        "measured": "roles.talking.shot_length.p10"
+      },
+      "pacing.talking.shot_length.p90": {
+        "confidence": 0.55,
+        "evidence": "talk/vlog p90",
+        "measured": "roles.talking.shot_length.p90"
+      },
+      "pacing.talking.cut_on_beat": {
+        "confidence": 0.8,
+        "evidence": "no music under talk in 2 of 3 videos, so there is no beat to cut to"
+      },
+      "pacing.talking.broll_cover": {
+        "confidence": 0.3,
+        "evidence": "talk is rarely covered: two cutaways, ~17 s of the 141 s confessional (, 469.5), none in the other talking sections reviewed"
+      },
+      "pacing.talking.parts": {
+        "confidence": 0.6,
+        "evidence": "finer split the engine does not read yet",
+        "measured": "rhythm.talking.hold_with_jump_cuts.median",
+        "adjusted": "object; pointer checks hold_median_s"
+      },
+      "pacing.montage": {
+        "confidence": 0.65,
+        "evidence": "montage + music-led b-roll, 209 shots"
+      },
+      "pacing.montage.shot_length.median": {
+        "confidence": 0.65,
+        "evidence": "median shot, montage role",
+        "measured": "roles.montage.shot_length.median"
+      },
+      "pacing.montage.asl_seconds": {
+        "confidence": 0.65,
+        "evidence": "mean shot in montage/b-roll",
+        "measured": "roles.montage.shot_length.mean"
+      },
+      "pacing.montage.shot_length.p10": {
+        "confidence": 0.6,
+        "evidence": "montage/b-roll p10",
+        "measured": "roles.montage.shot_length.p10"
+      },
+      "pacing.montage.shot_length.p90": {
+        "confidence": 0.6,
+        "evidence": "montage/b-roll p90",
+        "measured": "roles.montage.shot_length.p90"
+      },
+      "pacing.montage.cut_on_beat": {
+        "confidence": 0.3,
+        "evidence": "montage cuts sit on loudness onsets no more than cuts shifted 0.5-2 s (ratio 0.90, p 0.64-0.73 per video, stable across windows and thresholds); his masters are limited to -4..-8 LUFS so kicks barely move a 400 ms window. 'prefer' lets the engine snap when a beat is close without claiming lock; decisions.montage_beat_lock can raise it per montage",
+        "measured": "beat_alignment.pooled_ratio",
+        "adjusted": "a null ratio becomes 'prefer'"
+      },
+      "pacing.montage.fast": {
+        "confidence": 0.7,
+        "evidence": "music-only montage alone: 183 shots, 684.9 s; fastest 8-shot run",
+        "measured": "rhythm.by_section.montage.thr0p3.median",
+        "adjusted": "object; pointer checks shot_length.median"
+      },
+      "pacing.montage.broll": {
+        "confidence": 0.65,
+        "evidence": "music-led b-roll alone: 96 shots, 525.2 s",
+        "measured": "rhythm.by_section.broll.thr0p3.median",
+        "adjusted": "object; pointer checks shot_length.median"
+      },
+      "pacing.montage.strobe_bursts": {
+        "confidence": 0.35,
+        "evidence": "a sampled video only: 12 cuts in 1.3 s and 11 (light-streak flash frames), smaller bursts, 517, 572, 608"
+      },
+      "pacing.outro": {
+        "confidence": 0.45,
+        "evidence": "closing sections, 83 shots; two of three closes are music-led"
+      },
+      "pacing.outro.shot_length.median": {
+        "confidence": 0.45,
+        "evidence": "median shot, outro role",
+        "measured": "roles.outro.shot_length.median"
+      },
+      "pacing.outro.asl_seconds": {
+        "confidence": 0.45,
+        "evidence": "mean shot in closes",
+        "measured": "roles.outro.shot_length.mean"
+      },
+      "pacing.outro.shot_length.p10": {
+        "confidence": 0.45,
+        "evidence": "close p10",
+        "measured": "roles.outro.shot_length.p10"
+      },
+      "pacing.outro.shot_length.p90": {
+        "confidence": 0.45,
+        "evidence": "close p90",
+        "measured": "roles.outro.shot_length.p90"
+      },
+      "pacing.outro.cut_on_beat": {
+        "confidence": 0.3,
+        "evidence": "same null onset result as montage"
+      },
+      "cuts.min_shot_seconds": {
+        "confidence": 0.4,
+        "evidence": "shortest deliberate shots ~0.33 s (a sampled video glitch lead-in,); montage p10 0.985 s; strobe bursts are the exception"
+      },
+      "cuts.punch_in.enabled": {
+        "confidence": 0.5,
+        "evidence": "jump cuts are left raw; framing changes come from moving the camera (background shifts), not a digital zoom"
+      },
+      "cuts.cutaway": {
+        "confidence": 0.3,
+        "evidence": "cutaways inside talk run 1.4-8.1 s (, 469.5-476.3)"
+      },
+      "cuts.split_edits": {
+        "confidence": 0.2,
+        "evidence": "j_cut / l_cut stay at base: a mixed stereo master cannot show audio lead or lag. Monologue VO spans 77% of its cuts (measured speech_across_cuts.monologue.speech_spans_cut_share), which is VO, not a split edit"
+      },
+      "music.bed_db": {
+        "confidence": 0.45,
+        "evidence": "montage + b-roll play about 2.4 LU under pure montage, which plays mastered music at full level (-8.0 LUFS momentary)",
+        "measured": "roles.montage.level_vs_montage_lu",
+        "adjusted": "LU relative to montage used as dB of clip gain, rounded"
+      },
+      "music.fade_in.seconds": {
+        "confidence": 0.4,
+        "evidence": "median music-in ramp over 6 boundaries, p10 0.3, p90 3.2 s; curve not measurable, base easeIn kept",
+        "measured": "transitions.music_in_ramp_s.median"
+      },
+      "music.fade_out.seconds": {
+        "confidence": 0.4,
+        "evidence": "median music-out ramp, 6 boundaries, p10 0.35, p90 3.95 s",
+        "measured": "transitions.music_out_ramp_s.median"
+      },
+      "music.duck.depth_db": {
+        "confidence": 0.35,
+        "evidence": "the one measurable duck:, -6.5 to -21.3 LUFS; only applies where a bed runs under talk (decisions.music_under_talk)",
+        "measured": "ducking.duck_events.0.depth_db",
+        "adjusted": "sign flipped to engine convention"
+      },
+      "music.duck.attack_seconds": {
+        "confidence": 0.3,
+        "evidence": "drop completes within one 400 ms momentary window (upper bound)",
+        "measured": "ducking.duck_events.0.attack_s_upper_bound"
+      },
+      "music.duck.lead_seconds": {
+        "confidence": 0.35,
+        "evidence": "level drops at 43.707, first word at 44.399: a keyframed pre-duck",
+        "measured": "ducking.duck_events.0.lead_before_speech_s"
+      },
+      "music.song_change.transition": {
+        "confidence": 0.45,
+        "evidence": "songs sit in blocks between talk; each block fades out before talk and a new block fades in (12 measured boundaries, median ramps 1.0 in / 1.65 out)"
+      },
+      "music.sections.intro": {
+        "confidence": 0.55,
+        "evidence": "talk cold opens have no music: word gaps -48 to -55 LUFS in; music enters at the first b-roll (,). when_music_broll is the a sampled video open, music from frame 0"
+      },
+      "music.sections.title_card": {
+        "confidence": 0.5,
+        "evidence": "chapter cards sit 16.5 LU under montage level: no music hit or swell",
+        "measured": "roles.title_card.level_vs_montage_lu",
+        "adjusted": "rounded to whole dB; object"
+      },
+      "music.sections.talking": {
+        "confidence": 0.65,
+        "evidence": "no bed under on-camera talk in a sampled video or a sampled video (word gaps -34 to -70 LUFS, bass share < 0.1); confessional gaps -61. when_bed is : the previous track runs on, ducked about 15 dB",
+        "measured": "levels.by_section.confessional.word_gap_level_lufs",
+        "adjusted": "rule derived from gap levels; object"
+      },
+      "music.sections.montage": {
+        "confidence": 0.5,
+        "evidence": "montage + b-roll median 2.4 LU under pure montage (-8.0 LUFS momentary, a sampled video -3 to -6)",
+        "measured": "roles.montage.level_vs_montage_lu",
+        "adjusted": "rounded to whole dB; object"
+      },
+      "music.sections.outro": {
+        "confidence": 0.4,
+        "evidence": "closes play 1.1 LU under montage (two music-led closes). when_monologue: the a sampled video VO bed sits flat 10.2 LU under montage with no swell after the VO",
+        "measured": "roles.outro.level_vs_montage_lu",
+        "adjusted": "rounded to whole dB; object"
+      },
+      "music.sections.end_card": {
+        "confidence": 0.45,
+        "evidence": "end cards 8.7 LU under montage",
+        "measured": "roles.end_card.level_vs_montage_lu",
+        "adjusted": "rounded to whole dB; object"
+      },
+      "music.vocals_ok": {
+        "confidence": 0.6,
+        "evidence": "ASR transcribes song lyrics under narrated b-roll; the narration is silent text, so lyrics never fight it"
+      },
+      "music.mix_targets": {
+        "confidence": 0.5,
+        "evidence": "median momentary by section: montage -8.0, b-roll -13.7, monologue -16.2, vlog -25.0, talking -29.8, confessional -36.8 LUFS; integrated -11.7 / -15.0 / -7.8; true peak +1.4 / +1.5 / +2.3 dBTP",
+        "measured": "levels.by_section.montage.momentary_median_lufs",
+        "adjusted": "talking raised from the measured -29.8 to -18: the contrast is the style, riding the volume knob is not; peak ceiling -1 dBTP instead of his overs"
+      },
+      "typography.title": {
+        "confidence": 0.4,
+        "evidence": "5 chapter cards in a sampled video: large open grotesque, white, lowercase, words run together ('weekone;;', 'weekone;;', 'weekone;*', 'weekone;;', 'weekone;'); set straight, no distortion"
+      },
+      "typography.title.size": {
+        "confidence": 0.35,
+        "evidence": "x-height about 0.12-0.13 H on 'weekone;*' and 'weekone;;' (, 366.1), so an em near 0.24 H"
+      },
+      "typography.title.position": {
+        "confidence": 0.3,
+        "evidence": "titles start at x 0.07-0.2 W and sit 0.35-0.55 H from the top, overhanging rectangle edges"
+      },
+      "typography.title.case": {
+        "confidence": 0.8,
+        "evidence": "all 5 card titles lowercase; YouTube chapter titles 88% lowercase (measured chapters.lowercase_title_share)"
+      },
+      "typography.title.treatments": {
+        "confidence": 0.55,
+        "evidence": "chapter titles are never stretched; the stretch belongs to slam text (typography.slam)"
+      },
+      "typography.title.terminal": {
+        "confidence": 0.7,
+        "evidence": "4 of 5 card titles end in ';' or '*'"
+      },
+      "typography.title.mixed_scale": {
+        "confidence": 0.35,
+        "evidence": "sizes can mix inside one title"
+      },
+      "typography.title.aside": {
+        "confidence": 0.4,
+        "evidence": "an aside in asterisks beside the title; words are the editor's"
+      },
+      "typography.subtitle.enabled": {
+        "confidence": 0.75,
+        "evidence": "the vlogs never caption on-camera speech: 0 of 89 sampled talking frames carry a caption (measured captions.presence.talking.with_caption_share). The bottom captions he does use are written narration (typography.narration), which needs the editor's text"
+      },
+      "typography.subtitle": {
+        "confidence": 0.55,
+        "evidence": "geometry of his captions, so a spoken-caption project (skit) or narration lands in the right place: text top 0.850 H, baseline 0.872 H, centred, one line, no box/stroke visible"
+      },
+      "typography.subtitle.face": {
+        "confidence": 0.45,
+        "evidence": "regular weight at 640 px; not the semibold the provisional profile guessed"
+      },
+      "typography.subtitle.size": {
+        "confidence": 0.5,
+        "evidence": "ascender-to-baseline band 0.025 H (~0.72 em) and 0.0089 W per character (~0.47 em average advance) both give ~36 px at 1080p",
+        "measured": "captions.geometry.narration.text_h",
+        "adjusted": "band height converted to em size"
+      },
+      "typography.subtitle.position": {
+        "confidence": 0.7,
+        "evidence": "line centre 0.861 H from the top = -0.361 H from frame centre (baseline measured 0.8722)"
+      },
+      "typography.subtitle.max_chars_per_line": {
+        "confidence": 0.45,
+        "evidence": "longest read line 83 characters, median 71; never wrapped",
+        "measured": "captions.narration_runs.chars.max"
+      },
+      "typography.subtitle.max_lines": {
+        "confidence": 0.8,
+        "evidence": "never two lines in any frame"
+      },
+      "typography.subtitle.min_seconds": {
+        "confidence": 0.3,
+        "evidence": "lines hold about 4 s (2 s frame spacing, +/-2 s); a 2 s floor keeps short lines readable"
+      },
+      "typography.subtitle.max_seconds": {
+        "confidence": 0.4,
+        "evidence": "each read line held for two consecutive 2 s frames, back to back",
+        "measured": "captions.narration_runs.duration_s_estimate.median"
+      },
+      "typography.subtitle.emphasis": {
+        "confidence": 0.6,
+        "evidence": "no caption line is distorted in any frame; distortion lives in slam text"
+      },
+      "typography.narration": {
+        "confidence": 0.7,
+        "evidence": "4/4 read narration lines have 0 ASR words under them; a sampled video captions, 232, 280-292 sit over [music] tags or lyrics; one line holds across the cut -> 846.9; in 24% of sampled b-roll frames",
+        "measured": "captions.presence.broll.with_caption_share",
+        "adjusted": "object; pointer checks the b-roll share"
+      },
+      "typography.monologue_caption": {
+        "confidence": 0.45,
+        "evidence": ": transitional serif, band 0.0153 H, baseline 0.8708 H, verbatim with the VO, lowercase, continuation lines start '-- '",
+        "measured": "captions.geometry.monologue.y_bottom",
+        "adjusted": "object; pointer checks baseline_y"
+      },
+      "typography.date_stamp": {
+        "confidence": 0.5,
+        "evidence": "9 stamps. 'weekone;' / 'noon'; a sampled video 'weekone;' x6; a sampled video '//month 00; morning'. Right-aligned two-line block on 7 of 9; every long video stamps within its first 13 s"
+      },
+      "typography.slam": {
+        "confidence": 0.55,
+        "evidence": "'weekone;', 'weekone;', 'weekone;', end wall. Glyph height/advance 4.12 / 3.3 / 1.03 / 1.69; white, red #d40000/#d70000, or black on white",
+        "measured": "slam.1.glyph_height_over_advance",
+        "adjusted": "object; pointer checks the typical stretch"
+      },
+      "typography.tagline": {
+        "confidence": 0.55,
+        "evidence": "'a video journal byjustinwu', 'a summer experience byjustinwu.'; left edge 0.57-0.61 W, baseline 0.753-0.76 H"
+      },
+      "typography.section_serif": {
+        "confidence": 0.45,
+        "evidence": "'(a) weekone;' / '//month 00; morning', '(e) weekone;' / '//month 00; morning'"
+      },
+      "text_treatments.slam_stretch": {
+        "confidence": 0.5,
+        "evidence": "slam text is a static vertical stretch; typical glyph height/advance 3.3 against ~1.0 unstretched",
+        "measured": "slam.1.glyph_height_over_advance",
+        "adjusted": "keyframe list; the y scale carries the measurement"
+      },
+      "background.enabled": {
+        "confidence": 0.8,
+        "evidence": "rectangle collages on every a sampled video chapter card and on the end wall; inset pairs in a sampled video"
+      },
+      "background.sections": {
+        "confidence": 0.65,
+        "evidence": "the collage is a card device: chapter cards and the end card. A-roll is never shrunk into an inset over it; the in-footage variant is background.inset_stamp"
+      },
+      "background.change.max_seconds": {
+        "confidence": 0.6,
+        "evidence": "one collage per card; a card lasts 6.4 s",
+        "measured": "cards.chapter_card_total_s.median"
+      },
+      "background.layout": {
+        "confidence": 0.55,
+        "evidence": "3 rectangles on 'weekone;', 'weekone;*', 'weekone;;', 4 on 'weekone;;' and 'weekone;;'. Heights 0.11-0.82 H, typical 0.28-0.65; pixel ratios 0.75-3.4 (by eye). Rectangles touch or bleed off the frame edge, overlap 15-40%"
+      },
+      "background.contortion": {
+        "confidence": 0.35,
+        "evidence": "outlines stay axis-aligned in every frame; the texture inside is what is warped: zigzag op-art, ripples, liquid chrome, topographic contours, pixel-sort streaks (, 366.1, 464.5, 874.5, 1074.5). Ranges are interpretation"
+      },
+      "background.motion": {
+        "confidence": 0.4,
+        "evidence": "rectangles and text do not move between 172.839, 173.006 and 176.510; exits are staggered pops (one rectangle gone by 370.745, one still over the next shot at 178.553)"
+      },
+      "background.base_color": {
+        "confidence": 0.3,
+        "evidence": "each card's glitch field is one hue family (green, crimson, violet, chartreuse, periwinkle); violet is the most frequent"
+      },
+      "background.palette": {
+        "confidence": 0.6,
+        "evidence": "7x7 median samples inside rectangles and glitch fields on 5 cards, 1 inset and 2 end frames",
+        "measured": "palette.rect",
+        "adjusted": "rect samples followed by field samples"
+      },
+      "background.art": {
+        "confidence": 0.35,
+        "evidence": "'interference' is the procedural mode closest to his op-art/ripple textures; the real textures are assets (background.textures)"
+      },
+      "background.textures": {
+        "confidence": 0.6,
+        "evidence": ", 172.8, 366.1, 464.5, 874.5, 1074.5;, 361.5, 882"
+      },
+      "background.glitch_field": {
+        "confidence": 0.75,
+        "evidence": "full-frame macroblock / pixel-sort field in one hue family behind all 5 chapter cards, animated; plays alone before the card elements",
+        "measured": "cards.chapter_card_glitch_lead_s.median",
+        "adjusted": "object; pointer checks lead_in_seconds"
+      },
+      "background.card_hold_seconds": {
+        "confidence": 0.9,
+        "evidence": "5 of 5 cards hold exactly 5.714 s (137 frames at 23.976): a saved template",
+        "measured": "cards.chapter_card_hold_s.median"
+      },
+      "background.inset_stamp": {
+        "confidence": 0.5,
+        "evidence": "and, : two rectangles (~0.2-0.3 W) over live footage carrying the date stamp for 3-6 s"
+      },
+      "background.censor_block": {
+        "confidence": 0.45,
+        "evidence": "coarse pixel-mosaic rectangle over a bystander"
+      },
+      "background.colour_flash": {
+        "confidence": 0.35,
+        "evidence": "solid #ec4302 frame at the 'weekone;' chapter; the same orange ends the video"
+      },
+      "background.end_sting": {
+        "confidence": 0.55,
+        "evidence": "last shot is a centred wordmark on a flat field: white lowercase with a hard black offset shadow on #2016b3; stretched orange caps on black"
+      },
+      "format.mixed_aspect": {
+        "confidence": 0.8,
+        "evidence": "4:3 clips pillarboxed in black on the 16:9 timeline, never cropped (and the 832.6-902 monologue); Cut Conductor's colour pass flags this aspect mismatch, which is intended here"
+      },
+      "format.pov_ultrawide_ok": {
+        "confidence": 0.75,
+        "evidence": "fisheye/ultrawide handheld POV with lens distortion left in, every vlog (,)"
+      },
+      "metrics.subtitle_coverage_min": {
+        "confidence": 0.7,
+        "evidence": "speech is not captioned in this style (typography.subtitle.enabled false)"
+      },
+      "metrics.on_beat_min": {
+        "confidence": 0.3,
+        "evidence": "no measurable beat lock (beat_alignment pooled ratio 0.90)"
+      },
+      "metrics.background_coverage_min": {
+        "confidence": 0.5,
+        "evidence": "every card is fully covered by the glitch field and collage"
+      }
+    },
+    "additions": [
+      "format.mixed_aspect, format.pov_ultrawide_ok",
+      "pacing.talking.parts, pacing.montage.fast, pacing.montage.broll, pacing.montage.strobe_bursts: the finer section split behind the engine's four cut sections",
+      "cuts.split_edits: why j_cut/l_cut stay at base",
+      "music.duck.lead_seconds; music.vocals_ok; music.mix_targets; music.sections.intro.when_music_broll, music.sections.talking.when_bed, music.sections.outro.when_monologue: variants chosen by decisions",
+      "typography.title.terminal / mixed_scale / aside; typography.narration, monologue_caption, date_stamp, slam, tagline, section_serif",
+      "text_treatments.slam_stretch (valid treatment; not in typography.title.treatments)",
+      "background.textures, glitch_field, card_hold_seconds, inset_stamp, censor_block, colour_flash, end_sting",
+      "decisions (top level): runtime judgement calls with an editorial flag for conductor.jev.ask; the loader keeps it and warns that it is not read yet"
+    ]
   },
   "assumptions": [
-    "Delivers a 1920x1080 timeline at the footage's frame rate, whatever the camera resolution.",
-    "Target length is 8 minutes when the brief does not say.",
-    "Intro is a fast hook: about 1.2s average shot, cut on the beat, A-roll inset over the rectangle background.",
-    "Talking sections average about 3.8s per visible shot, with b-roll cutaways over a quarter of the time and alternating punch-ins to hide jump cuts.",
-    "Montage cuts every beat or two (about 0.8s) and always lands on a beat.",
-    "Music fades in over 1.5s (ease in) and out over 3s (ease out), sits at -6 dB with no dialogue, and ducks 14 dB under talking with 0.25s attack and 0.6s release.",
-    "Song changes happen at a section boundary with a 1.2s crossfade.",
-    "About 35% of A-roll cuts are split edits: J-cuts lead 0.35s, L-cuts trail 0.45s.",
-    "Titles are SF Pro Display Heavy, uppercase, tight tracking, white, about 13% of frame height, with a stretch or skew treatment.",
-    "Subtitles are SF Pro Text Semibold, lowercase, one line of at most 28 characters, near the bottom third, with roughly 1 in 8 lines distorted for emphasis.",
-    "The abstract background is procedural art cut into grid and random rectangles of mixed ratios, stretched, sheared and sliced, drifting slowly and pulsing on the beat.",
-    "Palette is near-black with off-white, hot pink, electric blue and yellow accents."
+    "Measured from 3 long vlogs (18.5 min median) and 1 launch short; values pool the long vlogs.",
+    "The engine's four cut sections pool finer labels: talking = talking + webcam confessional + vlog; montage = music-only montage + music-led b-roll; intro = the cold open; outro = the last section before the end card.",
+    "Music levels are measured as programme loudness and written here as clip gain relative to montage, assuming a mastered track at unity plays near -8 LUFS.",
+    "Talking is set to play about 10 LU under montage; the measured gap is about 22 LU (talk -29.8 LUFS) and reads as unnormalised camera audio.",
+    "Beat alignment, J/L cuts, text animation curves, exact typefaces and texture sources could not be measured from the bundle; see STYLE.md."
   ],
   "format": {
-    "width": 1920,
-    "height": 1080,
-    "follow_footage": false
+    "frame_rate": 23.976,
+    "mixed_aspect": "pillarbox",
+    "pov_ultrawide_ok": true
   },
   "structure": {
-    "target_seconds": 480,
-    "tolerance_seconds": 8,
-    "order": ["intro", "title_card", "talking", "montage", "talking", "outro", "end_card"],
+    "target_seconds": 1113,
+    "tolerance_seconds": 30,
+    "order": [
+      "intro",
+      "talking",
+      "montage",
+      "title_card",
+      "talking",
+      "montage",
+      "title_card",
+      "talking",
+      "montage",
+      "outro",
+      "end_card"
+    ],
     "sections": {
-      "intro": {"share": 0.07, "min_seconds": 4, "max_seconds": 18},
-      "talking": {"share": 0.74, "min_seconds": 5, "max_seconds": null},
-      "montage": {"share": 0.13, "min_seconds": 4, "max_seconds": 35},
-      "outro": {"share": 0.04, "min_seconds": 0, "max_seconds": 15}
+      "intro": {
+        "share": 0.039,
+        "min_seconds": 9.76,
+        "max_seconds": 100.567
+      },
+      "talking": {
+        "share": 0.536,
+        "min_seconds": 23.633,
+        "max_seconds": null
+      },
+      "montage": {
+        "share": 0.284,
+        "min_seconds": 18.1,
+        "max_seconds": 227.978
+      },
+      "outro": {
+        "share": 0.116,
+        "min_seconds": 54.471,
+        "max_seconds": 244.1
+      }
     },
-    "title_card": {"seconds": 2.0, "bars": 2, "text_sources": ["brief", "clip_name"]},
-    "end_card": {"seconds": 3.0, "bars": 2, "text": "byjustinwu"},
-    "broll_chunk_seconds": 1.6,
-    "speech_merge_gap_seconds": 0.3,
-    "speech_handle_seconds": 0.08,
-    "intro_flash_share": 0.5
+    "title_card": {
+      "seconds": 6.381,
+      "bars": 0
+    },
+    "end_card": {
+      "seconds": 9.7,
+      "bars": 0,
+      "text": "@byjustinwu"
+    },
+    "broll_chunk_seconds": 3.684,
+    "speech_merge_gap_seconds": 0.7,
+    "intro_flash_share": 0.0
   },
   "pacing": {
-    "tolerance": 0.25,
     "intro": {
-      "asl_seconds": 1.2,
-      "shot_length": {"median": 1.0, "p10": 0.5, "p90": 2.2},
-      "cut_on_beat": "always",
+      "asl_seconds": 6.481,
+      "shot_length": {
+        "median": 3.733,
+        "p10": 2.393,
+        "p90": 13.47
+      },
+      "cut_on_beat": "off",
       "broll_cover": 0.0
     },
     "talking": {
-      "asl_seconds": 3.8,
-      "shot_length": {"median": 3.4, "p10": 1.6, "p90": 7.0},
-      "cut_on_beat": "prefer",
-      "broll_cover": 0.25
+      "asl_seconds": 12.308,
+      "shot_length": {
+        "median": 7.587,
+        "p10": 1.457,
+        "p90": 29.713
+      },
+      "cut_on_beat": "off",
+      "broll_cover": 0.1,
+      "parts": {
+        "hold_median_s": 5.422,
+        "hold_p10_s": 1.175,
+        "hold_p90_s": 21.704,
+        "jump_cuts_per_min": 3.693,
+        "longest_hold_s": 91.884,
+        "pauses_per_min": 4.12,
+        "vlog_shot_median_s": 8.3,
+        "confessional_shot_median_s": 8.067
+      }
     },
     "montage": {
-      "asl_seconds": 0.8,
-      "shot_length": {"median": 0.75, "p10": 0.4, "p90": 1.5},
-      "cut_on_beat": "always",
-      "broll_cover": 0.0
+      "asl_seconds": 4.3,
+      "shot_length": {
+        "median": 3.087,
+        "p10": 1.335,
+        "p90": 8.125
+      },
+      "cut_on_beat": "prefer",
+      "broll_cover": 0.0,
+      "fast": {
+        "shot_length": {
+          "median": 2.752,
+          "p10": 0.985,
+          "p90": 6.59
+        },
+        "cuts_per_min": 15.331,
+        "fastest_8_shot_median_s": 1.106
+      },
+      "broll": {
+        "shot_length": {
+          "median": 3.684,
+          "p10": 1.689,
+          "p90": 9.647
+        },
+        "cuts_per_min": 10.054
+      },
+      "strobe_bursts": {
+        "allowed": true,
+        "cuts": [
+          4,
+          12
+        ],
+        "max_gap_seconds": 0.35
+      }
     },
     "outro": {
-      "asl_seconds": 2.5,
-      "shot_length": {"median": 2.2, "p10": 1.0, "p90": 4.5},
+      "asl_seconds": 4.433,
+      "shot_length": {
+        "median": 2.961,
+        "p10": 1.36,
+        "p90": 7.374
+      },
       "cut_on_beat": "prefer",
       "broll_cover": 0.0
     }
   },
   "cuts": {
-    "beat_snap_tolerance_seconds": 0.12,
-    "min_shot_seconds": 0.4,
-    "j_cut": {"probability": 0.2, "lead_seconds": 0.35},
-    "l_cut": {"probability": 0.15, "tail_seconds": 0.45},
-    "punch_in": {"enabled": true, "scale": 1.14, "every": 2},
-    "cutaway": {"min_seconds": 0.9, "max_seconds": 2.4},
-    "broll_nat_sound_db": -22
+    "min_shot_seconds": 0.33,
+    "punch_in": {
+      "enabled": false
+    },
+    "cutaway": {
+      "min_seconds": 1.4,
+      "max_seconds": 8.1
+    },
+    "split_edits": "unmeasured"
   },
   "music": {
-    "bed_db": -6,
-    "fade_in": {"seconds": 1.5, "curve": "easeIn"},
-    "fade_out": {"seconds": 3.0, "curve": "easeOut"},
+    "bed_db": -2,
+    "fade_in": {
+      "seconds": 1.0
+    },
+    "fade_out": {
+      "seconds": 1.65
+    },
     "duck": {
-      "enabled": true,
-      "depth_db": -14,
-      "attack_seconds": 0.25,
-      "release_seconds": 0.6,
-      "merge_gap_seconds": 0.9,
-      "curve": "ease"
+      "depth_db": -14.8,
+      "attack_seconds": 0.4,
+      "lead_seconds": 0.69
     },
-    "song_change": {"transition": "crossfade", "crossfade_seconds": 1.2, "at": "section_boundary"},
+    "song_change": {
+      "transition": "fade_through"
+    },
     "sections": {
-      "intro": {"bed_db": -4, "duck": true},
-      "title_card": {"bed_db": -3, "duck": false},
-      "talking": {"bed_db": -6, "duck": true},
-      "montage": {"bed_db": -2, "duck": false},
-      "outro": {"bed_db": -5, "duck": true},
-      "end_card": {"bed_db": -3, "duck": false}
+      "intro": {
+        "bed_db": -96,
+        "duck": false,
+        "when_music_broll": {
+          "bed_db": 0,
+          "duck": false
+        }
+      },
+      "title_card": {
+        "bed_db": -16,
+        "duck": false
+      },
+      "talking": {
+        "bed_db": -96,
+        "duck": false,
+        "when_bed": {
+          "bed_db": 0,
+          "duck": true
+        }
+      },
+      "montage": {
+        "bed_db": -2,
+        "duck": false
+      },
+      "outro": {
+        "bed_db": -1,
+        "duck": false,
+        "when_monologue": {
+          "bed_db": -10,
+          "duck": false
+        }
+      },
+      "end_card": {
+        "bed_db": -9,
+        "duck": false
+      }
     },
-    "beats": {"detect": true, "min_bpm": 75, "max_bpm": 175, "fallback_bpm": null, "beats_per_bar": 4}
+    "vocals_ok": true,
+    "mix_targets": {
+      "montage_lufs": -8.0,
+      "broll_lufs": -13.7,
+      "monologue_lufs": -16.2,
+      "talking_lufs": -18.0,
+      "true_peak_dbtp": -1.0
+    }
   },
   "typography": {
-    "family": "SF Pro",
     "title": {
       "font": "SF Pro Display",
-      "face": "Heavy",
-      "size": 0.13,
-      "position": [0.0, 0.02],
-      "case": "upper",
-      "tracking": -0.03,
-      "color": "#F2F2F7",
-      "alignment": "center",
-      "lane": 2,
-      "treatments": ["stretch_x", "skew_left", "tall_squeeze"]
+      "face": "Regular",
+      "size": 0.24,
+      "position": [
+        -0.3,
+        0.08
+      ],
+      "case": "lower",
+      "tracking": -0.02,
+      "color": "#FFFFFF",
+      "alignment": "left",
+      "treatments": [
+        "none"
+      ],
+      "terminal": [
+        "",
+        "*"
+      ],
+      "mixed_scale": {
+        "allowed": true,
+        "ratio": 2.0
+      },
+      "aside": {
+        "wrap": "*",
+        "size": 0.04,
+        "alignment": "left",
+        "text_source": "editor"
+      }
     },
     "subtitle": {
-      "enabled": true,
+      "enabled": false,
       "font": "SF Pro Text",
-      "face": "Semibold",
-      "size": 0.042,
-      "position": [0.0, -0.33],
+      "face": "Regular",
+      "size": 0.034,
+      "position": [
+        0.0,
+        -0.361
+      ],
       "case": "lower",
-      "tracking": 0.01,
+      "tracking": 0.0,
       "color": "#FFFFFF",
       "alignment": "center",
       "stroke": null,
-      "shadow": {"color": "#000000A6", "distance": 3, "angle": 300, "blur": 10},
-      "max_chars_per_line": 28,
+      "shadow": null,
+      "max_chars_per_line": 83,
       "max_lines": 1,
-      "min_seconds": 0.6,
-      "max_seconds": 2.6,
-      "lane": 3,
+      "min_seconds": 2.0,
+      "max_seconds": 4.0,
       "emphasis": {
-        "rate": 0.125,
-        "treatments": ["squash_pop", "stretch_x", "tracking_blowout"]
+        "rate": 0.0,
+        "treatments": []
       }
+    },
+    "narration": {
+      "role": "silent_written_narration",
+      "text_source": "editor",
+      "style": "subtitle",
+      "case": "lower_keep_proper_nouns",
+      "sections": [
+        "montage"
+      ],
+      "seconds_per_line": 4.0,
+      "chars_per_second": 17.75,
+      "spans_cuts": true,
+      "animation": "cut_on_cut_off"
+    },
+    "monologue_caption": {
+      "font": "Times New Roman",
+      "face": "Regular",
+      "size": 0.023,
+      "baseline_y": 0.8708,
+      "case": "lower",
+      "verbatim": true,
+      "continuation_prefix": "--"
+    },
+    "date_stamp": {
+      "font": "SF Pro Text",
+      "face": "Regular",
+      "size": 0.06,
+      "inset_size": 0.04,
+      "alignment": "right",
+      "template": "{weekday} {month} {day_ordinal};\n{daypart}",
+      "alt_templates": [
+        "{mon} {d} {yyyy};\n{h}:{mm}{ampm}",
+        "//{month} {dd}; {daypart}"
+      ],
+      "dayparts": {
+        "05": "morning",
+        "11": "noon",
+        "13": "afternoon",
+        "17": "evening",
+        "21": "late evening",
+        "00": "late night"
+      },
+      "anchor_full_card": {
+        "x_right": 0.9,
+        "y": 0.8
+      },
+      "anchor_inset": {
+        "x_right": 0.93,
+        "y": 0.42
+      },
+      "within_first_seconds": 12.8,
+      "text_source": "clip_creation_time"
+    },
+    "slam": {
+      "font": "Helvetica Neue",
+      "face": "Bold",
+      "fallback_font": "SF Pro Display",
+      "case": "upper",
+      "treatment": "slam_stretch",
+      "stretch_y": {
+        "min": 1.0,
+        "typical": 3.3,
+        "max": 4.12
+      },
+      "fill": 0.95,
+      "colors": [
+        "#FFFFFF",
+        "#D40000",
+        "#000000"
+      ],
+      "seconds": {
+        "min": 1.0,
+        "max": 3.3
+      },
+      "uses": [
+        "brand_open",
+        "thesis_line",
+        "punchline"
+      ],
+      "max_per_video": 2
+    },
+    "tagline": {
+      "template": "a {noun} byjustinwu",
+      "text_source": "editor",
+      "style": "subtitle",
+      "size": 0.03,
+      "anchor": {
+        "x_left": 0.58,
+        "baseline_y": 0.757
+      },
+      "at": [
+        "intro",
+        "end_card"
+      ]
+    },
+    "section_serif": {
+      "font": "Times New Roman",
+      "face": "Regular",
+      "pattern": "({letter}) {title}\n//{date}; {note}",
+      "text_source": "editor"
     }
   },
   "text_treatments": {
-    "none": {"description": "Static text. No transform."},
-    "stretch_x": {
-      "description": "Horizontal stretch that snaps back: text lands wide and thin, then settles.",
-      "scale": [[0.0, [1.55, 0.72]], [0.22, [1.08, 0.96]], [0.4, [1.0, 1.0]]]
-    },
-    "tall_squeeze": {
-      "description": "Vertical stretch, squeezed narrow, relaxing over half a second.",
-      "scale": [[0.0, [0.7, 1.7]], [0.5, [0.94, 1.08]]]
-    },
-    "skew_left": {
-      "description": "Corner-pinned shear: the top edge leans left, a contorted italic.",
-      "corners": {
-        "topLeft": [-0.05, 0.0],
-        "topRight": [-0.05, 0.0],
-        "botLeft": [0.03, 0.0],
-        "botRight": [0.03, 0.0]
-      }
-    },
-    "squash_pop": {
-      "description": "Squash then overshoot on entry, a quick distort for an emphasis word.",
-      "scale": [[0.0, [1.3, 0.55]], [0.1, [0.88, 1.2]], [0.2, [1.04, 0.97]], [0.3, [1.0, 1.0]]]
-    },
-    "tracking_blowout": {
-      "description": "Letters spread wide and drift, with a slight rotation.",
-      "tracking": 0.35,
-      "rotation": [[0.0, -3.0], [-0.001, 2.0]]
+    "slam_stretch": {
+      "description": "Static vertical stretch for full-frame slam text: tall caps filling the frame, no settle.",
+      "scale": [
+        [
+          0.0,
+          [
+            1.0,
+            3.3
+          ]
+        ]
+      ]
     }
   },
   "background": {
     "enabled": true,
-    "placement": "under",
-    "lane": -3,
     "sections": {
-      "intro": true,
+      "intro": false,
       "title_card": true,
       "talking": false,
       "montage": false,
-      "outro": true,
+      "outro": false,
       "end_card": true
     },
-    "aroll_inset": {"intro": 0.8, "talking": 1.0, "montage": 1.0, "outro": 0.8},
-    "change": {"every": "section", "max_seconds": 8},
+    "change": {
+      "max_seconds": 6.4
+    },
     "layout": {
-      "mode": "mixed",
-      "grid": {"columns": 8, "rows": 5, "merge_probability": 0.45, "fill": 0.55},
-      "random": {"count": [5, 10]},
-      "size_ratios": [[1, 1], [2, 1], [1, 2], [3, 1], [4, 3], [16, 9], [9, 16]],
-      "size_range": [0.07, 0.42],
-      "gutter": 0.012,
-      "margin": 0.03
+      "mode": "random",
+      "random": {
+        "count": [
+          3,
+          4
+        ]
+      },
+      "size_ratios": [
+        [
+          1,
+          1
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          3,
+          2
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          5,
+          2
+        ],
+        [
+          3,
+          1
+        ],
+        [
+          3,
+          4
+        ]
+      ],
+      "size_range": [
+        0.25,
+        0.65
+      ],
+      "gutter": 0.0,
+      "margin": 0.0
     },
     "contortion": {
-      "stretch": [0.45, 2.3],
-      "shear_degrees": [-18, 18],
-      "slices": [0, 7],
-      "slice_shift": 0.14,
+      "stretch": [
+        0.5,
+        2.0
+      ],
+      "shear_degrees": [
+        -8,
+        8
+      ],
+      "slices": [
+        0,
+        6
+      ],
+      "slice_shift": 0.12,
       "smear": 0.35,
-      "mirror": 0.25
+      "mirror": 0.2
     },
     "motion": {
-      "drift": 0.012,
-      "pulse": 0.035,
-      "pulse_on_beat": true,
-      "floating": 3,
-      "floating_size": [0.08, 0.22],
-      "rotation_degrees": [-4, 4]
+      "drift": 0.0,
+      "pulse": 0.0,
+      "pulse_on_beat": false,
+      "floating": 0,
+      "rotation_degrees": [
+        0,
+        0
+      ]
     },
-    "opacity": 0.9,
-    "base_color": "#0A0A0C",
-    "palette": ["#0A0A0C", "#F2F2F7", "#FF2D6F", "#2F7CFF", "#FFD60A", "#6E6E73"],
-    "art": {"folder": null, "procedural": "interference", "seed": 20260925}
+    "base_color": "#6B3BFF",
+    "palette": [
+      "#ffa9ff",
+      "#c436ac",
+      "#f3acbc",
+      "#ca32ff",
+      "#003dff",
+      "#63b591",
+      "#434343",
+      "#8ad3ff",
+      "#00e513",
+      "#512f48",
+      "#a83cff",
+      "#030bb4",
+      "#77da1d",
+      "#cc3054",
+      "#6b3bff",
+      "#baff00",
+      "#91c4ff",
+      "#ec4302",
+      "#2016b3"
+    ],
+    "art": {
+      "procedural": "interference",
+      "seed": 20260925
+    },
+    "textures": [
+      "pixel_sort_glitch",
+      "zigzag_op_art",
+      "wavy_stripes",
+      "liquid_ripple",
+      "topographic_contours",
+      "holographic_gradient",
+      "blue_blob_field",
+      "perspective_checkerboard",
+      "japanese_map_print",
+      "fire_macro"
+    ],
+    "glitch_field": {
+      "use": "title_card",
+      "lead_in_seconds": 0.667,
+      "hue_family_per_card": true,
+      "animated": true
+    },
+    "card_hold_seconds": 5.714,
+    "inset_stamp": {
+      "rects": 2,
+      "width": [
+        0.2,
+        0.3
+      ],
+      "over": "live_footage",
+      "seconds": [
+        3.0,
+        6.0
+      ],
+      "carries": "typography.date_stamp"
+    },
+    "censor_block": {
+      "style": "pixel_mosaic_rect"
+    },
+    "colour_flash": {
+      "color": "#EC4302",
+      "max_seconds": 1.0
+    },
+    "end_sting": {
+      "text": "@byjustinwu",
+      "seconds": [
+        1.4,
+        1.8
+      ],
+      "field": [
+        "#2016B3",
+        "#000000"
+      ],
+      "size": 0.05
+    }
   },
   "metrics": {
-    "subtitle_coverage_min": 0.85,
-    "on_beat_min": 0.8,
+    "subtitle_coverage_min": 0.0,
+    "on_beat_min": 0.0,
     "background_coverage_min": 0.95
-  }
+  },
+  "decisions": [
+    {
+      "id": "cold_open_kind",
+      "kind": "choice",
+      "editorial": true,
+      "applies_to": "project",
+      "instructions": "Pick how this video opens, given the clips and their transcripts.",
+      "options": {
+        "talking_hook": "a clip of the creator talking to the lens sets up the video",
+        "music_broll": "atmospheric b-roll under music opens the video"
+      },
+      "add_none": false,
+      "prior": {
+        "talking_hook": 0.667,
+        "music_broll": 0.333
+      },
+      "sets": "music.sections.intro",
+      "evidence": "2 of 3 long videos open on talk (measured summary.talking_open_share 0.667)"
+    },
+    {
+      "id": "section_role",
+      "kind": "choice",
+      "editorial": false,
+      "applies_to": "clip_run",
+      "instructions": "Pick the role this run of clips plays in the edit.",
+      "options": {
+        "talking": "the creator speaks to the lens; hold it, no music",
+        "confessional": "a webcam or screen-recorded talk to camera",
+        "vlog": "handheld moments with people and live sound",
+        "broll": "scenery or activity carried by music, maybe with written narration",
+        "montage": "music-only highlights cut quickly",
+        "monologue": "reflective voice-over over a held music bed"
+      },
+      "prior": {
+        "talking": 0.18,
+        "confessional": 0.04,
+        "vlog": 0.35,
+        "broll": 0.17,
+        "montage": 0.22,
+        "monologue": 0.04
+      },
+      "sets": "pacing",
+      "evidence": "labelled seconds: vlog 1099.9, montage 684.9, talking 567.7, broll 525.2, confessional 141.3, monologue 69.4"
+    },
+    {
+      "id": "music_under_talk",
+      "kind": "choice",
+      "editorial": false,
+      "applies_to": "talking_section",
+      "instructions": "Pick what plays under this on-camera talk.",
+      "options": {
+        "none": "only the camera audio",
+        "bed": "the previous track continues, ducked well under the voice"
+      },
+      "add_none": false,
+      "prior": {
+        "none": 0.667,
+        "bed": 0.333
+      },
+      "sets": "music.sections.talking",
+      "evidence": "no bed in a sampled video or a sampled video; a ducked bed in"
+    },
+    {
+      "id": "montage_beat_lock",
+      "kind": "noul",
+      "editorial": false,
+      "applies_to": "montage_section",
+      "instructions": "This montage should have its cuts snapped to the music's beat grid.",
+      "true": "snap each cut to the nearest beat",
+      "false": "cut on picture and phrase, not the beat",
+      "prior": 0.3,
+      "sets": "pacing.montage.cut_on_beat",
+      "evidence": "no detectable onset alignment (pooled ratio 0.90)"
+    },
+    {
+      "id": "keep_pause",
+      "kind": "noul",
+      "editorial": false,
+      "applies_to": "talking_pause",
+      "instructions": "This pause in the talk is a beat worth keeping rather than a gap to tighten.",
+      "true": "keep the pause",
+      "false": "tighten it",
+      "prior": 0.5,
+      "sets": "structure.speech_merge_gap_seconds",
+      "evidence": "4.1 kept pauses per minute of talk, 16.1 in the confessional"
+    },
+    {
+      "id": "chapter_marker_style",
+      "kind": "choice",
+      "editorial": true,
+      "applies_to": "project",
+      "instructions": "Pick how chapters are marked in this video.",
+      "options": {
+        "glitch_collage": "full-frame glitch field with a rectangle collage, lowercase title and date stamp",
+        "inset_stamp": "a small rectangle pair with the date stamp over live footage",
+        "serif_section": "a lettered serif title with a date line over footage"
+      },
+      "add_none": false,
+      "prior": {
+        "glitch_collage": 0.45,
+        "inset_stamp": 0.35,
+        "serif_section": 0.2
+      },
+      "sets": "background.sections",
+      "evidence": "a sampled video glitch cards x5; inset stamps; a sampled video serif sections"
+    },
+    {
+      "id": "slam_line",
+      "kind": "noul",
+      "editorial": true,
+      "applies_to": "transcript_line",
+      "instructions": "This line is the video's thesis or its biggest punchline, worth a full-frame all-caps slam.",
+      "true": "slam it",
+      "false": "leave it as speech",
+      "prior": 0.02,
+      "sets": "typography.slam",
+      "evidence": "0-1 slam per long video besides the brand open"
+    },
+    {
+      "id": "closing_kind",
+      "kind": "choice",
+      "editorial": true,
+      "applies_to": "project",
+      "instructions": "Pick how this video closes before the end card.",
+      "options": {
+        "monologue": "a reflective voice-over over held music",
+        "montage": "a music-only highlights run",
+        "narrated_broll": "b-roll with written narration"
+      },
+      "add_none": false,
+      "prior": {
+        "monologue": 0.34,
+        "montage": 0.33,
+        "narrated_broll": 0.33
+      },
+      "sets": "music.sections.outro",
+      "evidence": "one close of each kind in the three long videos"
+    }
+  ]
 }

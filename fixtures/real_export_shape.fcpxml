@@ -7,7 +7,7 @@
     <effect id="eSolid" name="Custom" uid="FAKE-EFFECT-SOLID"/>
     <effect id="eColor" name="Color Adjustments" uid="FAKE-EFFECT-COLOR"/>
     <asset id="aTalk" name="clip_a" uid="FAKE-aTalk" start="0s" duration="8008000/24000s" hasVideo="1" hasAudio="1" format="r1" audioRate="48000">
-      <media-rep kind="original-media" sig="FAKE-aTalk" src="file:///Volumes/Media/clip_a.mov">
+      <media-rep kind="original-media" sig="FAKE-aTalk" src="file:///media/library/clip_a.mov">
         <bookmark>FAKE-BOOKMARK</bookmark>
       </media-rep>
       <metadata>
@@ -15,7 +15,7 @@
       </metadata>
     </asset>
     <asset id="aCompound" name="compound_src" uid="FAKE-aCompound" start="0s" duration="4004000/24000s" hasVideo="1" hasAudio="1" format="r1" audioRate="48000">
-      <media-rep kind="original-media" sig="FAKE-aCompound" src="file:///Volumes/Media/compound_src.mov">
+      <media-rep kind="original-media" sig="FAKE-aCompound" src="file:///media/library/compound_src.mov">
         <bookmark>FAKE-BOOKMARK</bookmark>
       </media-rep>
       <metadata>
@@ -23,7 +23,7 @@
       </metadata>
     </asset>
     <asset id="aRate" name="rate_src" uid="FAKE-aRate" start="0s" duration="5005000/24000s" hasVideo="1" hasAudio="1" format="r1" audioRate="48000">
-      <media-rep kind="original-media" sig="FAKE-aRate" src="file:///Volumes/Media/rate_src.mov">
+      <media-rep kind="original-media" sig="FAKE-aRate" src="file:///media/library/rate_src.mov">
         <bookmark>FAKE-BOOKMARK</bookmark>
       </media-rep>
       <metadata>
@@ -31,7 +31,7 @@
       </metadata>
     </asset>
     <asset id="aPortrait" name="portrait_src" uid="FAKE-aPortrait" start="0s" duration="4004000/24000s" hasVideo="1" hasAudio="1" format="rPortrait" audioRate="48000">
-      <media-rep kind="original-media" sig="FAKE-aPortrait" src="file:///Volumes/Media/portrait_src.mov">
+      <media-rep kind="original-media" sig="FAKE-aPortrait" src="file:///media/library/portrait_src.mov">
         <bookmark>FAKE-BOOKMARK</bookmark>
       </media-rep>
       <metadata>
@@ -39,7 +39,7 @@
       </metadata>
     </asset>
     <asset id="aBroll" name="broll_src" uid="FAKE-aBroll" start="0s" duration="8008000/24000s" hasVideo="1" hasAudio="1" format="r1" audioRate="48000">
-      <media-rep kind="original-media" sig="FAKE-aBroll" src="file:///Volumes/Media/broll_src.mov">
+      <media-rep kind="original-media" sig="FAKE-aBroll" src="file:///media/library/broll_src.mov">
         <bookmark>FAKE-BOOKMARK</bookmark>
       </media-rep>
       <metadata>
@@ -47,7 +47,7 @@
       </metadata>
     </asset>
     <asset id="aBed" name="bed_track" uid="FAKE-aBed" start="0s" duration="8008000/24000s" hasVideo="0" hasAudio="1" format="r1" audioRate="48000">
-      <media-rep kind="original-media" sig="FAKE-aBed" src="file:///Volumes/Media/bed_track.mov">
+      <media-rep kind="original-media" sig="FAKE-aBed" src="file:///media/library/bed_track.mov">
         <bookmark>FAKE-BOOKMARK</bookmark>
       </media-rep>
       <metadata>
@@ -55,7 +55,7 @@
       </metadata>
     </asset>
     <asset id="aHost" name="host_src" uid="FAKE-aHost" start="0s" duration="4004000/24000s" hasVideo="1" hasAudio="1" format="r1" audioRate="48000">
-      <media-rep kind="original-media" sig="FAKE-aHost" src="file:///Volumes/Media/host_src.mov">
+      <media-rep kind="original-media" sig="FAKE-aHost" src="file:///media/library/host_src.mov">
         <bookmark>FAKE-BOOKMARK</bookmark>
       </media-rep>
       <metadata>
@@ -63,7 +63,7 @@
       </metadata>
     </asset>
     <asset id="aTail" name="tail_src" uid="FAKE-aTail" start="0s" duration="4004000/24000s" hasVideo="1" hasAudio="1" format="r1" audioRate="48000">
-      <media-rep kind="original-media" sig="FAKE-aTail" src="file:///Volumes/Media/tail_src.mov">
+      <media-rep kind="original-media" sig="FAKE-aTail" src="file:///media/library/tail_src.mov">
         <bookmark>FAKE-BOOKMARK</bookmark>
       </media-rep>
       <metadata>
@@ -71,7 +71,7 @@
       </metadata>
     </asset>
     <asset id="aHold0" name="hold_src_0" uid="FAKE-aHold0" start="0s" duration="8008000/24000s" hasVideo="1" hasAudio="1" format="r1" audioRate="48000">
-      <media-rep kind="original-media" sig="FAKE-aHold0" src="file:///Volumes/Media/hold_src_0.mov">
+      <media-rep kind="original-media" sig="FAKE-aHold0" src="file:///media/library/hold_src_0.mov">
         <bookmark>FAKE-BOOKMARK</bookmark>
       </media-rep>
       <metadata>
@@ -79,7 +79,7 @@
       </metadata>
     </asset>
     <asset id="aHold1" name="hold_src_1" uid="FAKE-aHold1" start="0s" duration="8008000/24000s" hasVideo="1" hasAudio="1" format="r1" audioRate="48000">
-      <media-rep kind="original-media" sig="FAKE-aHold1" src="file:///Volumes/Media/hold_src_1.mov">
+      <media-rep kind="original-media" sig="FAKE-aHold1" src="file:///media/library/hold_src_1.mov">
         <bookmark>FAKE-BOOKMARK</bookmark>
       </media-rep>
       <metadata>
@@ -87,7 +87,7 @@
       </metadata>
     </asset>
     <asset id="aWhole0" name="whole_src_0" uid="FAKE-aWhole0" start="0s" duration="720720/24000s" hasVideo="1" hasAudio="1" format="r1" audioRate="48000">
-      <media-rep kind="original-media" sig="FAKE-aWhole0" src="file:///Volumes/Media/whole_src_0.mov">
+      <media-rep kind="original-media" sig="FAKE-aWhole0" src="file:///media/library/whole_src_0.mov">
         <bookmark>FAKE-BOOKMARK</bookmark>
       </media-rep>
       <metadata>
@@ -95,7 +95,7 @@
       </metadata>
     </asset>
     <asset id="aWhole1" name="whole_src_1" uid="FAKE-aWhole1" start="0s" duration="720720/24000s" hasVideo="1" hasAudio="1" format="r1" audioRate="48000">
-      <media-rep kind="original-media" sig="FAKE-aWhole1" src="file:///Volumes/Media/whole_src_1.mov">
+      <media-rep kind="original-media" sig="FAKE-aWhole1" src="file:///media/library/whole_src_1.mov">
         <bookmark>FAKE-BOOKMARK</bookmark>
       </media-rep>
       <metadata>
@@ -103,7 +103,7 @@
       </metadata>
     </asset>
     <asset id="aWhole2" name="whole_src_2" uid="FAKE-aWhole2" start="0s" duration="720720/24000s" hasVideo="1" hasAudio="1" format="r1" audioRate="48000">
-      <media-rep kind="original-media" sig="FAKE-aWhole2" src="file:///Volumes/Media/whole_src_2.mov">
+      <media-rep kind="original-media" sig="FAKE-aWhole2" src="file:///media/library/whole_src_2.mov">
         <bookmark>FAKE-BOOKMARK</bookmark>
       </media-rep>
       <metadata>
@@ -111,7 +111,7 @@
       </metadata>
     </asset>
     <asset id="aWhole3" name="whole_src_3" uid="FAKE-aWhole3" start="0s" duration="720720/24000s" hasVideo="1" hasAudio="1" format="r1" audioRate="48000">
-      <media-rep kind="original-media" sig="FAKE-aWhole3" src="file:///Volumes/Media/whole_src_3.mov">
+      <media-rep kind="original-media" sig="FAKE-aWhole3" src="file:///media/library/whole_src_3.mov">
         <bookmark>FAKE-BOOKMARK</bookmark>
       </media-rep>
       <metadata>
@@ -119,7 +119,7 @@
       </metadata>
     </asset>
     <asset id="aWhole4" name="whole_src_4" uid="FAKE-aWhole4" start="0s" duration="720720/24000s" hasVideo="1" hasAudio="1" format="r1" audioRate="48000">
-      <media-rep kind="original-media" sig="FAKE-aWhole4" src="file:///Volumes/Media/whole_src_4.mov">
+      <media-rep kind="original-media" sig="FAKE-aWhole4" src="file:///media/library/whole_src_4.mov">
         <bookmark>FAKE-BOOKMARK</bookmark>
       </media-rep>
       <metadata>
@@ -127,7 +127,7 @@
       </metadata>
     </asset>
     <asset id="aWhole5" name="whole_src_5" uid="FAKE-aWhole5" start="0s" duration="720720/24000s" hasVideo="1" hasAudio="1" format="r1" audioRate="48000">
-      <media-rep kind="original-media" sig="FAKE-aWhole5" src="file:///Volumes/Media/whole_src_5.mov">
+      <media-rep kind="original-media" sig="FAKE-aWhole5" src="file:///media/library/whole_src_5.mov">
         <bookmark>FAKE-BOOKMARK</bookmark>
       </media-rep>
       <metadata>
@@ -135,7 +135,7 @@
       </metadata>
     </asset>
     <asset id="aWhole6" name="whole_src_6" uid="FAKE-aWhole6" start="0s" duration="720720/24000s" hasVideo="1" hasAudio="1" format="r1" audioRate="48000">
-      <media-rep kind="original-media" sig="FAKE-aWhole6" src="file:///Volumes/Media/whole_src_6.mov">
+      <media-rep kind="original-media" sig="FAKE-aWhole6" src="file:///media/library/whole_src_6.mov">
         <bookmark>FAKE-BOOKMARK</bookmark>
       </media-rep>
       <metadata>
@@ -143,7 +143,7 @@
       </metadata>
     </asset>
     <asset id="aWhole7" name="whole_src_7" uid="FAKE-aWhole7" start="0s" duration="720720/24000s" hasVideo="1" hasAudio="1" format="r1" audioRate="48000">
-      <media-rep kind="original-media" sig="FAKE-aWhole7" src="file:///Volumes/Media/whole_src_7.mov">
+      <media-rep kind="original-media" sig="FAKE-aWhole7" src="file:///media/library/whole_src_7.mov">
         <bookmark>FAKE-BOOKMARK</bookmark>
       </media-rep>
       <metadata>
@@ -151,7 +151,7 @@
       </metadata>
     </asset>
   </resources>
-  <library location="file:///Volumes/Media/Synthetic.fcpbundle/">
+  <library location="file:///media/library/Synthetic.fcpbundle/">
     <event name="Synthetic Event" uid="00000000-0000-0000-0000-000000000001">
       <project name="synthetic-export" uid="00000000-0000-0000-0000-000000000002">
         <sequence format="r1" duration="12540528/24000s" tcStart="0s" tcFormat="NDF" audioLayout="stereo" audioRate="48k">

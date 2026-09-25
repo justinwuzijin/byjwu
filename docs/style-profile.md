@@ -5,7 +5,7 @@ A style profile holds one creator's editorial taste as data: pacing, music behav
 ```text
 styles/
   base/profile.json          neutral defaults: every key the engine reads
-  byjustinwu/profile.json    PROVISIONAL placeholder for @byjustinwu (extends base)
+  byjustinwu/profile.json    measured profile (extends base)
 ```
 
 Load one with `--style byjustinwu` or `--style path/to/profile.json`. Without a flag, you get `byjustinwu`. `JEVID_STYLES_DIR` adds more folders to search (`os.pathsep`-separated). `profile.yaml` works too when PyYAML is installed.
@@ -133,10 +133,12 @@ Plates and floaters are PNG stills under `<out>/assets/background/`, placed as c
 
 What iterate checks after each round: `subtitle_coverage_min`, `on_beat_min` (share of cuts on a beat in `always` sections), `fade_tolerance_seconds`, `duck_tolerance_db`, `background_coverage_min`, and `font_compliance_min`. The ASL and duration targets come from `pacing` and `structure`.
 
-## When the style study lands
+## Updating a measured profile
 
-1. Keep the keys. Replace the numbers in `styles/byjustinwu/profile.json` with measured ones.
-2. Set `provisional: false`, bump `version`, and point `provenance.study` at the study.
-3. Rewrite `assumptions` as what was measured, and on which videos.
+`styles/byjustinwu/profile.json` is measured (`provisional: false`). A later study should:
+
+1. Keep the keys. Replace numbers in the profile with the new measurements.
+2. Point `provenance.study` at the study. Evidence notes stay aggregate stats, with no video ids.
+3. Rewrite `assumptions` as what was measured.
 4. New measurements the engine does not read yet can go in as new keys. They load with a warning until code uses them.
-5. Run `python -m pytest tests/test_style_profile.py tests/test_assembly_engine.py` and `python scripts/assemble_dry_run.py`.
+5. Run `python -m pytest tests/test_style_profile.py tests/test_assembly_engine.py tests/test_byjustinwu_profile.py`.

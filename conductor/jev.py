@@ -138,7 +138,7 @@ def resolve_endpoint(environ: Mapping[str, str] | None = None) -> Endpoint:
         headers={
             "Authorization": f"Bearer {openrouter_key}",
             "Content-Type": "application/json",
-            "HTTP-Referer": "https://github.com/justinwuzijin/jevid",
+            "HTTP-Referer": "https://github.com/byjwu/byjwu",
             "X-OpenRouter-Title": "Cut Conductor",
         },
     )

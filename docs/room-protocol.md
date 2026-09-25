@@ -4,7 +4,7 @@ How the byjwu Grok Bot room drives the editing engine (the `conductor` package, 
 
 The bots coordinate. They do not make editorial decisions. Bounded, logical calls come from Jev (`conductor/jev.py`). Open-ended creative and taste calls come from Grok 4.7 through the decision router (`CONDUCTOR_TASTE_MODEL`, default `grok-4.7-medium`). Opus stays selectable.
 
-Justin, the owner, does not use the command line. He drops a selects folder, an FCPXML export, a `.fcpxmld` bundle, or a zip in the room or in `~/Desktop/byjwu-in`, and opens the FCPXML that lands in `~/Desktop/byjwu-out` in Final Cut Pro himself. The CLI below is what the bots run for him. The legacy-folder fallback is described under [Desktop folders](#desktop-folders).
+the editor, the owner, does not use the command line. He drops a selects folder, an FCPXML export, a `.fcpxmld` bundle, or a zip in the room or in `~/Desktop/byjwu-in`, and opens the FCPXML that lands in `~/Desktop/byjwu-out` in Final Cut Pro himself. The CLI below is what the bots run for him. The legacy-folder fallback is described under [Desktop folders](#desktop-folders).
 
 The shared object is one timeline plus one brief. The timeline is a Final Cut export, or a starter sequence built from a selects folder. The shared artifact is the JSON report (`protocol` `cut-conductor.room`, `protocol_version` 1).
 

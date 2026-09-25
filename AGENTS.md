@@ -1,7 +1,7 @@
 # AGENTS.md
 
 The product in this repo is **byjwu** (the engine was once called Cut
-Conductor). It edits Justin's (@byjustinwu) YouTube videos: raw footage and
+Conductor). It edits the editor's (@byjustinwu) YouTube videos: raw footage and
 music in, a finished FCPXML out that he opens in Final Cut Pro himself. Jev
 makes bounded, logical decisions. Grok 4.7 (`grok-4.7-medium`,
 `CONDUCTOR_TASTE_MODEL`) makes open-ended taste decisions. Opus stays

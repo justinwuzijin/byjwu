@@ -1,6 +1,6 @@
 """The type and graphics section of a style profile, and every placeholder default.
 
-PLACEHOLDER VALUES. Nothing in the defaults below was measured from Justin's
+PLACEHOLDER VALUES. Nothing in the defaults below was measured from the editor's
 videos. They are neutral starting points (SF Pro Display / SF Pro Text, clean
 white with a subtle shadow, a sparse white rectangle layer) so the graphics
 stage runs end to end before the style study fills them in. The profile build

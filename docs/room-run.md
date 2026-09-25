@@ -78,7 +78,7 @@ Stop with Ctrl-C. A launchd job exits when the process is stopped and, with `Kee
 
 ## launchd
 
-`docs/com.byjwu.room-run.plist` is an example. Replace every `CHANGE_ME` path. `/Users/CHANGE_ME/byjwu` stands for your checkout of this repo. Install it for the macOS user who owns `~/Desktop`, so the paths resolve as that person:
+`docs/com.byjwu.room-run.plist` is an example. Replace every `CHANGE_ME` path. `~/byjwu` stands for your checkout of this repo. Install it for the macOS user who owns `~/Desktop`, so the paths resolve as that person:
 
 ```bash
 cp docs/com.byjwu.room-run.plist ~/Library/LaunchAgents/com.byjwu.room-run.plist

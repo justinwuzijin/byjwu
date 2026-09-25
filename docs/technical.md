@@ -2,17 +2,17 @@
 
 Everything about how byjwu works and how to run it. The short version is in the [README](../README.md).
 
-byjwu helps Justin ([@byjustinwu](https://www.youtube.com/@byjustinwu) on YouTube) edit his YouTube videos using TypeSafe Jev and Grok 4.7. A full Grok Bot orchestration, a room of specialist bots, works out everything stylistic and taste-related about his editing: typography, pacing, style, colours, subtitles, digital assets (the abstract rectangle background layer), and music fades and ducking.
+byjwu helps the editor ([@byjustinwu](https://www.youtube.com/@byjustinwu) on YouTube) edit his YouTube videos using TypeSafe Jev and Grok 4.7. A full Grok Bot orchestration, a room of specialist bots, works out everything stylistic and taste-related about his editing: typography, pacing, style, colours, subtitles, digital assets (the abstract rectangle background layer), and music fades and ducking.
 
 The goal is raw footage and music in, and a finished FCPXML out that imports into Final Cut Pro and feels like a byjustinwu video. The style is learned from his published YouTube videos and gets better each time he re-exports a corrected cut.
 
 Every Jev call has a confidence and a receipt. Nothing here is remote control of the Final Cut window. The handoff is FCPXML.
 
-The engine module is still called `conductor` and still runs as `python -m conductor`, and the `cutmcp` / `cut-conductor` console scripts are unchanged. Those names stay so work already in flight keeps merging. Cut Conductor is now the name of the room bot that runs edits. Links to the GitHub repo still use `github.com/justinwuzijin/jevid` until Justin renames it.
+The engine module is still called `conductor` and still runs as `python -m conductor`, and the `cutmcp` / `cut-conductor` console scripts are unchanged. Those names stay so work already in flight keeps merging. Cut Conductor is now the name of the room bot that runs edits.
 
-## How Justin uses it
+## How the editor uses it
 
-Justin does not use the command line. The room bots do.
+The editor does not use the command line. The room bots do.
 
 1. He drops a selects folder, a Final Cut **File → Export XML…** file, a `.fcpxmld` bundle, or a zip of either, in the Grok Bot room or in `~/Desktop/byjwu-in`.
 2. The Cut Conductor bot runs `python -m conductor room-run` on that drop. That is the one command the bots use.
@@ -49,8 +49,8 @@ A logic-first decision mode is not on this branch. Measured rules such as uncove
 |---|---|---|
 | **Jev** (TypeSafe) | Every linear, logical call: is this gap removable, is this a flash frame, keep or cut a take under rules, does a cut meet the gate. Typed decisions only: keep, tighten, remove, mark for review, or escalate, each with a confidence and a risk. It picks from options the code defines (`conductor/jev.py`). | Write text, or make open-ended taste calls. |
 | **Grok 4.7** | Every open-ended creative and taste call: story shape, which moments carry the video, music feel, type and visual treatment, montage, and graphics. Default model `grok-4.7-medium` (`CONDUCTOR_TASTE_MODEL`). Answers are JSON checked against a schema. Nothing it says is cut without a gate or a person (`conductor/opus.py`). Claude Opus stays selectable by setting that env var to a Claude id. | Generate video. |
-| **Grok Bot room** | Coordination: routes work, runs the engine, posts paths and reports, and asks Justin when a call needs him. | The taste-model calls themselves. Those go through the decision router. |
-| **Final Cut Pro** | The timeline is the truth. Justin imports the FCPXML byjwu writes, and exports XML when he already has a cut. | — |
+| **Grok Bot room** | Coordination: routes work, runs the engine, posts paths and reports, and asks the editor when a call needs him. | The taste-model calls themselves. Those go through the decision router. |
+| **Final Cut Pro** | The timeline is the truth. the editor imports the FCPXML byjwu writes, and exports XML when he already has a cut. | — |
 
 The note on a marker is assembled afterwards from the action, the confidence, and the reason. No model writes it.
 
@@ -98,7 +98,7 @@ Subtitle line breaks (`subtitle_break`), how long a cue stays up (`subtitle_timi
 | Bot | Job |
 |---|---|
 | **byjwu** | Build orchestrator. Merges code into this repo. |
-| **Cut Conductor** | Runs edits. Runs `room-run` on each drop (which calls the `iterate` loop), posts `room.md`, and applies only cuts that passed the gate or that Justin accepted. |
+| **Cut Conductor** | Runs edits. Runs `room-run` on each drop (which calls the `iterate` loop), posts `room.md`, and applies only cuts that passed the gate or that the editor accepted. |
 | **Pacing** | Pace preferences and the `pacing` pass. |
 | **Colour** | Colour, and the review-only `colour` pass. |
 | **Style** | Owns the byjustinwu style profile. |
@@ -138,7 +138,7 @@ python -m conductor room-run ~/Desktop/byjwu-in/cut.fcpxml \
 
 The same command takes a `.fcpxml`, a `.fcpxmld` bundle, a `.zip` of either, or a folder of clips. It detects which, and it does not modify the drop. Dry-run is the default. `--live` is how a bot calls Jev. An SRT or WebVTT sitting next to the timeline is picked up; `--transcript` overrides that. A `durations.json` in a clip folder is picked up the same way.
 
-When the drop also carries music (`.mp3`, `.wav`, `.aif`, `.m4a`, and similar), room-run hands it to `conductor.assemble.assemble` (`--style`, default `byjustinwu`), then runs the loop on the FCPXML it wrote. Creative calls go through the shared router to Grok 4.7. The style profile is data under `styles/`; `byjustinwu` is provisional until the style study lands. See [style-profile.md](style-profile.md). Subtitles, titles, and the rectangle layer on that timeline come from `conductor.graphics`.
+When the drop also carries music (`.mp3`, `.wav`, `.aif`, `.m4a`, and similar), room-run hands it to `conductor.assemble.assemble` (`--style`, default `byjustinwu`), then runs the loop on the FCPXML it wrote. Creative calls go through the shared router to Grok 4.7. The style profile is data under `styles/`; `byjustinwu` is the measured profile. See [style-profile.md](style-profile.md). Subtitles, titles, and the rectangle layer on that timeline come from `conductor.graphics`.
 
 Each run writes a new folder, `~/Desktop/byjwu-out/<name>-<timestamp>/`, so repeating it is safe. `room.md` in that folder is the chat summary (input kind, duration before and after, cuts with timecodes, rows flagged for the editor, stop reason, which signals were available, and the file to open). `room.json` is the same summary. The shadow FCPXML is always there.
 
@@ -354,7 +354,7 @@ Roles, the accept loop, and the payload fields are in [docs/room-protocol.md](ro
 
 ## The Grok Bot room
 
-The room bots (see [the bot roster](#the-bot-roster)) are how a cut moves. Justin drops a path in `~/Desktop/byjwu-in` and opens whatever lands in `~/Desktop/byjwu-out` when the room asks. The software in this repo is the engine and the CLI those bots call. The contract is [docs/room-protocol.md](room-protocol.md): who owns which pass, how `iterate` stops, and how a re-export or a chat note becomes a prior on the next gate.
+The room bots (see [the bot roster](#the-bot-roster)) are how a cut moves. the editor drops a path in `~/Desktop/byjwu-in` and opens whatever lands in `~/Desktop/byjwu-out` when the room asks. The software in this repo is the engine and the CLI those bots call. The contract is [docs/room-protocol.md](room-protocol.md): who owns which pass, how `iterate` stops, and how a re-export or a chat note becomes a prior on the next gate.
 
 The Cut Conductor bot runs `python -m conductor room-run`. That command detects the drop and calls `iterate` (a clip folder is ingested as the starter sequence, then iterated). It does not invent a sixth action. It does not apply a cut the gate did not allow unless a person accepted that id. Unattended cuts are mechanical only. Paste `room.md` into the room. The per-round JSON report (`protocol` `cut-conductor.room`) is still the state behind each round. `iterate.json` (`protocol` `cut-conductor.iterate`) is the stop record. `room.json` (`protocol` `cut-conductor.room-run`) is the chat summary. Bots do not re-sort those lists.
 
@@ -368,7 +368,7 @@ In progress:
 
 - **Real-export hardening.** Parse and write back real Final Cut exports, not only the checked-in fixtures.
 - **Media signals.** Quiet audio inside a clip, local transcripts, and word timings are read when the bot machine can open the media (see the [room protocol](room-protocol.md#media-signals)). Picture signals are not built: the `colour` pass still has an honest placeholder where exposure and skin would need the picture.
-- **Taste learning.** Per-kind priors already shift later confidence from rejections, accepts, and editor re-exports. They do not train a model, and they do not loosen mechanical auto-apply unless a rule opts in. Learning from Justin's published videos belongs to the style profile below.
+- **Taste learning.** Per-kind priors already shift later confidence from rejections, accepts, and editor re-exports. They do not train a model, and they do not loosen mechanical auto-apply unless a rule opts in. Learning from the editor's published videos belongs to the style profile below.
 - **Room run and watcher.** `room-run` and `room-run --watch` are built. With the launchd example in [room-run.md](room-run.md), an operator keeps the `~/Desktop/byjwu-in` inbox running. The editor still does not run a command. Still FCPXML out, still no plugin.
 - **Style-driven assembly.** `python -m conductor assemble` and room-run's music path build the sequence from raw footage and music according to the style profile. Ingest without music is still filename order. Before FCPXML is written, the spine is a sequential layer and connected lanes are parallel layers (`conductor/assembly/layers.py`). That packing, the RMS silence trim (threshold 0.02, hop 1024, minimum 0.5 s, 0.5 s tail padding), the log-linear music ramp, and the dissolve window are borrowed from [@diffusionstudio/core](https://github.com/diffusionstudio/core) 4.0.3 and reimplemented. The library is not a dependency and nothing is rendered through it (unlicensed output is watermarked). Silence on real media still uses ffmpeg `silencedetect` at -35 dB and 0.35 s, which is close to their amplitude threshold and a shorter minimum gap; their padding is applied only by the comparison helper. Music fades and ducking are `adjust-volume` keyframes from the profile floor (-96 dB), not their 0.001 linear gain. A cross dissolve is written only where `cuts.dissolve.sections` names the outgoing section. The base profile lists none, so the default cut is unchanged.
 - **Jev/Opus decision router.** Built: bounded, logical calls go to Jev, and open-ended creative and taste calls go to Opus 5.5 (see [The decision router](#the-decision-router)). The Opus decision types beyond the colour placeholder wait on style-driven assembly and future passes to ask them.
@@ -391,9 +391,9 @@ Three layers, all generated by code:
 | Titles | Section cards. `none` and `scale_warp` are Basic Titles. `scale_warp` is `keyframeAnimation` on the title's scale. Glitch slice, RGB split, wave, and blur-in stay transparent movies, because Final Cut cannot do that distortion | Opus: whether the title appears, and which treatment |
 | Rectangles | A seeded Shapes generator on a connected lane: position and scale keyframes, Gaussian blur, and a hue shift. The same seed still drives `rect_schedule` | The profile. Placement and blend come from `rect_layer` |
 
-Rendered movies go in `<name>.assets/` next to the output FCPXML. Each `media-rep` `src` is a relative path, so it resolves when the folder is at `~/Desktop/byjwu-out/<name>/` on Justin's Mac. The rectangle blend mode and opacity are `adjust-blend` on the connected clip (Final Cut's numeric modes: Screen is 10, Add is 8).
+Rendered movies go in `<name>.assets/` next to the output FCPXML. Each `media-rep` `src` is a relative path, so it resolves when the folder is at `~/Desktop/byjwu-out/<name>/` on the editor's Mac. The rectangle blend mode and opacity are `adjust-blend` on the connected clip (Final Cut's numeric modes: Screen is 10, Add is 8).
 
-The schema and the placeholder defaults live in `conductor/graphics/profile.py`: `typography`, `subtitles`, `text_fx`, and `rect_layer`. **Those defaults were not measured from Justin's videos.** They are SF Pro Display and SF Pro Text, clean white, with a subtle shadow, so the stage can run before the style study fills the profile in. A profile file overrides a field by a `graphics` object or by a measured `params` path listed in `PARAM_MAP`. `GraphicsResult.placeholder_fields` names whatever is still a placeholder, and that note is written into `room.md`.
+The schema and the placeholder defaults live in `conductor/graphics/profile.py`: `typography`, `subtitles`, `text_fx`, and `rect_layer`. **Those defaults were not measured from the editor's videos.** They are SF Pro Display and SF Pro Text, clean white, with a subtle shadow, so the stage can run before the style study fills the profile in. A profile file overrides a field by a `graphics` object or by a measured `params` path listed in `PARAM_MAP`. `GraphicsResult.placeholder_fields` names whatever is still a placeholder, and that note is written into `room.md`.
 
 SF Pro is not on Linux. Rendered titles use the first installed face in the fallback list, and the title XML still names SF Pro, so Final Cut uses it on the Mac. If ffmpeg or Pillow is missing, that render is skipped and the run continues. Subtitles do not need either. `CONDUCTOR_FFMPEG=off` forces the skip. HEVC with alpha is only written where macOS VideoToolbox exists; everywhere else the movie is ProRes 4444.
 

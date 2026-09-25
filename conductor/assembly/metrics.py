@@ -1,7 +1,7 @@
 """Style metrics, read back from an FCPXML file.
 
 These run on the written XML rather than the in-memory timeline, so the same
-numbers can be taken on an assembled v0, on a later round, or on a cut Justin
+numbers can be taken on an assembled v0, on a later round, or on a cut the editor
 re-exported from Final Cut (the taste-learning input).
 
 Sections come from ``chapter-marker`` notes (``jevid.section=<kind>``). A
@@ -284,6 +284,27 @@ def _keys(clip: Placed) -> list[tuple[Fraction, float]]:
     return sorted(out)
 
 
+def _ramp_up(keys: list[tuple[Fraction, float]], floor: float) -> float | None:
+    """Seconds of the rise off the floor. A hold at the floor is a gap, not a fade."""
+    audible = next((i for i, (_, db) in enumerate(keys) if db > floor + 1), None)
+    if audible is None:
+        return None
+    if audible == 0:
+        return 0.0
+    return float(keys[audible][0] - keys[audible - 1][0])
+
+
+def _ramp_down(keys: list[tuple[Fraction, float]], floor: float) -> float | None:
+    """Seconds of the drop back to the floor. A trailing hold at the floor is a gap."""
+    audible = [i for i, (_, db) in enumerate(keys) if db > floor + 1]
+    if not audible:
+        return None
+    last = audible[-1]
+    if last == len(keys) - 1:
+        return 0.0
+    return float(keys[last + 1][0] - keys[last][0])
+
+
 def _fades(music: list[Placed], profile: StyleProfile, frame: Fraction) -> dict:
     ordered = sorted(music, key=lambda p: p.start)
     floor = float(profile.get("music.floor_db"))
@@ -301,12 +322,10 @@ def _fades(music: list[Placed], profile: StyleProfile, frame: Fraction) -> dict:
         want_in = float(profile.get("music.fade_in.seconds")) if index == 0 or change is None else change
         want_out = float(profile.get("music.fade_out.seconds")) if index == len(ordered) - 1 or change is None else change
         want_in, want_out = min(want_in, length / 2), min(want_out, length / 2)
-        got_in = got_out = None
-        if len(keys) >= 2 and keys[0][1] <= floor + 1:
-            got_in = float(keys[1][0] - keys[0][0])
-        if len(keys) >= 2 and keys[-1][1] <= floor + 1:
-            got_out = float(keys[-1][0] - keys[-2][0])
-        ok = (
+        got_in = _ramp_up(keys, floor)
+        got_out = _ramp_down(keys, floor)
+        silent = got_in is None and got_out is None
+        ok = silent or (
             got_in is not None
             and got_out is not None
             and abs(got_in - want_in) <= tol

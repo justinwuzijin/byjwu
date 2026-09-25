@@ -126,7 +126,7 @@ def apply_graphics(
         return result
     result.notes.append(
         "Type sizes, colours, and the rectangle palette are placeholder defaults, "
-        "not measurements from Justin's videos, except fields the profile file set."
+        "not measurements from the editor's videos, except fields the profile file set."
         if loaded.placeholder_fields
         else "Graphics values came from the style profile."
     )

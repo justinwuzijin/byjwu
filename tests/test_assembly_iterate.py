@@ -40,7 +40,7 @@ def test_iterate_assembles_v0_and_refines(shoot, tmp_path):
     payload = json.loads((tmp_path / "iterate.json").read_text())
     assert payload["protocol"] == "cut-conductor.iterate" and payload["mode"] == "assemble"
     assert payload["rounds"][0]["round"] == 0
-    assert payload["style"]["provisional"] is True
+    assert payload["style"]["provisional"] is False
     first = payload["rounds"][0]
     if first["failures"]:
         assert first["changes"], "a failing round must say what it changes"
@@ -75,12 +75,18 @@ def test_refine_maps_failures_to_parameter_changes():
     profile = load_style("byjustinwu")
     fake = SimpleNamespace(
         failures=["asl:montage", "asl:talking", "duration", "on_beat", "subtitle_coverage", "background"],
-        metrics={"asl_by_section": {"montage": 0.5, "talking": 6.0}, "duration_seconds": 50.0},
+        metrics={
+            "asl_by_section": {
+                "montage": float(profile.pacing("montage")["asl_seconds"]) / 2,
+                "talking": float(profile.pacing("talking")["asl_seconds"]) * 2,
+            },
+            "duration_seconds": 50.0,
+        },
         payload={"target_seconds": 40.0},
     )
     new, changes = refine(Adjustments(), fake, profile)
-    assert new.asl_scale["montage"] == pytest.approx(0.8 / 0.5)
-    assert new.asl_scale["talking"] == pytest.approx(3.8 / 6.0, abs=1e-3)
+    assert new.asl_scale["montage"] == pytest.approx(2.0)
+    assert new.asl_scale["talking"] == pytest.approx(0.5)
     assert new.cover_scale > 1.0
     assert new.target_scale == pytest.approx(0.8)
     assert new.snap_scale == pytest.approx(1.5)

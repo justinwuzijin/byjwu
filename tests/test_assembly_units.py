@@ -130,6 +130,31 @@ def test_parse_target(brief, seconds):
     assert parse_target(brief) == seconds
 
 
+def test_muted_opening_is_not_a_long_fade_in():
+    from conductor.assembly.metrics import _ramp_down, _ramp_up
+
+    floor = -96.0
+    muted_then_music = [
+        (Fraction(0), floor),
+        (Fraction(30), floor),
+        (Fraction(31), -14.0),
+        (Fraction(40), -14.0),
+        (Fraction(42), floor),
+        (Fraction(50), floor),
+    ]
+    assert _ramp_up(muted_then_music, floor) == 1.0
+    assert _ramp_down(muted_then_music, floor) == 2.0
+    ordinary = [
+        (Fraction(0), floor),
+        (Fraction(3, 2), -14.0),
+        (Fraction(8), -14.0),
+        (Fraction(11), floor),
+    ]
+    assert _ramp_up(ordinary, floor) == 1.5
+    assert _ramp_down(ordinary, floor) == 3.0
+    assert _ramp_up([(Fraction(0), floor), (Fraction(4), floor)], floor) is None
+
+
 def test_fixture_writer_without_ffmpeg(tmp_path):
     from conductor.assembly.synth import SHOTS, make_fixture
 

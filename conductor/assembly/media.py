@@ -1,7 +1,7 @@
 """Raw material for an assembly: footage, music, and per-clip signals.
 
 Footage comes from a folder (the same inventory ``ingest`` uses) or from the
-assets of an FCPXML Justin exported with everything in it. Music is any audio
+assets of an FCPXML the editor exported with everything in it. Music is any audio
 file in that folder, in a ``music/`` subfolder, or passed with ``--music``.
 
 Signals are the extension point for the media-signals work. A provider is

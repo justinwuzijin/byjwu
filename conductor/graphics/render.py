@@ -5,7 +5,7 @@ Everything is a pure function of its inputs and a seed, so the same profile
 and seed give the same pixels on every machine that has the same font file.
 
 Text needs Pillow. The rectangle layer is numpy only. Fonts: SF Pro when the
-machine has it (Justin's Mac), otherwise the profile's fallback list, then
+machine has it (the editor's Mac), otherwise the profile's fallback list, then
 Pillow's built-in face. The title XML names SF Pro either way.
 """
 

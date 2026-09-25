@@ -24,7 +24,7 @@ SELECTS = Path("fixtures/selects")
 BRIEF = "A tight interview. Keep the guest's story, lose dead air."
 
 
-def _xml(version: str = "1.11", src: str = "file:///Volumes/Media/interview.mov") -> str:
+def _xml(version: str = "1.11", src: str = "file:///media/library/interview.mov") -> str:
     return f"""<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE fcpxml>
 <fcpxml version="{version}">
@@ -366,10 +366,10 @@ def test_style_flag_reaches_the_assembler(tmp_path, assembler):
 def test_timeline_music_assets_are_detected(tmp_path, assembler):
     xml = tmp_path / "in" / "cut.fcpxml"
     xml.parent.mkdir()
-    xml.write_text(_xml(src="file:///Volumes/Media/score.wav"), encoding="utf-8")
+    xml.write_text(_xml(src="file:///media/library/score.wav"), encoding="utf-8")
     result = room_run(xml, out_root=tmp_path / "out", brief=BRIEF)
     assert result.payload["flow"] == "assemble+iterate"
-    assert result.payload["music"] == ["/Volumes/Media/score.wav"]
+    assert result.payload["music"] == ["/media/library/score.wav"]
     assert assembler[0]["fcpxml"] == xml.resolve()
     assert assembler[0]["media"] is None
 

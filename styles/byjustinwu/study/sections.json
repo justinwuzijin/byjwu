@@ -1,5 +1,5 @@
 {
-  "about": "Hand labels made by looking at the bundle's frames (shot-start frames, 4 s contact sheets, 2 s intro/outro frames) against the loudness, spectral and caption series. analyze.py reads these labels and computes every number from the bundle CSV/JSON; the labels are the only interpretive input. Times are seconds from video start and snap to thr 0.3 shot starts where a boundary is a cut.",
+  "about": "Hand labels of section type per time range. analyze.py reads these and computes every number from the local bundle. Video ids are not stored here; aliases (long_a, long_b, long_c, short) map through the gitignored study/data/sources.json.",
   "section_types": {
     "talking": "on-camera speech to the lens, diegetic audio. bed=true means a music bed runs under it",
     "confessional": "webcam talking head (Photo Booth screen recording on the macOS desktop)",
@@ -11,117 +11,607 @@
     "end_card": "closing tagline or brand card"
   },
   "videos": {
-    "iK5xtVEnSvU": {
+    "long_a": {
       "weight": 1.0,
       "sections": [
-        {"start": 0.0, "end": 100.567, "type": "talking", "cold_open": true, "note": "dorm talking head, no music; date-stamp inset card ~3.4-7 s"},
-        {"start": 100.567, "end": 320.3, "type": "broll", "captions": "narration", "note": "basketball / summertime; text narration over music, ASR sees only [music] or lyrics"},
-        {"start": 320.3, "end": 373.9, "type": "vlog", "note": "dorm evening; date-stamp card at 361.467"},
-        {"start": 373.9, "end": 515.167, "type": "confessional", "note": "Photo Booth window on white desktop, two dorm cutaways"},
-        {"start": 515.167, "end": 538.8, "type": "vlog"},
-        {"start": 538.8, "end": 593.9, "type": "montage", "note": "SF arrival montage"},
-        {"start": 593.9, "end": 763.9, "type": "vlog", "note": "SF with friends"},
-        {"start": 763.9, "end": 799.0, "type": "montage", "note": "Baker Beach / Golden Gate"},
-        {"start": 799.0, "end": 832.6, "type": "vlog", "note": "startup school hall"},
-        {"start": 832.6, "end": 902.0, "type": "monologue", "note": "inner-compass VO, 4:3 pillarbox, serif captions, red slam text at ~852"},
-        {"start": 902.0, "end": 910.101, "type": "end_card", "note": "'a summer experience byjustinwu.' over bookshelf / hazy window"}
+        {
+          "start": 0.0,
+          "end": 100.567,
+          "type": "talking",
+          "cold_open": true
+        },
+        {
+          "start": 100.567,
+          "end": 320.3,
+          "type": "broll",
+          "captions": "narration"
+        },
+        {
+          "start": 320.3,
+          "end": 373.9,
+          "type": "vlog"
+        },
+        {
+          "start": 373.9,
+          "end": 515.167,
+          "type": "confessional"
+        },
+        {
+          "start": 515.167,
+          "end": 538.8,
+          "type": "vlog"
+        },
+        {
+          "start": 538.8,
+          "end": 593.9,
+          "type": "montage"
+        },
+        {
+          "start": 593.9,
+          "end": 763.9,
+          "type": "vlog"
+        },
+        {
+          "start": 763.9,
+          "end": 799.0,
+          "type": "montage"
+        },
+        {
+          "start": 799.0,
+          "end": 832.6,
+          "type": "vlog"
+        },
+        {
+          "start": 832.6,
+          "end": 902.0,
+          "type": "monologue"
+        },
+        {
+          "start": 902.0,
+          "end": 910.101,
+          "type": "end_card"
+        }
       ]
     },
-    "UhPZ4HeJQ6c": {
+    "long_b": {
       "weight": 1.0,
       "sections": [
-        {"start": 0.0, "end": 9.76, "type": "talking", "cold_open": true, "note": "@JUSTINWU slam wordmark 0-3.337 over POV talk"},
-        {"start": 9.76, "end": 31.9, "type": "broll", "captions": "narration", "note": "date-stamp card 9.76-11.845, then narration every ~4 s"},
-        {"start": 31.9, "end": 65.065, "type": "talking", "note": "gas station, no music"},
-        {"start": 65.065, "end": 92.509, "type": "vlog"},
-        {"start": 92.509, "end": 172.381, "type": "broll", "captions": "narration"},
-        {"start": 172.381, "end": 178.553, "type": "chapter_card", "title": "building vit"},
-        {"start": 178.553, "end": 365.407, "type": "talking", "note": "night drive POV, 53.8 s and 36.5 s holds"},
-        {"start": 365.407, "end": 371.788, "type": "chapter_card", "title": "ninetofive;"},
-        {"start": 371.788, "end": 463.672, "type": "talking", "note": "one 91.9 s hold at the office"},
-        {"start": 463.672, "end": 470.22, "type": "chapter_card", "title": "nyc summer*"},
-        {"start": 470.22, "end": 542.5, "type": "vlog"},
-        {"start": 542.5, "end": 567.9, "type": "montage"},
-        {"start": 567.9, "end": 695.1, "type": "vlog"},
-        {"start": 695.1, "end": 713.2, "type": "montage"},
-        {"start": 713.2, "end": 833.9, "type": "vlog", "note": "studio visit"},
-        {"start": 833.9, "end": 873.372, "type": "broll", "captions": "narration", "note": "narration over diegetic room audio, not music"},
-        {"start": 873.372, "end": 880.171, "type": "chapter_card", "title": "film premiere;"},
-        {"start": 880.171, "end": 929.1, "type": "vlog"},
-        {"start": 929.1, "end": 951.7, "type": "montage"},
-        {"start": 951.7, "end": 1074.198, "type": "vlog", "note": "premiere talk, 102 s hold on the stage"},
-        {"start": 1074.198, "end": 1080.246, "type": "chapter_card", "title": "summerlooweekone;"},
-        {"start": 1080.246, "end": 1134.717, "type": "broll", "captions": "narration"},
-        {"start": 1134.717, "end": 1144.421, "type": "end_card", "note": "@JUSTINWU wall + rectangles + justinzwu.com"}
+        {
+          "start": 0.0,
+          "end": 9.76,
+          "type": "talking",
+          "cold_open": true
+        },
+        {
+          "start": 9.76,
+          "end": 31.9,
+          "type": "broll",
+          "captions": "narration"
+        },
+        {
+          "start": 31.9,
+          "end": 65.065,
+          "type": "talking"
+        },
+        {
+          "start": 65.065,
+          "end": 92.509,
+          "type": "vlog"
+        },
+        {
+          "start": 92.509,
+          "end": 172.381,
+          "type": "broll",
+          "captions": "narration"
+        },
+        {
+          "start": 172.381,
+          "end": 178.553,
+          "type": "chapter_card",
+          "title": "weekone;"
+        },
+        {
+          "start": 178.553,
+          "end": 365.407,
+          "type": "talking"
+        },
+        {
+          "start": 365.407,
+          "end": 371.788,
+          "type": "chapter_card",
+          "title": "weekone;"
+        },
+        {
+          "start": 371.788,
+          "end": 463.672,
+          "type": "talking"
+        },
+        {
+          "start": 463.672,
+          "end": 470.22,
+          "type": "chapter_card",
+          "title": "weekone;"
+        },
+        {
+          "start": 470.22,
+          "end": 542.5,
+          "type": "vlog"
+        },
+        {
+          "start": 542.5,
+          "end": 567.9,
+          "type": "montage"
+        },
+        {
+          "start": 567.9,
+          "end": 695.1,
+          "type": "vlog"
+        },
+        {
+          "start": 695.1,
+          "end": 713.2,
+          "type": "montage"
+        },
+        {
+          "start": 713.2,
+          "end": 833.9,
+          "type": "vlog"
+        },
+        {
+          "start": 833.9,
+          "end": 873.372,
+          "type": "broll",
+          "captions": "narration"
+        },
+        {
+          "start": 873.372,
+          "end": 880.171,
+          "type": "chapter_card",
+          "title": "weekone;"
+        },
+        {
+          "start": 880.171,
+          "end": 929.1,
+          "type": "vlog"
+        },
+        {
+          "start": 929.1,
+          "end": 951.7,
+          "type": "montage"
+        },
+        {
+          "start": 951.7,
+          "end": 1074.198,
+          "type": "vlog"
+        },
+        {
+          "start": 1074.198,
+          "end": 1080.246,
+          "type": "chapter_card",
+          "title": "weekone;"
+        },
+        {
+          "start": 1080.246,
+          "end": 1134.717,
+          "type": "broll",
+          "captions": "narration"
+        },
+        {
+          "start": 1134.717,
+          "end": 1144.421,
+          "type": "end_card"
+        }
       ]
     },
-    "36ssmIOLffw": {
+    "long_c": {
       "weight": 1.0,
       "sections": [
-        {"start": 0.0, "end": 12.804, "type": "broll", "cold_open": true, "note": "music from frame 0, single 12.8 s shot, @BYJUSTINWU glitch wordmark ~10-12"},
-        {"start": 12.804, "end": 15.974, "type": "chapter_card", "title": "(a) finals season", "style": "serif_section"},
-        {"start": 15.974, "end": 45.0, "type": "broll", "note": "tagline 'a video journal byjustinwu' 16-20"},
-        {"start": 45.0, "end": 94.9, "type": "talking", "bed": true, "note": "lounge talking head with a ducked bed"},
-        {"start": 94.9, "end": 151.4, "type": "montage", "note": "gym"},
-        {"start": 151.4, "end": 403.862, "type": "vlog"},
-        {"start": 403.862, "end": 631.84, "type": "montage", "note": "assorted memories; flash burst 611.8-612.4"},
-        {"start": 631.84, "end": 699.5, "type": "broll"},
-        {"start": 699.5, "end": 795.044, "type": "talking", "note": "burnout, night table"},
-        {"start": 795.044, "end": 802.677, "type": "chapter_card", "title": "(solid orange flash)", "style": "colour_flash"},
-        {"start": 802.677, "end": 850.2, "type": "vlog"},
-        {"start": 850.2, "end": 1094.3, "type": "montage", "note": "party + move-out; '(e) move-out day' section title at 1007.632"},
-        {"start": 1094.3, "end": 1113.261, "type": "end_card", "note": "violet wash to orange #ec4302, @BYJUSTINWU"}
+        {
+          "start": 0.0,
+          "end": 12.804,
+          "type": "broll",
+          "cold_open": true
+        },
+        {
+          "start": 12.804,
+          "end": 15.974,
+          "type": "chapter_card",
+          "title": "weekone;",
+          "style": "serif_section"
+        },
+        {
+          "start": 15.974,
+          "end": 45.0,
+          "type": "broll"
+        },
+        {
+          "start": 45.0,
+          "end": 94.9,
+          "type": "talking",
+          "bed": true
+        },
+        {
+          "start": 94.9,
+          "end": 151.4,
+          "type": "montage"
+        },
+        {
+          "start": 151.4,
+          "end": 403.862,
+          "type": "vlog"
+        },
+        {
+          "start": 403.862,
+          "end": 631.84,
+          "type": "montage"
+        },
+        {
+          "start": 631.84,
+          "end": 699.5,
+          "type": "broll"
+        },
+        {
+          "start": 699.5,
+          "end": 795.044,
+          "type": "talking"
+        },
+        {
+          "start": 795.044,
+          "end": 802.677,
+          "type": "chapter_card",
+          "title": "weekone;",
+          "style": "colour_flash"
+        },
+        {
+          "start": 802.677,
+          "end": 850.2,
+          "type": "vlog"
+        },
+        {
+          "start": 850.2,
+          "end": 1094.3,
+          "type": "montage"
+        },
+        {
+          "start": 1094.3,
+          "end": 1113.261,
+          "type": "end_card"
+        }
       ]
     },
-    "phS28hhJSP8": {
+    "short": {
       "weight": 0.25,
-      "genre": "product launch short, not a vlog",
       "sections": [
-        {"start": 0.0, "end": 24.942, "type": "vlog", "note": "skit with spoken captions"},
-        {"start": 24.942, "end": 53.5, "type": "broll", "note": "screen-recorded demo, Title Case feature labels, red WHAT slam at 24"},
-        {"start": 53.5, "end": 61.841, "type": "end_card", "note": "black card, logo + credits"}
+        {
+          "start": 0.0,
+          "end": 24.942,
+          "type": "vlog"
+        },
+        {
+          "start": 24.942,
+          "end": 53.5,
+          "type": "broll"
+        },
+        {
+          "start": 53.5,
+          "end": 61.841,
+          "type": "end_card"
+        }
       ]
     }
   },
   "cards": [
-    {"video": "UhPZ4HeJQ6c", "kind": "chapter_card", "glitch_start": 172.381, "card_start": 172.839, "end": 178.553, "frame": "shot0022_t0172.839s.jpg"},
-    {"video": "UhPZ4HeJQ6c", "kind": "chapter_card", "glitch_start": 365.407, "card_start": 366.074, "end": 371.788, "frame": "shot0032_t0366.074s.jpg"},
-    {"video": "UhPZ4HeJQ6c", "kind": "chapter_card", "glitch_start": 463.672, "card_start": 464.506, "end": 470.22, "frame": "shot0035_t0464.506s.jpg"},
-    {"video": "UhPZ4HeJQ6c", "kind": "chapter_card", "glitch_start": 873.372, "card_start": 874.457, "end": 880.171, "frame": "shot0209_t0874.457s.jpg"},
-    {"video": "UhPZ4HeJQ6c", "kind": "chapter_card", "glitch_start": 1074.198, "card_start": 1074.532, "end": 1080.246, "frame": "shot0095_t1074.532s.jpg"}
+    {
+      "video": "long_b",
+      "kind": "chapter_card",
+      "glitch_start": 172.381,
+      "card_start": 172.839,
+      "end": 178.553,
+      "frame": "shot0022_t0172.839s.jpg"
+    },
+    {
+      "video": "long_b",
+      "kind": "chapter_card",
+      "glitch_start": 365.407,
+      "card_start": 366.074,
+      "end": 371.788,
+      "frame": "shot0032_t0366.074s.jpg"
+    },
+    {
+      "video": "long_b",
+      "kind": "chapter_card",
+      "glitch_start": 463.672,
+      "card_start": 464.506,
+      "end": 470.22,
+      "frame": "shot0035_t0464.506s.jpg"
+    },
+    {
+      "video": "long_b",
+      "kind": "chapter_card",
+      "glitch_start": 873.372,
+      "card_start": 874.457,
+      "end": 880.171,
+      "frame": "shot0209_t0874.457s.jpg"
+    },
+    {
+      "video": "long_b",
+      "kind": "chapter_card",
+      "glitch_start": 1074.198,
+      "card_start": 1074.532,
+      "end": 1080.246,
+      "frame": "shot0095_t1074.532s.jpg"
+    }
   ],
   "rect_samples": [
-    {"video": "UhPZ4HeJQ6c", "frame": "shot_starts_thr0p3/shot0022_t0172.839s.jpg", "points": [[0.2, 0.12, "rect"], [0.3, 0.75, "rect"], [0.9, 0.12, "field"]]},
-    {"video": "UhPZ4HeJQ6c", "frame": "shot_starts_thr0p3/shot0032_t0366.074s.jpg", "points": [[0.55, 0.12, "rect"], [0.9, 0.75, "rect"], [0.12, 0.6, "rect"], [0.05, 0.1, "field"]]},
-    {"video": "UhPZ4HeJQ6c", "frame": "shot_starts_thr0p3/shot0035_t0464.506s.jpg", "points": [[0.5, 0.07, "rect"], [0.8, 0.85, "rect"], [0.05, 0.1, "field"]]},
-    {"video": "UhPZ4HeJQ6c", "frame": "shot_starts_thr0p15_extra/shot0209_t0874.457s.jpg", "points": [[0.1, 0.2, "rect"], [0.6, 0.9, "rect"], [0.95, 0.05, "field"]]},
-    {"video": "UhPZ4HeJQ6c", "frame": "shot_starts_thr0p3/shot0095_t1074.532s.jpg", "points": [[0.85, 0.2, "rect"], [0.12, 0.17, "rect"], [0.05, 0.9, "field"]]},
-    {"video": "iK5xtVEnSvU", "frame": "shot_starts_thr0p3/shot0054_t0361.467s.jpg", "points": [[0.25, 0.3, "rect"]]},
-    {"video": "36ssmIOLffw", "frame": "outro_every2s/outro_t1111.261s.jpg", "points": [[0.5, 0.2, "field"]]},
-    {"video": "iK5xtVEnSvU", "frame": "shot_starts_thr0p3/shot0120_t0908.367s.jpg", "points": [[0.1, 0.1, "field"]]}
+    {
+      "video": "long_b",
+      "frame": "shot_starts_thr0p3/shot0022_t0172.839s.jpg",
+      "points": [
+        [
+          0.2,
+          0.12,
+          "rect"
+        ],
+        [
+          0.3,
+          0.75,
+          "rect"
+        ],
+        [
+          0.9,
+          0.12,
+          "field"
+        ]
+      ]
+    },
+    {
+      "video": "long_b",
+      "frame": "shot_starts_thr0p3/shot0032_t0366.074s.jpg",
+      "points": [
+        [
+          0.55,
+          0.12,
+          "rect"
+        ],
+        [
+          0.9,
+          0.75,
+          "rect"
+        ],
+        [
+          0.12,
+          0.6,
+          "rect"
+        ],
+        [
+          0.05,
+          0.1,
+          "field"
+        ]
+      ]
+    },
+    {
+      "video": "long_b",
+      "frame": "shot_starts_thr0p3/shot0035_t0464.506s.jpg",
+      "points": [
+        [
+          0.5,
+          0.07,
+          "rect"
+        ],
+        [
+          0.8,
+          0.85,
+          "rect"
+        ],
+        [
+          0.05,
+          0.1,
+          "field"
+        ]
+      ]
+    },
+    {
+      "video": "long_b",
+      "frame": "shot_starts_thr0p15_extra/shot0209_t0874.457s.jpg",
+      "points": [
+        [
+          0.1,
+          0.2,
+          "rect"
+        ],
+        [
+          0.6,
+          0.9,
+          "rect"
+        ],
+        [
+          0.95,
+          0.05,
+          "field"
+        ]
+      ]
+    },
+    {
+      "video": "long_b",
+      "frame": "shot_starts_thr0p3/shot0095_t1074.532s.jpg",
+      "points": [
+        [
+          0.85,
+          0.2,
+          "rect"
+        ],
+        [
+          0.12,
+          0.17,
+          "rect"
+        ],
+        [
+          0.05,
+          0.9,
+          "field"
+        ]
+      ]
+    },
+    {
+      "video": "long_a",
+      "frame": "shot_starts_thr0p3/shot0054_t0361.467s.jpg",
+      "points": [
+        [
+          0.25,
+          0.3,
+          "rect"
+        ]
+      ]
+    },
+    {
+      "video": "long_c",
+      "frame": "outro_every2s/outro_t1111.261s.jpg",
+      "points": [
+        [
+          0.5,
+          0.2,
+          "field"
+        ]
+      ]
+    },
+    {
+      "video": "long_a",
+      "frame": "shot_starts_thr0p3/shot0120_t0908.367s.jpg",
+      "points": [
+        [
+          0.1,
+          0.1,
+          "field"
+        ]
+      ]
+    }
   ],
   "slam_text": [
-    {"video": "UhPZ4HeJQ6c", "frame": "intro_every2s/intro_t0000.000s.jpg", "text": "@JUSTINWU", "rgb": [255, 255, 255], "tol": 25, "lines": 1, "chars": 9},
-    {"video": "iK5xtVEnSvU", "frame": "outro_every2s/outro_t0852.101s.jpg", "text": "FOLLOWING YOUR INNER-COMPASS", "rgb": [230, 0, 0], "tol": 70, "lines": 3, "chars": 13},
-    {"video": "phS28hhJSP8", "frame": "intro_every2s/intro_t0024.000s.jpg", "text": "WHAT", "rgb": [230, 0, 0], "tol": 70, "lines": 1, "chars": 4},
-    {"video": "UhPZ4HeJQ6c", "frame": "outro_every2s/outro_t1138.421s.jpg", "text": "@JUSTINWU x3 (end wall)", "rgb": [0, 0, 0], "tol": 25, "lines": 3, "chars": 9}
+    {
+      "video": "long_b",
+      "frame": "intro_every2s/intro_t0000.000s.jpg",
+      "text": "SAMPLE",
+      "rgb": [
+        255,
+        255,
+        255
+      ],
+      "tol": 25,
+      "lines": 1,
+      "chars": 9
+    },
+    {
+      "video": "long_a",
+      "frame": "outro_every2s/outro_t0852.101s.jpg",
+      "text": "SAMPLE",
+      "rgb": [
+        230,
+        0,
+        0
+      ],
+      "tol": 70,
+      "lines": 3,
+      "chars": 13
+    },
+    {
+      "video": "short",
+      "frame": "intro_every2s/intro_t0024.000s.jpg",
+      "text": "SAMPLE",
+      "rgb": [
+        230,
+        0,
+        0
+      ],
+      "tol": 70,
+      "lines": 1,
+      "chars": 4
+    },
+    {
+      "video": "long_b",
+      "frame": "outro_every2s/outro_t1138.421s.jpg",
+      "text": "SAMPLE",
+      "rgb": [
+        0,
+        0,
+        0
+      ],
+      "tol": 25,
+      "lines": 3,
+      "chars": 9
+    }
   ],
   "caption_frames": [
-    {"video": "UhPZ4HeJQ6c", "frame": "shot_starts_thr0p3/shot0078_t0846.888s.jpg", "mode": "narration", "text": "they run a very cool agentic video editing startup in NYC called Ponder"},
-    {"video": "UhPZ4HeJQ6c", "frame": "intro_every2s/intro_t0016.000s.jpg", "mode": "narration", "text": "the past 5 months have been pretty insane for me"},
-    {"video": "UhPZ4HeJQ6c", "frame": "intro_every2s/intro_t0028.000s.jpg", "mode": "narration", "text": "so i barely captured anything, but filmed random things on weekends"},
-    {"video": "36ssmIOLffw", "frame": "shot_starts_thr0p3/shot0041_t0403.862s.jpg", "mode": "narration", "text": "the beginning of first year was very eventful"},
-    {"video": "iK5xtVEnSvU", "frame": "outro_every2s/outro_t0882.101s.jpg", "mode": "monologue", "text": "-- as a positive vector moving in the same direction as my inner compass"},
-    {"video": "iK5xtVEnSvU", "frame": "outro_every2s/outro_t0890.101s.jpg", "mode": "monologue", "text": "there is less than a month before i move to california for 4 months by myself."},
-    {"video": "phS28hhJSP8", "frame": "intro_every2s/intro_t0008.000s.jpg", "mode": "spoken", "text": "yeah man, i need to stitch this file, it's taking forever"}
+    {
+      "video": "long_b",
+      "frame": "shot_starts_thr0p3/shot0078_t0846.888s.jpg",
+      "mode": "narration",
+      "text": "sample caption line"
+    },
+    {
+      "video": "long_b",
+      "frame": "intro_every2s/intro_t0016.000s.jpg",
+      "mode": "narration",
+      "text": "sample caption line"
+    },
+    {
+      "video": "long_b",
+      "frame": "intro_every2s/intro_t0028.000s.jpg",
+      "mode": "narration",
+      "text": "sample caption line"
+    },
+    {
+      "video": "long_c",
+      "frame": "shot_starts_thr0p3/shot0041_t0403.862s.jpg",
+      "mode": "narration",
+      "text": "sample caption line"
+    },
+    {
+      "video": "long_a",
+      "frame": "outro_every2s/outro_t0882.101s.jpg",
+      "mode": "monologue",
+      "text": "sample caption line"
+    },
+    {
+      "video": "long_a",
+      "frame": "outro_every2s/outro_t0890.101s.jpg",
+      "mode": "monologue",
+      "text": "sample caption line"
+    },
+    {
+      "video": "short",
+      "frame": "intro_every2s/intro_t0008.000s.jpg",
+      "mode": "spoken",
+      "text": "sample caption line"
+    }
   ],
   "caption_runs_observed": {
-    "about": "Narration captions read by eye on consecutive 2 s intro frames of UhPZ4HeJQ6c. first/last = first and last 2 s frame showing the line.",
+    "about": "Narration lines read on consecutive 2 s frames. first/last are those frame times. n=4 lines.",
     "runs": [
-      {"video": "UhPZ4HeJQ6c", "first": 16.0, "last": 18.0, "text": "the past 5 months have been pretty insane for me"},
-      {"video": "UhPZ4HeJQ6c", "first": 20.0, "last": 22.0, "text": "it was a hybrid of visiting friends, recruiting, building software projects"},
-      {"video": "UhPZ4HeJQ6c", "first": 24.0, "last": 26.0, "text": "i was also working a 9-5 software co-op in-person with a terrible commute everyday."},
-      {"video": "UhPZ4HeJQ6c", "first": 28.0, "last": 30.0, "text": "so i barely captured anything, but filmed random things on weekends"}
+      {
+        "video": "long_b",
+        "first": 16.0,
+        "last": 18.0,
+        "text": "sample caption line"
+      },
+      {
+        "video": "long_b",
+        "first": 20.0,
+        "last": 22.0,
+        "text": "sample caption line"
+      },
+      {
+        "video": "long_b",
+        "first": 24.0,
+        "last": 26.0,
+        "text": "sample caption line"
+      },
+      {
+        "video": "long_b",
+        "first": 28.0,
+        "last": 30.0,
+        "text": "sample caption line"
+      }
     ]
   }
 }

@@ -23,6 +23,7 @@ Jev still does not write. Questions are a choice plus a risk noul.
 from __future__ import annotations
 
 import os
+import re
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -43,6 +44,16 @@ _RETRY_STATUS = frozenset({408, 429, 500, 502, 503, 504})
 _TIMEOUT = 60.0
 
 ACTIONS = ("keep", "tighten", "remove", "mark_review", "escalate")
+
+ACTION_CRITERIA = {
+    "keep": "Leave the timeline alone. The moment earns its length.",
+    "tighten": "Trim the dead air or filler but keep the surrounding thought.",
+    "remove": "Lift this region out. It does not earn its time.",
+    "mark_review": "A human should look. The signal is real but the call is not safe to trust.",
+    "escalate": "Stop and discuss. The moment may be load-bearing, or the risk is high.",
+}
+
+_XAI = re.compile(r"grok|x-ai|\bxai\b|x\.ai", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -67,6 +78,24 @@ class BatchResult:
 def dry_run_forced(environ: Mapping[str, str] | None = None) -> bool:
     env = os.environ if environ is None else environ
     return env.get("CONDUCTOR_DRY_RUN", "").strip().lower() in {"1", "true", "yes"}
+
+
+def refuse_xai(model: str, url: str) -> None:
+    """Kept so older callers import. Grok is allowed; this does not reject."""
+    return None
+
+
+def has_key(environ: Mapping[str, str] | None = None) -> bool:
+    """True when the provider ``resolve_endpoint`` would pick has a key."""
+    env = os.environ if environ is None else environ
+    provider = env.get("CONDUCTOR_JEV_PROVIDER", "").strip().lower()
+    openrouter = bool(env.get("OPENROUTER_API_KEY", "").strip())
+    typesafe = bool(env.get("TYPESAFE_API_KEY", "").strip())
+    if provider == "typesafe":
+        return typesafe
+    if provider == "openrouter":
+        return openrouter
+    return openrouter or typesafe
 
 
 def resolve_endpoint(environ: Mapping[str, str] | None = None) -> Endpoint:
@@ -109,7 +138,7 @@ def resolve_endpoint(environ: Mapping[str, str] | None = None) -> Endpoint:
         headers={
             "Authorization": f"Bearer {openrouter_key}",
             "Content-Type": "application/json",
-            "HTTP-Referer": "https://github.com/justinwuzijin/jevid",
+            "HTTP-Referer": "https://github.com/byjwu/byjwu",
             "X-OpenRouter-Title": "Cut Conductor",
         },
     )
@@ -256,7 +285,7 @@ def _mock_batch(
         candidate = by_id.get(candidate_id)
         if candidate is None:
             raise ConductorError(f"mock judge has no candidate {candidate_id!r} in state")
-        action, confidence, risk = _policy(candidate, state.get("taste") or {})
+        action, confidence, risk = policy(candidate, state.get("taste") or {})
         if kind == "action" and spec.get("type") == "choice":
             answers[key] = Answer(action, confidence, _distribution(action, confidence))
         elif kind == "risk" and spec.get("type") == "noul":
@@ -278,13 +307,16 @@ def _split_key(key: str) -> tuple[str, str]:
     raise ConductorError(f"unexpected question key {key!r}")
 
 
-def _policy(candidate: Mapping[str, Any], taste: Mapping[str, Any] | None = None) -> tuple[str, float, float]:
+def policy(candidate: Mapping[str, Any], taste: Mapping[str, Any] | None = None) -> tuple[str, float, float]:
     """Return ``(action, confidence, risk)`` from heuristic signals.
 
     Strong, unambiguous signals get a high confidence and a low risk. Ambiguous
     ones land on ``mark_review``. The numbers are fixed so a dry-run is the
     same on every machine. Taste prefs nudge a few of those numbers; the
     default prefs are a no-op. This is a stand-in, not a trained model.
+
+    It is also the deterministic rule set the router falls back to when live
+    Jev is unavailable, with the confidence discounted.
     """
     kind = candidate.get("kind")
     signals = candidate.get("signals") or {}
@@ -296,6 +328,22 @@ def _policy(candidate: Mapping[str, Any], taste: Mapping[str, Any] | None = None
         return "escalate", 0.58, 0.62
     if kind in {"colour_role", "colour_unseen"}:
         return "mark_review", 0.64, 0.41
+    # Notes a person can read. A cold-open preference must not hide them, and
+    # none of these is a range the mock is willing to lift.
+    if kind == "covered_gap":
+        return "mark_review", 0.72, 0.48
+    if kind == "source_reuse":
+        return "mark_review", 0.70, 0.44
+    if kind == "rhythm_shift":
+        return "mark_review", 0.66, 0.40
+    if kind == "rate_mix":
+        return "mark_review", 0.63, 0.36
+    if kind == "untrimmed_run":
+        return "mark_review", 0.68, 0.42
+    if kind == "silent_card":
+        return "mark_review", 0.74, 0.30
+    if kind == "music_tail":
+        return "mark_review", 0.67, 0.38
     if prefs.get("cold_open_bias") == "keep" and signals.get("is_cold_open"):
         return "keep", 0.90, 0.10
     if kind == "silence_gap":
@@ -316,6 +364,8 @@ def _policy(candidate: Mapping[str, Any], taste: Mapping[str, Any] | None = None
     if kind == "filler_pause":
         if signals.get("pure_filler"):
             return "tighten", 0.84, 0.18
+        if signals.get("restart"):
+            return "tighten", 0.72, 0.33
         if signals.get("adjacent_filler"):
             return "tighten", 0.71, 0.31
         return "mark_review", 0.60, 0.46

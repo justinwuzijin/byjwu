@@ -1,13 +1,21 @@
 # AGENTS.md
 
-The product in this repo is **jevid**: an editorial co-pilot for Final Cut.
-Human docs are `README.md` and `docs/room-protocol.md`. The package you edit
-for that product is `conductor/`.
+The product in this repo is **byjwu** (the engine was once called Cut
+Conductor). It edits the editor's (@byjustinwu) YouTube videos: raw footage and
+music in, a finished FCPXML out that he opens in Final Cut Pro himself. Jev
+makes bounded, logical decisions. Grok 4.7 (`grok-4.7-medium`,
+`CONDUCTOR_TASTE_MODEL`) makes open-ended taste decisions. Opus stays
+selectable. A Grok Bot room coordinates. Human docs are `README.md` (short),
+`docs/technical.md`, and `docs/room-protocol.md`. The package you edit for that product is
+`conductor/`. Do not rename it, `python -m conductor`, or the console
+scripts. Other work depends on those names. The drop folders are
+`~/Desktop/byjwu-in` / `byjwu-out` (`conductor/folders.py`), with a fallback
+to the legacy folder names on machines set up before the rename.
 
 What follows is the design rule for **cutmcp**, the older raw-footage MCP
 cutter that still lives here. `conductor/` does not follow that tier rule.
-Read the Cut Conductor section at the bottom of this file before changing
-Final Cut behavior.
+Read the byjwu engine section at the bottom of this file before
+changing Final Cut behavior.
 
 Works as-is for Cursor and Codex; `cp AGENTS.md CLAUDE.md` for Claude Code.
 
@@ -19,7 +27,7 @@ are made by Jev (TypeSafe's System One model) and turned into an EDL by
 deterministic code.
 
 Human-facing setup for cutmcp lives in `docs/cutmcp.md`. The product README
-is `README.md`. This file is about **how to change the code without breaking
+is `README.md`, and its technical docs are `docs/technical.md`. This file is about **how to change the code without breaking
 the design**.
 
 ---
@@ -196,11 +204,12 @@ text plus question text would make brief edits nearly free.
 
 ---
 
-## Cut Conductor (`conductor/`)
+## byjwu engine (`conductor/`)
 
-A second package in this repo. It is an FCPXML co-pilot: named passes,
+A second package in this repo, historically called Cut Conductor (Cut
+Conductor is now the room bot that runs it). It is an FCPXML co-pilot: named passes,
 Jev decisions, proposal markers, and an explicit apply that writes a new
-file. Human docs are `README.md` and `docs/room-protocol.md`.
+file. Human docs are `docs/technical.md` and `docs/room-protocol.md`.
 
 `python -m conductor ingest` inventories a folder of clips, writes a starter
 FCPXML (filename order, absolute `file://` paths), and calls `analyze`.
@@ -210,7 +219,7 @@ placeholder when the file cannot be probed. `python -m conductor ui` is a
 localhost page that posts a folder path to that command. It does not upload
 media.
 
-Cut Conductor does **not** follow the tier rule above, and it is not a sixth MCP tool.
+The engine does **not** follow the tier rule above, and it is not a sixth MCP tool.
 Do not fold its pipeline into `cutmcp/decide.py` or `cutmcp/assemble.py`.
 Do not route its Jev calls through `cutmcp/jev.py`'s `ask` — the Decisions
 client, the mock, and the action set live in `conductor/jev.py`. The one
@@ -221,12 +230,83 @@ on what a whole-cue filler is.
 `JEV_MOCK=1` is the cutmcp switch. Conductor ignores it. Conductor dry-run
 is the default; `CONDUCTOR_DRY_RUN=1` forces the mock even with `--live`.
 
+### Decision routing (`conductor/router.py`)
+
+Product rule: a linear, logical decision (a bounded choice with clear
+criteria) must call **Jev**. An open-ended creative or taste decision goes
+to **Grok 4.7** (`conductor/opus.py`, default `grok-4.7-medium` via
+`CONDUCTOR_TASTE_MODEL`). Set that variable to a Claude id to use Opus
+instead (`ANTHROPIC_API_KEY`). Room bots orchestrate. They do not decide.
+
+- The classification is `router.DECISION_TYPES`. Each type has an engine, a
+  question, and a reason. Add a type with `register_decision`. Do not branch
+  on engine anywhere else. Candidate kinds map to a type of the same name.
+  An unknown kind in a reserved pass uses `PASS_DEFAULTS`, and anything
+  else raises.
+- Everything that decides goes through `Router`: `judge_candidates` for
+  pass candidates, `decide([Ask(...)])` for everything else (the assembly
+  engine, future passes). Do not call `jev.ask` or `opus.complete` directly
+  from a pass.
+- Jev asks carry `options` (≤250) and never a schema. Jev selects, it does
+  not write. Give a linear ask a `rule`: it is the dry-run answer and the
+  fallback.
+- Opus asks carry `options` or a JSON `schema`. The wire schema is stripped
+  to what Anthropic accepts (`schema.wire`). The answer is validated against
+  the full schema (`schema.validate`). Opus 5.5 rejects forced `tool_choice`
+  and disabled thinking. Use `output_config.format`.
+- Fallbacks are not negotiable. If Jev is down, the linear call goes to the
+  deterministic rules at `FALLBACK_DISCOUNT` (0.85×), never to an LLM, and
+  a rules answer is never `auto`. If
+  Opus is down, the creative call becomes a review marker with no action.
+  The first failed request marks that engine down for the rest of the run.
+- The gate (`gates.route`) is separate from the engine. A Jev call on a
+  creative pass is still review-only. Threshold comparisons in the gate are
+  arithmetic. They stay code.
+- Batching: `JEV_WINDOW` candidates per Jev request, `OPUS_WINDOW` per Opus
+  request, split at `MAX_STATE_CHARS`. The cache is keyed by content (no id,
+  no timeline position), plus brief, taste prefs, question, engine, model,
+  and live-vs-mock. `iterate` shares one router across rounds.
+- Attribution: every `Proposal` carries `engine`, `engine_source` (`live`,
+  `mock`, `rules`, `unavailable`), `decision_type`, `engine_why`, and
+  `cached`. Report rows and marker notes show it. `decision_usage` in the
+  room payload (and totals in `iterate.json`) is the call counter. Keep both
+  when you change the payload.
+- Errors that reach a report go through `router.redact`. Never log a key.
+- Tests use `httpx.MockTransport` hosts (`tests/test_conductor_router.py`).
+  Dry-run must work with no key and no network.
+
+`conductor.graphics.apply_graphics` is the type and graphics stage (`iterate`,
+`room-run`, and `assemble` call it). It is off unless `--graphics` is passed
+or the profile sets `graphics.enabled`. Subtitle breaks, timing, and partial
+words are Jev asks. Title placement and treatment are Opus asks. The
+placeholder type defaults live in `conductor/graphics/profile.py` and are not
+measurements. Rendered media goes in `<stem>.assets/` beside the output
+FCPXML. Missing ffmpeg or Pillow skips that render and records a note.
+
 Passes (`mechanical`, `dialogue`, `pacing`, `colour`, plus reserved `story` /
 `audio` / `broll`) are the extension point. A new editorial check is a
 `register_pass`, not a new CLI. `colour` is review-only: it reads roles and
 aspect from the XML, leaves a placeholder where exposure and skin would need
-a decode, and never auto-applies. `python -m conductor iterate` is the
-bot-owned loop: each round auto-applies only mechanical gate cuts, writes
+a decode, and never auto-applies. `python -m conductor room-run` is the one command a room bot runs. It
+detects a `.fcpxml`, `.fcpxmld`, zip, or clip folder, calls `iterate`, and
+writes a timestamped folder plus `room.md`. `python -m conductor iterate` is
+the loop that command calls: each round auto-applies only mechanical gate cuts, writes
 `out/vN/`, and stops on metrics, no progress, or `--max-rounds`. Confidence
 gates live in `conductor/gates.py`. Creative passes never take the `auto`
 disposition. Apply never overwrites the input FCPXML.
+
+XML-only signals, for a timeline with no transcript, live in
+`conductor/candidates.py`. A spine gap counts as silence only where no
+connected clip covers it, and `apply` will not remove a spine item wholesale
+while a connected clip still covers part of it. Holds are judged against the
+local average shot. Repeated source ranges, rhythm shifts, mixed frame rates,
+an untrimmed string-out, a silent generator card, and a music bed that ends
+early are pacing notes (`span="note"`); the mock will not lift them. Each of
+those kinds is a registered decision type in `conductor/router.py`. The
+lane-less media inside a compound `clip` is the clip's picture, not an
+anchored item. A connected item's `offset` is on the parent's clock, which
+begins at the parent's `start`. The parser, apply, and the media path all
+place connected items, items on a gap, secondary storylines, and disabled
+clips with `timing.anchor_time`; hand-built fixtures must follow the same
+rule. Markers are inserted before `audio-channel-source` and filter
+elements, which is where the 1.14 content model requires them.

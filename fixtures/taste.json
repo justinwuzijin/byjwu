@@ -17,6 +17,7 @@
       "candidate_id": "c0004",
       "action": "tighten",
       "pass": "dialogue",
+      "kind": "filler_pause",
       "note": "keep the breath before the explanation"
     }
   ]

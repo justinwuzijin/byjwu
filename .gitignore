@@ -15,3 +15,16 @@ demo/
 
 # secrets
 .env
+
+# rendered type and graphics, written beside an output FCPXML
+*.assets/
+
+# real Final Cut exports stay off the repo
+fixtures/*.real.*
+*.fcpxmld/
+private/
+
+# style-study inputs stay off the repo (video ids, excerpts, frame crops)
+styles/*/reference/
+styles/*/ref/
+styles/*/study/data/

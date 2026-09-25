@@ -89,9 +89,18 @@ def test_ranked_report_keeps_creative_calls_in_review(tmp_path):
         "c0007",
     ]
     assert {row["pass"] for row in review} >= {"dialogue", "pacing", "mechanical", "colour"}
-    assert report.payload["receipts"][0]["state"]["taste"]["prefs"]["target_pace"] == "measured"
-    action = report.payload["receipts"][0]["questions"]["c0001_action"]
-    assert set(action["criteria"]) == {
+    jev_receipt, opus_receipt = report.payload["receipts"]
+    assert jev_receipt["engine"] == "jev" and opus_receipt["engine"] == "opus"
+    assert jev_receipt["state"]["taste"]["prefs"]["target_pace"] == "measured"
+    assert "c0001_action" not in jev_receipt["questions"]
+    assert [item["id"] for item in opus_receipt["state"]["items"]] == ["c0001"]
+    assert colour["engine"] == "opus" and colour["decision_type"] == "colour_unseen"
+    veto = jev_receipt["questions"]["c0002_veto"]
+    assert set(veto["criteria"]) >= {"allow", "veto_story", "veto_breath"}
+    open_action = next(
+        spec for key, spec in jev_receipt["questions"].items() if key.endswith("_action")
+    )
+    assert set(open_action["criteria"]) == {
         "keep",
         "tighten",
         "remove",
@@ -139,6 +148,15 @@ def test_confidence_apply_removes_only_the_gap(tmp_path):
     assert any(clip.name == "Gap" for clip in shadow)
     log = json_log(report.out_taste)
     assert log["log"][0]["event"] == "accept"
+    flash = next(clip for clip in applied if clip.name == "Flash frame")
+    cut_marks = [marker for marker in flash.markers if marker.value.startswith("CC cut")]
+    assert len(cut_marks) == 1
+    assert cut_marks[0].start == flash.start
+    assert cut_marks[0].duration == parse_fcpxml(report.out_applied).sequences[0].frame_duration
+    assert "silence gap" in cut_marks[0].value and "2.5s" in cut_marks[0].value
+    assert cut_marks[0].note.startswith("Cut Conductor applied cut.")
+    assert "rule=" in cut_marks[0].note and "confidence=" in cut_marks[0].note
+    assert not any(marker.value.startswith("CC cut") for marker in applied[0].markers)
     assert log["log"][0]["candidate_id"] == "c0001"
     assert "Cuts were written" in report.out_markdown.read_text()
 
@@ -185,7 +203,8 @@ def test_unknown_accept_id_and_non_cut(tmp_path):
         _run(tmp_path, apply=True, accept=["c0001"])
 
 
-def test_loose_pace_drops_the_gap_out_of_auto(tmp_path):
+def test_loose_pace_drops_the_gap_out_of_auto(tmp_path, monkeypatch):
+    monkeypatch.setenv("CONDUCTOR_DECISION_MODE", "model-gated")
     taste = tmp_path / "taste.json"
     taste.write_text(
         '{"version": 1, "prefs": {"target_pace": "loose", "cold_open_bias": "neutral",'

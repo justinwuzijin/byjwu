@@ -17,7 +17,7 @@ def test_sample_project_clips_assets_markers_and_roles():
     doc = parse_fcpxml(FIXTURE)
     assert doc.version == "1.11"
     assert set(doc.assets) == {"r2", "r3"}
-    assert doc.assets["r2"].src == "file:///Volumes/Media/interview.mov"
+    assert doc.assets["r2"].src == "file:///media/library/interview.mov"
     assert doc.assets["r2"].has_audio and doc.assets["r2"].has_video
     assert doc.formats["r1"].frame_duration == Fraction(1, 24)
     assert doc.formats["r1"].width == 1920
@@ -48,6 +48,10 @@ def test_sample_project_clips_assets_markers_and_roles():
     assert cold.connected_clips[0].name == "Lower third"
     assert cold.connected_clips[0].lane == 1
     assert cold.connected_clips[0].video_role == "titles"
+    # The offset is on the parent's clock, which begins at its start (12s).
+    assert cold.connected_clips[0].offset == 13
+    assert cold.connected_clips[0].local_offset == 1
+    assert cold.connected_clips[0].timeline_start == 1
     assert gap.kind == "gap" and gap.duration == Fraction(5, 2) and gap.start == 3600
     assert flash.duration == Fraction(1, 3) and flash.offset == Fraction(21, 2)
     assert guest.offset == Fraction(65, 6) and guest.audio_role == "dialogue"

@@ -201,6 +201,5 @@ def test_analyze_needs_a_bundle(tmp_path, capsys):
 def test_style_folder_stays_small():
     files = [p for p in STYLE.rglob("*") if p.is_file() and "__pycache__" not in p.parts]
     assert not [p for p in files if p.suffix.lower() in {".zip", ".mp4", ".mov", ".mkv", ".webm"}]
-    images = [p for p in files if p.suffix.lower() in {".jpg", ".png"}]
-    assert all(p.parent.name == "reference" for p in images)
-    assert sum(p.stat().st_size for p in images) < 150_000
+    images = [p for p in files if p.suffix.lower() in {".jpg", ".jpeg", ".png", ".webp", ".gif"}]
+    assert images == []

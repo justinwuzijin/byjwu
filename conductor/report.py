@@ -3,6 +3,10 @@
 Ranking is deterministic. ``auto`` calls (eligible to apply) come first, scored
 by confidence × (1 − risk). Review and escalate follow, least confident first.
 ``keep`` is not a change.
+
+Every row names the engine that decided it (``engine``, ``engine_source``,
+``decision_type``, ``engine_why``). ``decision_usage`` is the per-run call
+counter from :class:`conductor.router.Ledger`.
 """
 
 from __future__ import annotations
@@ -15,6 +19,10 @@ from . import __version__
 from .candidates import Candidate
 from .decide import Proposal
 from .fcpxml import Document, Sequence
+from .metrics import section_pacing
+from .notes import editor_notes
+from .router import format_usage
+from .rules import format_rules
 from .timeutil import clock, seconds, smpte
 
 PROTOCOL = "cut-conductor.room"
@@ -43,6 +51,11 @@ def build_payload(
     apply_warnings: list[str],
     shadow: bool,
     applied: bool,
+    signals: dict | None = None,
+    learned: list[dict] | None = None,
+    decision_usage: dict | None = None,
+    routing: dict | None = None,
+    rules: dict | None = None,
 ) -> dict:
     by_id = {item.id: item for item in candidates}
     proposal_by_id = {item.candidate_id: item for item in proposals}
@@ -78,6 +91,12 @@ def build_payload(
             for asset in document.assets.values()
         ],
         "sequences": [_sequence_summary(sequence) for sequence in sequences],
+        "notes": editor_notes(
+            sequences=sequences,
+            candidates=candidates,
+            proposals=proposals,
+            transcript_present=transcript_name is not None,
+        ),
         "candidates": [item.to_state() for item in candidates],
         "changes": ranked,
         "kept": [
@@ -88,6 +107,19 @@ def build_payload(
         "markers_added": markers_added,
         "cuts": cuts,
         "apply_warnings": apply_warnings,
+        "signals": signals
+        or {
+            "audio": "skipped",
+            "transcript": "skipped",
+            "summary": "",
+            "reasons": [],
+            "clips": [],
+            "unreachable": [],
+        },
+        "learned": learned or [],
+        "decision_usage": decision_usage or {},
+        "rules": rules or {},
+        "routing": routing or {},
         "receipts": receipts,
     }
 
@@ -100,11 +132,23 @@ def render_markdown(payload: dict) -> str:
         "",
         f"- Mode: `{payload['mode']}`",
         f"- Passes: `{', '.join(payload['passes'])}`",
-        f"- Model: `{_model(payload)}`",
+        f"- Models: `{_model(payload)}`",
+        f"- Decision calls: {format_usage(payload.get('decision_usage') or {}) or 'none'}",
         f"- Brief: {payload['brief']}",
         f"- Markers added this run: {payload['markers_added']}",
         f"- Cuts written: {len(payload['cuts'])}",
+        f"- Decision mode: `{(payload.get('rules') or {}).get('mode', 'logic-first')}`",
+        f"- Signals: {payload.get('signals', {}).get('summary') or 'not recorded'}",
         "",
+    ]
+    notes = payload.get("notes") or []
+    if notes:
+        lines.extend(["## Editor's notes", ""])
+        for paragraph in notes:
+            lines.append(paragraph)
+            lines.append("")
+    lines.extend(
+        [
         "## Eligible to apply",
         "",
         "High-confidence mechanical calls. `--min-confidence` can cut these.",
@@ -123,12 +167,20 @@ def render_markdown(payload: dict) -> str:
         "",
         "## Left as-is",
         "",
-    ]
+        ]
+    )
     kept = payload["kept"]
     if not kept:
         lines.append("No candidate was judged `keep`. Regions that were not candidates are untouched.")
     else:
         lines.append(_table(kept))
+    rules = payload.get("rules") or {}
+    if rules:
+        lines.extend(["", "## Decisions", "", *format_rules(rules)])
+    taste_lines = _taste_lines(payload)
+    if taste_lines:
+        lines.extend(["", "## Taste", "", *taste_lines])
+    lines.extend(["", *_usage_section(payload)])
     lines.extend(
         [
             "",
@@ -158,6 +210,7 @@ def render_html(payload: dict) -> str:
             "<tr>"
             f"<td>{escape(str(row.get('rank') or ''))}</td>"
             f"<td>{escape(row['timecode'])}</td>"
+            f"<td>{escape(_engine_label(row))}</td>"
             f"<td>{escape(row['action'])}</td>"
             f"<td>{escape(row['color'])}</td>"
             f"<td>{row['confidence']:.2f}</td>"
@@ -168,10 +221,10 @@ def render_html(payload: dict) -> str:
             for row in rows
         )
         if not body:
-            body = "<tr><td colspan='8'>None</td></tr>"
+            body = "<tr><td colspan='9'>None</td></tr>"
         return (
             f"<h2>{escape(title)}</h2>"
-            "<table><thead><tr><th>#</th><th>Timecode</th><th>Action</th>"
+            "<table><thead><tr><th>#</th><th>Timecode</th><th>Engine</th><th>Action</th>"
             "<th>Color</th><th>Conf</th><th>Risk</th><th>Clip</th><th>Why</th>"
             f"</tr></thead><tbody>{body}</tbody></table>"
         )
@@ -195,8 +248,11 @@ th {{ font: 12px/1.2 ui-sans-serif, sans-serif; letter-spacing: 0.04em; text-tra
 <p class="banner">{escape(_banner(payload))} Mode: {escape(payload["mode"])}.</p>
 <h1>Cut Conductor — {escape(_title(payload))}</h1>
 <p>{escape(payload["brief"])}</p>
+{"".join(f"<p>{escape(paragraph)}</p>" for paragraph in payload.get("notes") or [])}
 {section("Eligible to apply", proposed)}
 {section("Review and escalate", human)}
+<h2>Decision calls</h2>
+<p>{escape(format_usage(payload.get("decision_usage") or {}) or "none")}</p>
 </body>
 </html>
 """
@@ -251,6 +307,8 @@ def _row(proposal: Proposal, candidate: Candidate, sequence: Sequence, section: 
         "eligible": proposal.eligible,
         "color": proposal.color,
         "confidence": proposal.confidence,
+        "confidence_raw": proposal.confidence_raw,
+        "taste_reason": proposal.taste_reason,
         "risk": proposal.risk,
         "needs_human": proposal.needs_human,
         "timecode": smpte(candidate.timeline_start, frame, origin),
@@ -258,6 +316,7 @@ def _row(proposal: Proposal, candidate: Candidate, sequence: Sequence, section: 
         "marker_name": proposal.marker_name,
         "reason": candidate.reason,
         "role": candidate.role,
+        **proposal.attribution(),
     }
 
 
@@ -270,6 +329,7 @@ def _sequence_summary(sequence: Sequence) -> dict:
         "frame_duration": str(sequence.frame_duration),
         "clip_count": len(sequence.spine),
         "existing_marker_count": sum(len(clip.markers) for clip in sequence.spine),
+        "pacing": section_pacing(sequence),
     }
 
 
@@ -298,17 +358,72 @@ def _title(payload: dict) -> str:
 
 
 def _model(payload: dict) -> str:
-    receipts = payload.get("receipts") or []
-    if not receipts:
-        return "none"
-    return str(receipts[0].get("model"))
+    engines = (payload.get("decision_usage") or {}).get("engines") or {}
+    named = [
+        f"{name}: {', '.join(row['models'])}" for name, row in engines.items() if row.get("models")
+    ]
+    return "; ".join(named) if named else "none"
+
+
+def _engine_label(row: dict) -> str:
+    label = f"{row.get('engine', '?')} · {row.get('engine_source', '?')}"
+    return label + " (cached)" if row.get("cached") else label
+
+
+def _usage_section(payload: dict) -> list[str]:
+    usage = payload.get("decision_usage") or {}
+    engines = usage.get("engines") or {}
+    lines = [
+        "## Decision engines",
+        "",
+        "Linear calls go to Jev, creative calls to the taste model (Grok 4.7 by default). `rules` means Jev was "
+        "unavailable and the deterministic rules answered at reduced confidence. "
+        "`unavailable` means Opus could not answer and the call is a review marker.",
+        "",
+        "| engine | status | calls | live | mock | failed | items | cached | by rules | left for review | tokens in | tokens out | est. $ |",
+        "|---|---|---|---|---|---|---|---|---|---|---|---|---|",
+    ]
+    for name, row in engines.items():
+        cost = row.get("estimated_cost_usd")
+        lines.append(
+            "| "
+            + " | ".join(
+                _cell(value)
+                for value in (
+                    name,
+                    row["status"],
+                    row["calls"],
+                    row["live_calls"],
+                    row["mock_calls"],
+                    row["failed_calls"],
+                    row["items"],
+                    row["cache_hits"],
+                    row["fallback_items"],
+                    row["unavailable_items"],
+                    "—" if row.get("input_tokens") is None else row["input_tokens"],
+                    "—" if row.get("output_tokens") is None else row["output_tokens"],
+                    "—" if cost is None else f"{cost:.6f}",
+                )
+            )
+            + " |"
+        )
+        if row.get("down_reason"):
+            lines.append(f"| | down: {_cell(row['down_reason'])} | | | | | | | | | | | |")
+    for text in usage.get("warnings") or []:
+        lines.extend(["", f"> {text}"])
+    routing = payload.get("routing") or {}
+    if routing:
+        lines.extend(["", "| decision | engine | why |", "|---|---|---|"])
+        for name, row in routing.items():
+            lines.append(f"| {_cell(name)} | {row['engine']} | {_cell(row['why'])} |")
+    return lines
 
 
 def _table(rows: list[dict]) -> str:
     if not rows:
         return "_None._"
-    header = "| # | timecode | pass | action | color | conf | risk | clip | why |"
-    rule = "|---|---|---|---|---|---|---|---|---|"
+    header = "| # | timecode | pass | engine | action | color | conf | risk | clip | why |"
+    rule = "|---|---|---|---|---|---|---|---|---|---|"
     body = []
     for row in rows:
         body.append(
@@ -318,6 +433,7 @@ def _table(rows: list[dict]) -> str:
                     _cell(row.get("rank") or ""),
                     _cell(row["timecode"]),
                     _cell(row.get("pass") or ""),
+                    _cell(_engine_label(row)),
                     _cell(row["action"]),
                     _cell(row["color"]),
                     f"{row['confidence']:.2f}",
@@ -329,6 +445,25 @@ def _table(rows: list[dict]) -> str:
             + " |"
         )
     return "\n".join([header, rule, *body])
+
+
+def _taste_lines(payload: dict) -> list[str]:
+    changes = payload.get("changes") or []
+    kept = payload.get("kept") or []
+    rows = [row for row in [*changes, *kept] if row.get("taste_reason")]
+    if not rows:
+        return []
+    lines = [
+        "Confidence here is the mock or Jev score after the taste prior. "
+        "`confidence_raw` in the JSON is the score before that shift.",
+        "",
+    ]
+    for row in rows:
+        lines.append(
+            f"- `{row['candidate_id']}` `{row['kind']}`: {row['taste_reason']} "
+            f"(confidence {row['confidence_raw']:.2f} → {row['confidence']:.2f})"
+        )
+    return lines
 
 
 def _cell(value: object) -> str:

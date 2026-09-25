@@ -14,6 +14,17 @@ Stop on the first of:
 A person is needed when the last round still has an escalate, or the stop
 reason is ``max-rounds``. Review rows stay marked. They are not applied here.
 Colour is judged with the other passes and is never on the auto-apply path.
+
+One :class:`conductor.router.Router` serves every round, so a region that did
+not change is not asked about again, and an engine that went down stays on
+its fallback. Each round records its own ``decision_usage``; ``iterate.json``
+has the total.
+
+``assemble=True`` (or a ``style`` / ``music``) switches to the assembly loop
+in ``conductor.assembly.refine``: ``v0`` is assembled from the raw material
+and later rounds are corrected against the style profile's metrics instead
+of by mechanical cuts. Same ``iterate.json`` protocol, with ``mode:
+assemble``.
 """
 
 from __future__ import annotations
@@ -30,8 +41,10 @@ from .ingest import (
     load_duration_overrides,
     render_starter,
 )
+from .jev import dry_run_forced
 from .metrics import Targets, measure
 from .report import dumps
+from .router import Ledger, Router, format_usage
 from .run import Report, analyze
 
 PROTOCOL = "cut-conductor.iterate"
@@ -51,6 +64,11 @@ class IterateResult:
     starter: Path | None = None
     out_json: Path | None = None
     source: Path | None = None
+    signals_summary: str = ""
+    decision_usage: dict = field(default_factory=dict)
+    ledger: Ledger | None = None
+    mode: str = "mechanical"
+    final: Path | None = None
 
 
 def iterate(
@@ -76,8 +94,38 @@ def iterate(
     max_silence_seconds: float | None = None,
     min_shot_seconds: float | None = None,
     max_cuts_per_minute: float | None = None,
+    signals: str = "auto",
+    transcribe: str = "auto",
+    signal_cache: str | Path | None = None,
+    global_taste_path: str | Path | None = None,
+    feedback_path: str | Path | None = None,
+    learn_from: str | Path | None = None,
+    router: Router | None = None,
+    assemble: bool = False,
+    music: str | Path | None = None,
+    style: str | Path | None = None,
+    graphics: bool | None = None,
+    beats: str | Path | None = None,
 ) -> IterateResult:
     """Run the unattended mechanical loop. Dry-run unless ``live`` is set."""
+    if assemble or music:
+        from .assembly.refine import iterate_assembly
+
+        return iterate_assembly(
+            brief=brief,
+            out_dir=out_dir,
+            media=media,
+            fcpxml=fcpxml,
+            music=music,
+            style=style,
+            taste_path=taste_path,
+            durations_path=durations_path,
+            target_seconds=target_seconds,
+            name=sequence,
+            live=live,
+            max_rounds=max_rounds,
+            router=router,
+        )
     if bool(fcpxml) == bool(media):
         raise ConductorError("iterate needs exactly one of --fcpxml or --media")
     if media is None and (durations_path or sequence):
@@ -134,60 +182,48 @@ def iterate(
     taste = taste_path
     rounds: list[dict] = []
     applied: list[dict] = []
-    reason = "max-rounds"
-    cleared: list[str] = []
-    for number in range(1, max_rounds + 1):
-        staged = _stage(source, destination / f"v{number}")
-        report = analyze(
-            staged,
-            transcript_path=transcript_path,
-            brief=brief.strip(),
-            out_dir=staged.parent,
-            live=live,
-            project=project,
-            html=html,
-            passes=passes,
-            taste_path=taste,
-            apply=True,
-            min_confidence=min_confidence,
-            apply_passes=list(MECHANICAL),
-            allow_empty_apply=True,
-            skip_apply=(targets.clear if targets.configured() else None),
+    owned = router is None
+    if router is None:
+        router = Router(live=bool(live) and not dry_run_forced())
+    total = Ledger()
+    try:
+        reason, cleared = _rounds(
+            router=router,
+            total=total,
+            source=source,
+            destination=destination,
+            rounds=rounds,
+            applied=applied,
+            warnings=warnings,
+            targets=targets,
+            taste=taste,
+            max_rounds=max_rounds,
+            feedback_path=feedback_path,
+            learn_from=learn_from,
+            analyze_args={
+                "transcript_path": transcript_path,
+                "brief": brief.strip(),
+                "project": project,
+                "html": html,
+                "passes": passes,
+                "min_confidence": min_confidence,
+                "global_taste_path": global_taste_path,
+                "signals": signals,
+                "transcribe": transcribe,
+                "signal_cache": signal_cache,
+            },
         )
-        metrics = _metrics(report)
-        cuts = _cuts(report, number)
-        row = {
-            "round": number,
-            "source": str(staged),
-            "shadow": str(report.out_fcpxml) if report.out_fcpxml else None,
-            "applied_fcpxml": str(report.out_applied) if report.out_applied else None,
-            "json": str(report.out_json) if report.out_json else None,
-            "markdown": str(report.out_markdown) if report.out_markdown else None,
-            "taste": str(report.out_taste) if report.out_taste else None,
-            "applied_ids": [item["candidate_id"] for item in cuts],
-            "cuts": cuts,
-            "metrics": metrics,
-            "mode": report.mode,
-            "next": str(report.out_applied or report.out_fcpxml or staged),
-        }
-        rounds.append(row)
-        applied.extend(cuts)
-        warnings.extend(report.warnings)
-        if targets.clear(metrics):
-            reason = "metrics"
-            cleared = targets.configured()
-            break
-        if report.cuts_applied == 0:
-            reason = "no-progress"
-            break
-        if number == max_rounds:
-            reason = "max-rounds"
-            break
-        source = Path(row["next"])
-        if report.out_taste is not None:
-            taste = report.out_taste
+        graphics_info = _graphics(
+            rounds, destination, brief=brief.strip(), style=style, graphics=graphics, beats=beats, router=router
+        )
+        if graphics_info is not None:
+            warnings.extend(graphics_info.get("notes") or [])
+    finally:
+        if owned:
+            router.close()
 
     human = _human(reason, rounds)
+    usage = total.to_dict()
     result = IterateResult(
         stop_reason=reason,
         rounds=rounds,
@@ -195,9 +231,12 @@ def iterate(
         needs_human=bool(human),
         human_reasons=human,
         cleared=cleared,
-        warnings=warnings,
+        warnings=list(dict.fromkeys(warnings)),
         starter=starter,
         source=Path(fcpxml) if fcpxml else starter,
+        signals_summary=(rounds[-1].get("signals") or {}).get("summary", "") if rounds else "",
+        decision_usage=usage,
+        ledger=total,
     )
     payload = {
         "protocol": PROTOCOL,
@@ -216,7 +255,11 @@ def iterate(
         "starter": str(starter) if starter else None,
         "applied": applied,
         "rounds": rounds,
-        "warnings": warnings,
+        "decision_usage": usage,
+        "warnings": result.warnings,
+        "signals": rounds[-1].get("signals") if rounds else None,
+        "words": rounds[-1].get("words") if rounds else None,
+        "graphics": graphics_info,
     }
     out_json = destination / "iterate.json"
     out_json.write_text(dumps(payload), encoding="utf-8")
@@ -224,8 +267,86 @@ def iterate(
     return result
 
 
+def _rounds(
+    *,
+    router: Router,
+    total: Ledger,
+    source: Path,
+    destination: Path,
+    rounds: list[dict],
+    applied: list[dict],
+    warnings: list[str],
+    targets: Targets,
+    taste,
+    max_rounds: int,
+    feedback_path,
+    learn_from,
+    analyze_args: dict,
+) -> tuple[str, list[str]]:
+    reason = "max-rounds"
+    cleared: list[str] = []
+    for number in range(1, max_rounds + 1):
+        staged = _stage(source, destination / f"v{number}")
+        report = analyze(
+            staged,
+            out_dir=staged.parent,
+            taste_path=taste,
+            apply=True,
+            apply_passes=list(MECHANICAL),
+            allow_empty_apply=True,
+            skip_apply=(targets.clear if targets.configured() else None),
+            router=router,
+            feedback_path=feedback_path if number == 1 else None,
+            learn_from=learn_from if number == 1 else None,
+            **analyze_args,
+        )
+        if report.ledger is not None:
+            total.merge(report.ledger)
+        metrics = _metrics(report)
+        cuts = _cuts(report, number)
+        row = {
+            "round": number,
+            "source": str(staged),
+            "shadow": str(report.out_fcpxml) if report.out_fcpxml else None,
+            "applied_fcpxml": str(report.out_applied) if report.out_applied else None,
+            "json": str(report.out_json) if report.out_json else None,
+            "markdown": str(report.out_markdown) if report.out_markdown else None,
+            "taste": str(report.out_taste) if report.out_taste else None,
+            "applied_ids": [item["candidate_id"] for item in cuts],
+            "cuts": cuts,
+            "metrics": metrics,
+            "mode": report.mode,
+            "learned": report.payload.get("learned") or [],
+            "decision_usage": report.payload.get("decision_usage") or {},
+            "next": str(report.out_applied or report.out_fcpxml or staged),
+            "words": report.payload["files"].get("applied_words") or report.payload["files"].get("words"),
+            "signals": _signal_summary(report),
+        }
+        rounds.append(row)
+        applied.extend(cuts)
+        warnings.extend(report.warnings)
+        if targets.clear(metrics):
+            reason = "metrics"
+            cleared = targets.configured()
+            break
+        if report.cuts_applied == 0:
+            reason = "no-progress"
+            break
+        if number == max_rounds:
+            reason = "max-rounds"
+            break
+        source = Path(row["next"])
+        if report.out_taste is not None:
+            taste = report.out_taste
+    return reason, cleared
+
+
 def format_report(result: IterateResult) -> str:
     """The per-round table and the stop line."""
+    if result.mode == "assemble":
+        from .assembly.refine import format_assembly_report
+
+        return format_assembly_report(result)
     lines = [
         f"cut-conductor: iterate, {len(result.rounds)} rounds, stop {result.stop_reason}",
         "round  duration  silence  review  escalate  avg_shot  cuts/min  applied",
@@ -243,14 +364,32 @@ def format_report(result: IterateResult) -> str:
             f"{metrics['cuts_per_minute']:>8.2f}  "
             f"{applied}"
         )
+    if result.signals_summary:
+        lines.append(f"signals  {result.signals_summary}")
     if result.cleared:
         lines.append("clear  " + ", ".join(result.cleared))
     lines.append("human  " + (", ".join(result.human_reasons) if result.human_reasons else "none"))
+    if result.decision_usage:
+        lines.append("decisions  " + format_usage(result.decision_usage))
     if result.starter is not None:
         lines.append(f"starter  {result.starter}")
     if result.out_json is not None:
         lines.append(f"json  {result.out_json}")
     return "\n".join(lines)
+
+
+def _signal_summary(report: Report) -> dict:
+    raw = report.payload.get("signals") or {}
+    return {
+        "audio": raw.get("audio"),
+        "transcript": raw.get("transcript"),
+        "whisper_tool": raw.get("whisper_tool"),
+        "summary": raw.get("summary") or "",
+        "word_count": raw.get("word_count", 0),
+        "reasons": list(raw.get("reasons") or []),
+        "unreachable": list(raw.get("unreachable") or []),
+        "cache_hits": dict(raw.get("cache_hits") or {}),
+    }
 
 
 def _human(reason: str, rounds: list[dict]) -> list[str]:
@@ -288,6 +427,36 @@ def _cuts(report: Report, number: int) -> list[dict]:
             }
         )
     return rows
+
+
+def _graphics(rounds, destination: Path, *, brief: str, style, graphics, beats, router: Router | None) -> dict | None:
+    """Run the type and graphics stage on the timeline the person will open."""
+    from .graphics import apply_graphics, load_graphics_profile
+
+    if not rounds:
+        return None
+    profile = load_graphics_profile(style)
+    enabled = profile.enabled if graphics is None else bool(graphics)
+    if not enabled:
+        return None
+    last = rounds[-1]
+    target = Path(last["next"])
+    if not target.is_file():
+        return None
+    words = last.get("words")
+    result = apply_graphics(
+        target,
+        out_path=target,
+        words=words,
+        beats=beats,
+        profile=profile,
+        router=router,
+        brief=brief,
+        enabled=True,
+    )
+    info = result.to_dict()
+    last["graphics"] = info
+    return info
 
 
 def _stage(source: Path, round_dir: Path) -> Path:

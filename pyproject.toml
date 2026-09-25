@@ -3,9 +3,9 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "cutmcp"
+name = "byjwu"
 version = "0.1.0"
-description = "jevid: a Final Cut editorial co-pilot (Cut Conductor), plus the cutmcp EDL cutter"
+description = "byjwu: edits byjustinwu YouTube videos to FCPXML with TypeSafe Jev, a taste model (default grok-4.7-medium), and a Grok Bot room, plus the cutmcp EDL cutter"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -16,7 +16,8 @@ dependencies = [
 
 [project.optional-dependencies]
 otio = ["opentimelineio>=0.17"]
-dev = ["pytest>=8", "pytest-asyncio>=0.23"]
+dev = ["pytest>=8", "pytest-asyncio>=0.23", "lxml>=5"]
+yaml = ["pyyaml>=6"]
 
 [project.scripts]
 cutmcp = "cutmcp.server:main"
@@ -24,6 +25,9 @@ cut-conductor = "conductor.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["cutmcp*", "conductor*"]
+
+[tool.setuptools.package-data]
+conductor = ["dtd/*.dtd"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

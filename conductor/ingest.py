@@ -45,7 +45,7 @@ DEFAULT_BRIEF = (
 RELINK = (
     "media-rep src values are absolute file:// URLs from this machine. "
     "Final Cut finds the files only when those paths resolve. Otherwise use "
-    "Relink Files. jevid does not copy media and does not edit the originals."
+    "Relink Files. byjwu does not copy media and does not edit the originals."
 )
 
 ProbeFn = Callable[[Path], "Probe | Skip | None"]
@@ -311,6 +311,9 @@ def ingest(
     accept: list[str] | None = None,
     min_confidence: float | None = None,
     probe: ProbeFn | None = None,
+    signals: str = "auto",
+    transcribe: str = "auto",
+    signal_cache: str | Path | None = None,
 ) -> IngestResult:
     """Inventory ``media_dir``, write a starter FCPXML, and run ``analyze`` on it.
 
@@ -343,6 +346,9 @@ def ingest(
         apply=apply,
         accept=accept,
         min_confidence=min_confidence,
+        signals=signals,
+        transcribe=transcribe,
+        signal_cache=signal_cache,
     )
     info = _payload(found, starter, sequence_name)
     _attach(report, info)

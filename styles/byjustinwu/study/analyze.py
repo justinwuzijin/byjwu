@@ -38,7 +38,9 @@ from pathlib import Path
 import numpy as np
 
 HERE = Path(__file__).resolve().parent
-LONG_VIDEOS = ("iK5xtVEnSvU", "UhPZ4HeJQ6c", "36ssmIOLffw")
+DATA_DIR = HERE / "data"
+LONG_ALIASES = ("long_a", "long_b", "long_c")
+SHORT_ALIAS = "short"
 MUSIC_TYPES = frozenset({"broll", "montage", "monologue", "chapter_card", "end_card"})
 SPEECH_TYPES = frozenset({"talking", "confessional", "vlog"})
 RHYTHM_TYPES = ("talking", "confessional", "vlog", "broll", "montage", "monologue")
@@ -82,11 +84,30 @@ def _dist(values) -> dict | None:
     }
 
 
+def load_source_ids(bundle: Path) -> dict[str, str]:
+    """Map section aliases to video ids. Ids live only in the gitignored data folder."""
+    for path in (DATA_DIR / "sources.json", bundle / "data" / "sources.json"):
+        if path.is_file():
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            break
+    else:
+        raise SystemExit(
+            f"missing sources.json in {DATA_DIR} (gitignored): "
+            "map long_a, long_b, long_c, short to video ids"
+        )
+    needed = (*LONG_ALIASES, SHORT_ALIAS)
+    missing = [name for name in needed if not str(raw.get(name, "")).strip()]
+    if missing:
+        raise SystemExit(f"sources.json is missing {', '.join(missing)}")
+    return {name: str(raw[name]) for name in needed}
+
+
 class Video:
-    def __init__(self, bundle: Path, vid: str, labels: dict):
-        data = bundle / "data" / vid
-        self.id = vid
-        self.frames = bundle / "frames" / vid
+    def __init__(self, bundle: Path, folder_id: str, labels: dict, alias: str):
+        data = bundle / "data" / folder_id
+        self.id = alias
+        self.folder_id = folder_id
+        self.frames = bundle / "frames" / folder_id
         self.summary = json.loads((data / "summary.json").read_text())
         self.chapters = json.loads((data / "metadata.json").read_text()).get("chapters") or []
         self.duration = float(self.summary["duration_s"])
@@ -511,7 +532,7 @@ def speech_across_cuts(videos: list[Video]) -> dict:
 
 
 def chapters(videos: list[Video], plug_under_s: float = 15.0) -> dict:
-    """YouTube chapter lengths. A trailing chapter under 15 s is a link plug."""
+    """Chapter lengths from the bundle metadata. A trailing chapter under 15 s is a plug."""
     lengths, per_10min, titles = [], [], []
     for v in videos:
         real = [c for c in v.chapters if c["end_time"] - c["start_time"] >= plug_under_s]
@@ -595,7 +616,7 @@ def roles(videos: list[Video]) -> dict:
 
 
 def summary(result: dict) -> dict:
-    edges_ = [e for vid, e in result["edges"].items() if vid in LONG_VIDEOS]
+    edges_ = [e for vid, e in result["edges"].items() if vid in LONG_ALIASES]
     return {
         "end_card_s_median": _r(np.median([e["end_card_s"] for e in edges_]), 2),
         "tail_fade_s_median": _r(np.median([e["tail_fade_s"] for e in edges_ if e["tail_fade_s"] is not None]), 2),
@@ -674,7 +695,7 @@ def captions(bundle: Path, videos: list[Video], labels: dict) -> dict:
         return out
     geo: dict = {}
     for item in labels["caption_frames"]:
-        box = caption_box(bundle / "frames" / item["video"] / item["frame"])
+        box = caption_box(bundle / "frames" / by_id[item["video"]].folder_id / item["frame"])
         if box is None:
             continue
         box["chars"] = len(item["text"])
@@ -721,13 +742,13 @@ def cards(videos: list[Video], labels: dict) -> dict:
     }
 
 
-def palette(bundle: Path, labels: dict) -> dict | None:
+def palette(bundle: Path, labels: dict, ids: dict[str, str]) -> dict | None:
     Image = _image()
     if Image is None:
         return None
     out: dict = {"rect": [], "field": []}
     for item in labels["rect_samples"]:
-        im = Image.open(bundle / "frames" / item["video"] / item["frame"]).convert("RGB")
+        im = Image.open(bundle / "frames" / ids[item["video"]] / item["frame"]).convert("RGB")
         W, H = im.size
         for x, y, role in item["points"]:
             px = [
@@ -740,13 +761,13 @@ def palette(bundle: Path, labels: dict) -> dict | None:
     return out
 
 
-def slam(bundle: Path, labels: dict) -> list | None:
+def slam(bundle: Path, labels: dict, ids: dict[str, str]) -> list | None:
     Image = _image()
     if Image is None:
         return None
     out = []
     for item in labels["slam_text"]:
-        im = np.asarray(Image.open(bundle / "frames" / item["video"] / item["frame"]).convert("RGB")).astype(int)
+        im = np.asarray(Image.open(bundle / "frames" / ids[item["video"]] / item["frame"]).convert("RGB")).astype(int)
         H, W, _ = im.shape
         mask = np.abs(im - np.array(item["rgb"])).max(2) < item["tol"]
         ys, xs = np.where(mask)
@@ -754,7 +775,6 @@ def slam(bundle: Path, labels: dict) -> list | None:
         x0, x1 = np.percentile(xs, 0.5), np.percentile(xs, 99.5)
         colour = np.median(im[mask], 0).astype(int)
         out.append({
-            "text": item["text"],
             "video": item["video"],
             "height_frac": _r((y1 - y0) / H),
             "width_frac": _r((x1 - x0) / W),
@@ -769,12 +789,13 @@ def slam(bundle: Path, labels: dict) -> list | None:
 
 def analyze(bundle: Path, labels_path: Path = HERE / "sections.json") -> dict:
     labels = json.loads(labels_path.read_text())
-    videos = [Video(bundle, vid, labels["videos"][vid]) for vid in LONG_VIDEOS]
-    short = Video(bundle, "phS28hhJSP8", labels["videos"]["phS28hhJSP8"])
+    ids = load_source_ids(bundle)
+    videos = [Video(bundle, ids[alias], labels["videos"][alias], alias) for alias in LONG_ALIASES]
+    short = Video(bundle, ids[SHORT_ALIAS], labels["videos"][SHORT_ALIAS], SHORT_ALIAS)
     result = {
         "schema": "byjustinwu.measured/1",
         "videos": {v.id: {"duration_s": v.duration} for v in videos + [short]},
-        "pooled_over": list(LONG_VIDEOS),
+        "pooled_over": list(LONG_ALIASES),
         "rhythm": rhythm(videos),
         "beat_alignment": beat_alignment(videos),
         "levels": levels(videos),
@@ -782,12 +803,12 @@ def analyze(bundle: Path, labels_path: Path = HERE / "sections.json") -> dict:
         "ducking": ducking(videos),
         "edges": edges(videos + [short]),
         "speech_across_cuts": speech_across_cuts(videos),
-        "captions": captions(bundle, videos, labels),
+        "captions": captions(bundle, videos + [short], labels),
         "cards": cards(videos, labels),
-        "palette": palette(bundle, labels),
-        "slam": slam(bundle, labels),
+        "palette": palette(bundle, labels, ids),
+        "slam": slam(bundle, labels, ids),
         "short_video": {
-            "phS28hhJSP8": {
+            SHORT_ALIAS: {
                 "median_shot_s": short.summary["shots"]["0p3"]["shot_length_s"]["median"],
                 "cuts_per_min": short.summary["shots"]["0p3"]["cuts_per_minute"],
                 "loudness": short.summary["loudness_summary"],

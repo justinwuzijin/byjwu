@@ -133,6 +133,12 @@ def _absorb_islands(cuts: list[dict], profile: StyleProfile, timeline_end: Fract
     return merged
 
 
+def snap_span(start, end, words) -> tuple:
+    """Pull a range out to the word edges it overlaps. Same rule as a cut snap."""
+    snapped = _snap_words({"start": start, "end": end}, words)
+    return snapped["start"], snapped["end"]
+
+
 def _snap_words(cut: dict, words: list) -> dict:
     if not words or cut.get("explicit_trim"):
         snapped = _copy(cut)

@@ -48,6 +48,7 @@ retake_veto        opus    Should this retake cut be kept instead?
 filler_approve     opus    Is this ambiguous filler safe to cut?
 timeline_critic    opus    Approve, flag a span, or veto one cut on the edit plan?
 music_offset       opus    Which offered music in-point should the cut use?
+segment_pick       jev     Which numbered segments match this query?
 =================  ======  ==================================================
 
 Unknown kinds fall back to the pass default (``story`` and ``broll`` are
@@ -265,6 +266,13 @@ DECISION_TYPES: dict[str, DecisionType] = {
             "Which of the offered music in-points should this cut use?",
             _CREATIVE
             + "The model may veto among the offsets logic already ranked. It cannot invent a time.",
+        ),
+        _type(
+            "segment_pick",
+            JEV,
+            "Which of these numbered segments match the query?",
+            _LINEAR
+            + "Each segment is already bounded. The call selects matching ids and does not invent times.",
         ),
     )
 }
@@ -906,6 +914,114 @@ class Router:
         receipts.extend(got)
         return [found[ask.id] for ask in asks], receipts
 
+    def pick_segments(
+        self,
+        query: str,
+        rows: list[dict],
+        *,
+        brief: str = "",
+        prefiltered: bool = False,
+    ) -> dict:
+        """One Jev call over a numbered segment list. Dry-run uses lexical scores.
+
+        ``rows`` items need ``id`` and ``text`` (optional ``keywords``). The
+        caller keeps the list at or under Jev's option cap. Each row is one
+        noul in that single request. A match is a probability of at least 0.5.
+        Jev does not write the reason; the reason is the selection rule.
+        """
+        from cutmcp.jev import noul
+
+        dtype = classify("segment_pick")
+        usage = self.ledger[JEV]
+        usage.items += 1
+        ordered = list(rows)
+        state = {
+            "brief": brief,
+            "decision": dtype.question,
+            "query": query,
+            "segments": [
+                {
+                    "n": index,
+                    "id": str(row["id"]),
+                    "text": str(row.get("text") or ""),
+                    "keywords": list(row.get("keywords") or []),
+                }
+                for index, row in enumerate(ordered, start=1)
+            ],
+        }
+        questions = {
+            str(row["id"]): noul(
+                (
+                    f"Segment {index} (id {row['id']}) is one row in state.segments. "
+                    f"{dtype.question} Query: {query}"
+                ),
+                true="this segment is about the query",
+                false="this segment is not about the query",
+            )
+            for index, row in enumerate(ordered, start=1)
+        }
+        lexical = _lexical_scores(query, ordered)
+        if not ordered:
+            return {
+                "ids": [],
+                "scores": {},
+                "reason": "no segments to judge",
+                "source": "mock",
+                "engine": JEV,
+                "decision_type": dtype.name,
+                "prefiltered": prefiltered,
+                "model": None,
+            }
+        if not self.live:
+            usage.record(live=False, model=jev.MOCK_MODEL, usage=None)
+            chosen = [row_id for row_id, score in lexical if score > 0]
+            return {
+                "ids": chosen,
+                "scores": {row_id: score for row_id, score in lexical},
+                "reason": "dry-run lexical match",
+                "source": "mock",
+                "engine": JEV,
+                "decision_type": dtype.name,
+                "prefiltered": prefiltered,
+                "model": jev.MOCK_MODEL,
+            }
+        batch = self._ask_jev(state, questions, usage)
+        if batch is None:
+            reason = self._down.get(JEV) or "Jev unavailable"
+            usage.fallback_items += 1
+            chosen = [row_id for row_id, score in lexical if score > 0]
+            scores = {
+                row_id: round(score * self.fallback_discount, 4) for row_id, score in lexical
+            }
+            return {
+                "ids": chosen,
+                "scores": scores,
+                "reason": f"Jev unavailable. Deterministic lexical match, confidence x{self.fallback_discount}.",
+                "source": "rules",
+                "engine": JEV,
+                "decision_type": dtype.name,
+                "prefiltered": prefiltered,
+                "model": None,
+            }
+        scores: dict[str, float] = {}
+        chosen: list[str] = []
+        for row in ordered:
+            answer = batch.answers[str(row["id"])]
+            score = round(float(answer.value), 4)
+            scores[str(row["id"])] = score
+            if score >= 0.5:
+                chosen.append(str(row["id"]))
+        return {
+            "ids": chosen,
+            "scores": scores,
+            "reason": "Jev match on the numbered segment list",
+            "source": "live",
+            "engine": JEV,
+            "decision_type": dtype.name,
+            "prefiltered": prefiltered,
+            "model": batch.model,
+        }
+
     def _decide_jev(self, asks, *, brief, context, ledger) -> tuple[list[Decision], list[dict]]:
         usage = ledger[JEV]
         out: dict[str, Decision] = {}
@@ -1304,6 +1420,21 @@ def _unavailable(ask: Ask, dtype: DecisionType, reason: str) -> Decision:
         ask.id, ask.type, OPUS, "unavailable", None, 0.0, dtype.why,
         detail=f"Opus unavailable: {reason}. Left for a person; nothing is auto-applied.",
     )
+
+
+def _lexical_scores(query: str, rows: list[dict]) -> list[tuple[str, float]]:
+    """Bag-of-words cosine from the B-roll ranker, highest score first."""
+    from .assembly.broll import cosine, embed
+
+    query_vec = embed(query)
+    scored: list[tuple[str, float]] = []
+    for row in rows:
+        text = str(row.get("text") or "")
+        keywords = " ".join(str(word) for word in (row.get("keywords") or []))
+        score = round(cosine(query_vec, embed(f"{text} {keywords}")), 4)
+        scored.append((str(row["id"]), score))
+    scored.sort(key=lambda item: (-item[1], item[0]))
+    return scored
 
 
 def _rule(ask: Ask) -> tuple[Any, float]:

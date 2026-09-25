@@ -377,6 +377,21 @@
       "seed": 1
     }
   },
+  "segments": {
+    "max_seconds": 45,
+    "pause_seconds": 0.8,
+    "chapter_threshold": 0.15,
+    "broll_keywords": false,
+    "hook": {
+      "enabled": true,
+      "min_seconds": 3,
+      "max_seconds": 8,
+      "query": ""
+    },
+    "chapters": {
+      "enabled": true
+    }
+  },
   "metrics": {
     "subtitle_coverage_min": 0.85,
     "on_beat_min": 0.8,

@@ -103,6 +103,7 @@ _TOP_LEVEL = frozenset(
         "text_treatments",
         "background",
         "metrics",
+        "segments",
     }
 )
 _HEX = re.compile(r"^#(?:[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$")
@@ -474,6 +475,21 @@ def validate(data: Mapping[str, Any]) -> list[str]:
         sections = dissolve.get("sections")
         if not isinstance(sections, list) or not all(isinstance(name, str) and name in SECTIONS for name in sections):
             errors.append("cuts.dissolve.sections must list known section names")
+
+    segments = v.get("segments", None)
+    if isinstance(segments, Mapping):
+        v.number("segments.max_seconds", low=1, optional=True)
+        v.number("segments.pause_seconds", low=0, optional=True)
+        v.number("segments.chapter_threshold", low=0, optional=True)
+        v.boolean("segments.broll_keywords", optional=True)
+        if isinstance(segments.get("hook"), Mapping):
+            v.boolean("segments.hook.enabled", optional=True)
+            v.number("segments.hook.min_seconds", low=0, optional=True)
+            v.number("segments.hook.max_seconds", low=0, optional=True)
+        if isinstance(segments.get("chapters"), Mapping):
+            v.boolean("segments.chapters.enabled", optional=True)
+    elif segments is not None:
+        errors.append("segments must be an object")
 
     v.string("music.role")
     v.number("music.bed_db", low=-96, high=12)

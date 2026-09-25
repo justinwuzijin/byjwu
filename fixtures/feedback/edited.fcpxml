@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE fcpxml>
+<fcpxml version="1.11">
+  <resources>
+    <format id="r8" name="FFVideoFormat1080p24" frameDuration="1/24s" width="1920" height="1080"/>
+    <asset id="r9" name="interview" uid="A-INTERVIEW" start="0s" duration="600s" hasVideo="1" hasAudio="1" format="r8">
+      <media-rep kind="original-media" src="file:///Volumes/Media/interview.mov"/>
+    </asset>
+  </resources>
+  <library location="file:///Volumes/Media/Interview.fcpbundle">
+    <event name="Interview" uid="E-INTERVIEW">
+      <project name="Rough Cut" uid="P-ROUGH">
+        <sequence format="r8" duration="65/2s" tcStart="0s" tcFormat="NDF">
+          <spine>
+            <asset-clip ref="r9" offset="0s" name="Talk" start="24/2s" duration="16/2s" audioRole="dialogue">
+              <marker start="14s" duration="1/24s" value="Keep this" note="human marker"/>
+              <marker start="12s" duration="1/24s" value="CC review · filler @ 00:00" note="Cut Conductor shadow proposal. No edit was applied. | color=orange | action=mark_review | raw_action=mark_review | disposition=review | pass=dialogue | confidence=0.60 | risk=0.46 | id=c0004 | kind=filler_pause | range=00:00:00.000-00:00:08.000 | why=left for the editor"/>
+            </asset-clip>
+            <gap name="Gap" offset="8s" start="3600s" duration="5/2s"/>
+            <asset-clip ref="r9" offset="21/2s" name="Hold" start="100s" duration="18s" audioRole="dialogue">
+              <marker start="100s" duration="1/24s" value="CC tighten · long static @ 00:10" note="Cut Conductor shadow proposal. No edit was applied. | color=blue | action=tighten | raw_action=tighten | disposition=review | pass=pacing | confidence=0.73 | risk=0.33 | id=c0003 | kind=long_static | range=00:00:14.625-00:00:34.625 | why=long hold"/>
+            </asset-clip>
+            <asset-clip ref="r9" offset="57/2s" name="Button" start="200s" duration="4s" audioRole="dialogue"/>
+          </spine>
+        </sequence>
+      </project>
+    </event>
+  </library>
+</fcpxml>

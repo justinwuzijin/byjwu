@@ -60,7 +60,7 @@ Section kinds are `intro`, `title_card`, `talking`, `montage`, `outro`, and `end
 
 ### `cuts`
 
-`beat_snap_tolerance_seconds`, `min_shot_seconds`, `j_cut {probability, lead_seconds}`, `l_cut {probability, tail_seconds}` (written as `audioStart`/`audioDuration` on the clip), `punch_in {enabled, scale, every}` (alternating scale-ups on jump cuts), `cutaway {min_seconds, max_seconds}`, `broll_nat_sound_db`.
+`beat_snap_tolerance_seconds`, `min_shot_seconds`, `j_cut {probability, lead_seconds}`, `l_cut {probability, tail_seconds}` (written as `audioStart`/`audioDuration` on the clip), `punch_in {enabled, scale, every}` (alternating scale-ups on jump cuts), `cutaway {min_seconds, max_seconds}`, `broll_nat_sound_db`, `dissolve {sections, duration_seconds}`. `sections` lists the outgoing section kinds that get an FCPXML cross dissolve of `duration_seconds` at the cut. An empty list writes no transitions.
 
 ### `music`
 

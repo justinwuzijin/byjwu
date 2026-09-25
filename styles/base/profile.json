@@ -70,7 +70,8 @@
     "l_cut": {"probability": 0.15, "tail_seconds": 0.4},
     "punch_in": {"enabled": false, "scale": 1.1, "every": 2},
     "cutaway": {"min_seconds": 1.2, "max_seconds": 3.0},
-    "broll_nat_sound_db": -20
+    "broll_nat_sound_db": -20,
+    "dissolve": {"sections": [], "duration_seconds": 0.5}
   },
   "music": {
     "role": "music",

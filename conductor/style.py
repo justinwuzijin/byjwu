@@ -352,6 +352,14 @@ def validate(data: Mapping[str, Any]) -> list[str]:
     v.number("cuts.cutaway.min_seconds", low=0.1)
     v.number("cuts.cutaway.max_seconds", low=0.1)
     v.number("cuts.broll_nat_sound_db", low=-96, high=12)
+    dissolve = v.get("cuts.dissolve")
+    if not isinstance(dissolve, Mapping):
+        errors.append("cuts.dissolve must be an object")
+    else:
+        v.number("cuts.dissolve.duration_seconds", low=0)
+        sections = dissolve.get("sections")
+        if not isinstance(sections, list) or not all(isinstance(name, str) and name in SECTIONS for name in sections):
+            errors.append("cuts.dissolve.sections must list known section names")
 
     v.string("music.role")
     v.number("music.bed_db", low=-96, high=12)

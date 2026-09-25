@@ -21,10 +21,14 @@ import xml.etree.ElementTree as ET
 from fractions import Fraction
 
 from ..timeutil import format_time
+from .layers import LayerMode, layers_from_timeline, mark_dissolves
 from .timeline import Item, Keyframes, Media, TextStyle, Timeline, Transform
 
 VERSION = "1.11"
 BASIC_TITLE_UID = ".../Titles.localized/Bumper:Opener.localized/Basic Title.localized/Basic Title.moti"
+CROSS_DISSOLVE_UID = (
+    ".../Transitions.localized/Dissolves.localized/Cross Dissolve.localized/Cross Dissolve.motr"
+)
 POSITION_KEY = "9999/999166631/999166633/1/100/101"
 _RATES = {
     Fraction(1001, 24000): "2398",
@@ -45,6 +49,7 @@ class _Resources:
         self.formats: dict[tuple, str] = {}
         self.assets: dict[str, str] = {}
         self.effect: str | None = None
+        self.dissolve: str | None = None
         self.style_count = 0
 
     def ident(self) -> str:
@@ -108,12 +113,28 @@ class _Resources:
             ET.SubElement(self.el, "effect", {"id": self.effect, "name": "Basic Title", "uid": BASIC_TITLE_UID})
         return self.effect
 
+    def dissolve_effect(self) -> str:
+        if self.dissolve is None:
+            self.dissolve = self.ident()
+            ET.SubElement(
+                self.el,
+                "effect",
+                {"id": self.dissolve, "name": "Cross Dissolve", "uid": CROSS_DISSOLVE_UID},
+            )
+        return self.dissolve
+
     def style_id(self) -> str:
         self.style_count += 1
         return f"ts{self.style_count}"
 
 
-def render(timeline: Timeline, *, event: str | None = None) -> ET.ElementTree:
+def render(
+    timeline: Timeline,
+    *,
+    event: str | None = None,
+    dissolve_sections: set[str] | None = None,
+    dissolve_seconds: float = 0.5,
+) -> ET.ElementTree:
     if not timeline.spine:
         raise ValueError("refusing to render an empty timeline")
     root = ET.Element("fcpxml", {"version": VERSION})
@@ -140,15 +161,30 @@ def render(timeline: Timeline, *, event: str | None = None) -> ET.ElementTree:
             "audioRate": "48k",
         },
     )
+    layers = layers_from_timeline(timeline)
+    spine_layer = layers[0]
+    if spine_layer.mode is not LayerMode.SEQUENTIAL:
+        raise ValueError("the storyline layer must be sequential")
+    duration = Fraction(str(dissolve_seconds)) if dissolve_sections else Fraction(0)
+    if dissolve_sections and duration > 0:
+        mark_dissolves(spine_layer, dissolve_sections, duration, timeline.frame)
+    overlaps = sum((clip.transition_duration or Fraction(0) for clip in spine_layer.clips), Fraction(0))
+    if overlaps:
+        sequence.set("duration", format_time(timeline.duration - overlaps))
+        resources.dissolve_effect()
     spine_el = ET.SubElement(sequence, "spine")
-    children: dict[int, list[Item]] = {i: [] for i in range(len(timeline.spine))}
-    offsets = [item.offset for item in timeline.spine]
+    children: dict[int, list[Item]] = {i: [] for i in range(len(spine_layer.clips))}
+    offsets = [clip.item.offset for clip in spine_layer.clips]
     for item in timeline.connected:
         index = max(0, bisect.bisect_right(offsets, item.offset) - 1)
         children[index].append(item)
-    for index, item in enumerate(timeline.spine):
+    pulled = Fraction(0)
+    for index, clip in enumerate(spine_layer.clips):
         anchored = sorted(children[index], key=lambda c: (c.offset, c.lane, c.name))
-        _element(spine_el, item, None, anchored, resources, timeline)
+        _element(spine_el, clip.item, None, anchored, resources, timeline, shift=pulled)
+        if clip.transition and clip.transition_duration:
+            _transition(spine_el, clip.item, clip.transition_duration, pulled, resources)
+            pulled += clip.transition_duration
     return ET.ElementTree(root)
 
 
@@ -159,10 +195,11 @@ def _element(
     anchored: list[Item],
     resources: _Resources,
     timeline: Timeline,
+    shift: Fraction = Fraction(0),
 ) -> ET.Element:
     local_start = _local_start(item)
     if parent is None:
-        offset = item.offset
+        offset = item.offset - shift
     else:
         offset = _local_start(parent) + (item.offset - parent.offset)
     attrs: dict[str, str] = {}
@@ -275,7 +312,31 @@ def _transform(element: ET.Element, transform: Transform, local_start: Fraction)
             ET.SubElement(animation, "keyframe", {"time": format_time(local_start + t), "value": text, "curve": "smooth"})
 
 
+def _transition(
+    parent_el: ET.Element,
+    left: Item,
+    duration: Fraction,
+    shift: Fraction,
+    resources: _Resources,
+) -> None:
+    """Cross dissolve overlapping the cut, centred the way their window is.
+
+    The transition starts ``duration`` before the left clip ends (after earlier
+    overlaps have been pulled forward). FCPXML overlaps that tail with the
+    head of the next clip. ``filter-video`` references the Cross Dissolve effect.
+    """
+    start = left.offset + left.duration - duration - shift
+    effect = resources.dissolve_effect()
+    element = ET.SubElement(
+        parent_el,
+        "transition",
+        {"name": "Cross Dissolve", "offset": format_time(start), "duration": format_time(duration)},
+    )
+    ET.SubElement(element, "filter-video", {"ref": effect, "name": "Cross Dissolve"})
+
+
 def _volume(element: ET.Element, item: Item, local_start: Fraction) -> None:
+    """``adjust-volume`` keyframes. Music fades are their log-linear ramp in dB."""
     if item.volume_keys:
         adjust = ET.SubElement(element, "adjust-volume")
         param = ET.SubElement(adjust, "param", {"name": "amount"})

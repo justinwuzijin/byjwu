@@ -176,7 +176,16 @@ def assemble(
     for path in material.hashes:
         if out_fcpxml.resolve() == path:
             raise ConductorError("refusing to write the assembly over a source file; choose another --out-dir")
-    write_document(render(timeline, event=title), out_fcpxml)
+    dissolve = profile.get("cuts.dissolve") or {}
+    write_document(
+        render(
+            timeline,
+            event=title,
+            dissolve_sections=set(dissolve.get("sections") or []),
+            dissolve_seconds=float(dissolve.get("duration_seconds") or 0),
+        ),
+        out_fcpxml,
+    )
     dtd_errors = validate_fcpxml(out_fcpxml)
     if dtd_errors is None:
         warnings.append("lxml is not installed; the FCPXML was not checked against the DTD.")

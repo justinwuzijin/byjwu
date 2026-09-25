@@ -466,7 +466,13 @@ def music_keys(
     dialogue: list[tuple[Fraction, Fraction]],
     profile: StyleProfile,
 ) -> list[VolumeKey]:
-    """Keyframes for one bed. Times are timeline seconds; the renderer localizes them."""
+    """Keyframes for one bed. Times are timeline seconds; the renderer localizes them.
+
+    Fade endpoints follow ``updateAudioRampingKeyframes`` from
+    ``@diffusionstudio/core`` (log-linear gain, written here as decibel
+    ``adjust-volume`` keys from ``floor_db``). Ducking under dialogue is
+    added between the fade-in and fade-out so those endpoints stay put.
+    """
     frame = timeline.frame
     start, end = segment.start, segment.end
     floor = float(profile.get("music.floor_db"))

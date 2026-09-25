@@ -212,6 +212,7 @@ Owns the transcript (SRT or WebVTT), subtitles, and text treatments. Times are s
 - Filler is the same whole-cue list cutmcp uses (`um`, `you know`, `i mean`, and their spelling variants). `like`, `yeah`, and `okay` are not filler.
 - Dialogue is creative. A confident `tighten` still lands in review. Type & Subs does not auto-apply it.
 - When a person keeps a breath or a filler, Type & Subs appends a `reject` (or Cut Conductor does, on the person's behalf). The next dialogue pass sees that event in taste state.
+- Subtitles, section titles, and the rectangle layer are the graphics stage (`conductor.graphics.apply_graphics`), off unless `--graphics` or the style profile enables it. Line breaks and cue timing are Jev calls. Which titles appear, and which distortion they use, are Opus calls. With no Opus answer the title is still placed and marked for review.
 
 ### Pacing
 

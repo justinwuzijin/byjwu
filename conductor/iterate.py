@@ -93,6 +93,9 @@ def iterate(
     feedback_path: str | Path | None = None,
     learn_from: str | Path | None = None,
     router: Router | None = None,
+    graphics: bool | None = None,
+    style: str | None = None,
+    beats: str | Path | None = None,
 ) -> IterateResult:
     """Run the unattended mechanical loop. Dry-run unless ``live`` is set."""
     if bool(fcpxml) == bool(media):
@@ -182,6 +185,11 @@ def iterate(
                 "signal_cache": signal_cache,
             },
         )
+        graphics_info = _graphics(
+            rounds, destination, brief=brief.strip(), style=style, graphics=graphics, beats=beats, router=router
+        )
+        if graphics_info is not None:
+            warnings.extend(graphics_info.get("notes") or [])
     finally:
         if owned:
             router.close()
@@ -223,6 +231,7 @@ def iterate(
         "warnings": result.warnings,
         "signals": rounds[-1].get("signals") if rounds else None,
         "words": rounds[-1].get("words") if rounds else None,
+        "graphics": graphics_info,
     }
     out_json = destination / "iterate.json"
     out_json.write_text(dumps(payload), encoding="utf-8")
@@ -386,6 +395,36 @@ def _cuts(report: Report, number: int) -> list[dict]:
             }
         )
     return rows
+
+
+def _graphics(rounds, destination: Path, *, brief: str, style, graphics, beats, router: Router | None) -> dict | None:
+    """Run the type and graphics stage on the timeline the person will open."""
+    from .graphics import apply_graphics, load_graphics_profile
+
+    if not rounds:
+        return None
+    profile = load_graphics_profile(style)
+    enabled = profile.enabled if graphics is None else bool(graphics)
+    if not enabled:
+        return None
+    last = rounds[-1]
+    target = Path(last["next"])
+    if not target.is_file():
+        return None
+    words = last.get("words")
+    result = apply_graphics(
+        target,
+        out_path=target,
+        words=words,
+        beats=beats,
+        profile=profile,
+        router=router,
+        brief=brief,
+        enabled=True,
+    )
+    info = result.to_dict()
+    last["graphics"] = info
+    return info
 
 
 def _stage(source: Path, round_dir: Path) -> Path:

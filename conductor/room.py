@@ -874,7 +874,8 @@ def _summarize(
     after = measure(parse_fcpxml(open_path).sequences)["duration_seconds"]
     cuts = [_cut_row(cut) for cut in result.applied]
     flagged = _flagged(last.get("json"))
-    signals = _signals(prepared)
+    media_signals = last.get("signals") or {}
+    signals = _signals(prepared, media_signals)
     payload = {
         "protocol": PROTOCOL,
         "protocol_version": PROTOCOL_VERSION,
@@ -890,6 +891,8 @@ def _summarize(
         },
         "signals": signals,
         "signals_label": ", ".join(signals) if signals else "none",
+        "media_signals": media_signals,
+        "words": last.get("words"),
         "duration": {
             "before_seconds": before,
             "after_seconds": after,
@@ -938,6 +941,10 @@ def _markdown(payload: dict) -> str:
         f"Stop: {payload['stop_reason']}",
         f"Signals: {payload['signals_label']}",
         f"Decisions: {format_usage(payload['decision_usage']) or 'none'}",
+    ]
+    if (payload.get("media_signals") or {}).get("summary"):
+        lines.append(f"Audio and words: {payload['media_signals']['summary']}")
+    lines += [
         "",
         "## Cuts applied",
         "",
@@ -1038,7 +1045,7 @@ def _iterate_brief(result: IterateResult) -> str | None:
     return None
 
 
-def _signals(prepared: Prepared) -> list[str]:
+def _signals(prepared: Prepared, media_signals: dict) -> list[str]:
     found: list[str] = []
     if prepared.transcript is not None:
         found.append("transcript")
@@ -1046,6 +1053,10 @@ def _signals(prepared: Prepared) -> list[str]:
         found.append("media")
     if prepared.music:
         found.append("music")
+    if media_signals.get("audio") == "used":
+        found.append("audio")
+    if media_signals.get("transcript") == "whisper":
+        found.append("words")
     return found
 
 

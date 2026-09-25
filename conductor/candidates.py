@@ -4,9 +4,12 @@ These are heuristics, not judgments. Jev decides what to do with each one.
 Nothing here calls a model. Thresholds are the spec; the README quotes them.
 
 Silence gaps
-    A spine ``<gap>`` of at least 1.25s, or a hole of that length between two
-    spine items when the XML has no gap element. Final Cut usually writes the
-    gap explicitly. The hole path covers hand-built XML.
+    A spine ``<gap>`` of at least 1.25s, a hole of that length between two
+    spine items when the XML has no gap element, or a quiet range of that
+    length inside a spine clip when the media-signal stage measured one.
+    Final Cut usually writes an explicit gap. The hole path covers hand-built
+    XML. Audio silence is optional and only appears when a referenced file
+    could be read.
 
 Short clips
     A spine clip (not a gap) shorter than 0.45s. Under 0.20s is a flash frame.
@@ -31,6 +34,7 @@ v1 candidates come from the primary spine only.
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence as SequenceOf
 from dataclasses import dataclass, field
 from fractions import Fraction
 
@@ -51,6 +55,26 @@ FILLER_MAX = Fraction(3)
 PAUSE = Fraction("0.80")
 
 _NAME_HINT = re.compile(r"\b(static|hold|slate|b-?roll|locked|freeze)\b", re.I)
+_WORD_RE = re.compile(r"[^\w\s\-']+")
+
+
+@dataclass(frozen=True)
+class AudioSilence:
+    """A quiet range already mapped onto the sequence timeline.
+
+    Built by the media-signal stage from a reachable file. ``generate`` turns
+    ranges of at least ``SILENCE_GAP`` on a spine clip into ``silence_gap``
+    candidates. Connected audio stays in the report and does not become a cut.
+    """
+
+    clip_id: str
+    timeline_start: Fraction
+    timeline_end: Fraction
+    media_start: Fraction | None = None
+    media_end: Fraction | None = None
+    integrated_lufs: float | None = None
+    true_peak_db: float | None = None
+    clipping: bool | None = None
 
 KIND_LABEL = {
     "silence_gap": "silence gap",
@@ -103,9 +127,16 @@ class Candidate:
 
 
 def generate(
-    sequence: Sequence, cues: list[Cue], *, transcript_present: bool
+    sequence: Sequence,
+    cues: list[Cue],
+    *,
+    transcript_present: bool,
+    audio_silences: SequenceOf[AudioSilence] | None = None,
 ) -> list[Candidate]:
     """Spine candidates for one sequence, in timeline order, ids unassigned."""
+    by_clip: dict[str, list[AudioSilence]] = {}
+    for item in audio_silences or []:
+        by_clip.setdefault(item.clip_id, []).append(item)
     found: list[Candidate] = []
     spine = sequence.spine
     for clip in spine:
@@ -120,6 +151,7 @@ def generate(
             if static is not None:
                 found.append(static)
         found.extend(_fillers(sequence, clip, cues))
+        found.extend(_audio_silences(sequence, clip, by_clip.get(clip.id, []), cues))
     found.extend(_holes(sequence, spine, cues))
     found.sort(key=lambda item: (item.timeline_start, item.timeline_end, item.kind))
     return found
@@ -265,6 +297,110 @@ def _fillers(sequence: Sequence, clip: Clip, cues: list[Cue]) -> list[Candidate]
                 },
                 cues=cues,
                 span="subrange",
+            )
+        )
+    found.extend(_restarts(sequence, clip, owned, cues))
+    return found
+
+
+def _restarts(sequence: Sequence, clip: Clip, owned: list[Cue], cues: list[Cue]) -> list[Candidate]:
+    """An abandoned attempt immediately retaken. Review, same kind as filler."""
+    found: list[Candidate] = []
+    for left, right in zip(owned, owned[1:]):
+        if not _is_restart(left, right):
+            continue
+        found.append(
+            _make(
+                kind="filler_pause",
+                label="restart",
+                sequence=sequence,
+                clip=clip,
+                start=left.start,
+                end=left.end,
+                transcript=left.text,
+                reason=(
+                    f'restart: "{left.text}" is picked up again by "{_trim(right.text, 80)}"'
+                ),
+                signals={
+                    "pure_filler": False,
+                    "adjacent_filler": False,
+                    "restart": True,
+                    "pause_seconds": seconds(left.duration),
+                    "text": left.text,
+                    "retake": right.text,
+                },
+                cues=cues,
+                span="subrange",
+            )
+        )
+    return found
+
+
+def _is_restart(left: Cue, right: Cue) -> bool:
+    if is_trivial_filler(left.text) or left.duration > FILLER_MAX:
+        return False
+    gap = right.start - left.end
+    if gap < 0 or gap > 2:
+        return False
+    left_words = _words(left.text)
+    right_words = _words(right.text)
+    if not left_words or not right_words or len(left_words) > 6:
+        return False
+    shared = 0
+    for a, b in zip(left_words, right_words):
+        if a != b:
+            break
+        shared += 1
+    prefix = shared == len(left_words) and len(right_words) > len(left_words)
+    stumbled = shared >= 2 and len(left_words) <= shared + 1 and len(right_words) > shared
+    return prefix or stumbled
+
+
+def _words(text: str) -> list[str]:
+    return [part for part in _WORD_RE.sub(" ", text.lower()).split() if part]
+
+
+def _audio_silences(
+    sequence: Sequence, clip: Clip, silences: list[AudioSilence], cues: list[Cue]
+) -> list[Candidate]:
+    found: list[Candidate] = []
+    frame = sequence.frame_duration if sequence.frame_duration > 0 else Fraction(1, 24)
+    for item in silences:
+        start = item.timeline_start
+        end = item.timeline_end
+        if end - start < SILENCE_GAP:
+            continue
+        whole = start <= clip.timeline_start + frame and end >= clip.timeline_end - frame
+        signals = {
+            "gap_seconds": seconds(end - start),
+            "explicit_gap": False,
+            "audio": True,
+        }
+        if item.media_start is not None and item.media_end is not None:
+            signals["media_start_seconds"] = seconds(item.media_start)
+            signals["media_end_seconds"] = seconds(item.media_end)
+        if item.integrated_lufs is not None:
+            signals["integrated_lufs"] = item.integrated_lufs
+        if item.true_peak_db is not None:
+            signals["true_peak_db"] = item.true_peak_db
+        if item.clipping is not None:
+            signals["clipping"] = item.clipping
+        found.append(
+            _make(
+                kind="silence_gap",
+                label=KIND_LABEL["silence_gap"],
+                sequence=sequence,
+                clip=clip,
+                start=start,
+                end=end,
+                transcript="",
+                reason=(
+                    f"audio silence of {_num(end - start)}s inside the clip "
+                    f"(threshold {_num(SILENCE_GAP)}s)"
+                ),
+                signals=signals,
+                cues=cues,
+                span="clip" if whole else "subrange",
             )
         )
     return found

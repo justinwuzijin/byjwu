@@ -114,7 +114,9 @@ Stop when every metric you set is true, when a round applies nothing, or at `--m
 | `--min-shot-seconds` | average non-gap spine clip is at least this long |
 | `--max-cuts-per-minute` | joins between spine shots, per minute, are at or under this |
 
-Silence is the sum of gap and hole candidates of at least 1.25s. It is not a decoded quiet measurement. Shot length and cuts per minute are read off the spine. If the timeline is already inside the metrics, the round does not cut.
+`silence_seconds` in the stop record is the sum of gap and hole candidates of at least 1.25s. Shot length and cuts per minute are read off the spine. If the timeline is already inside the metrics, the round does not cut.
+
+When the bot machine can read a referenced media file, quiet stretches inside a clip are also mechanical candidates, and a local transcript can feed dialogue and pacing. If the file or the tool is missing, that stage is skipped and the XML-only run still finishes. What the bot should install, and the `signals` fields to quote, are in the [room protocol](docs/room-protocol.md#media-signals).
 
 Auto-apply uses the same gate as `apply --min-confidence 0.8 --pass mechanical`. Dialogue, pacing, and colour are judged and marked. They are not cut. Taste from `--taste` is carried forward; each round's accepts are appended and the next round sees them. The taste file you passed in is not overwritten.
 
@@ -231,7 +233,7 @@ Passes run in order — `mechanical`, then `dialogue`, then `pacing`, then `colo
 
 | Pass | Looks for | Who may apply it |
 |---|---|---|
-| `mechanical` | Silence of at least 1.25s. Clips under 0.45s (under 0.20s is a flash). | High-confidence tighten/remove, with `--min-confidence`. This is what `iterate` auto-applies. |
+| `mechanical` | Silence of at least 1.25s (a gap, a hole, or quiet audio inside a clip when the file can be read). Clips under 0.45s (under 0.20s is a flash). | High-confidence tighten/remove, with `--min-confidence`. This is what `iterate` auto-applies. |
 | `dialogue` | A whole filler cue (0.25–3s), or a pause of at least 0.80s beside filler | Review, unless you `--accept` the id |
 | `pacing` | A clip of at least 20s under 0.40 words/second. With no transcript: a hold/slate/b-roll name, or a clip of at least 45s | Review, unless you `--accept` the id |
 | `colour` | A spine clip with no role. An asset frame that badly mismatches the sequence (portrait against landscape, or about 15% off). A placeholder for exposure and skin. | Review or escalate. The picture is not decoded. Never an unattended cut, and never a grade of the pixels. |

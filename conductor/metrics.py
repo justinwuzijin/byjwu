@@ -1,8 +1,9 @@
 """Stop metrics for ``iterate``. All of these are counts the timeline already has.
 
-Silence is the sum of ``silence_gap`` candidates (explicit gaps and timeline
-holes of at least 1.25s). It is not a decoded quiet measurement, and it does
-not include filler words. Shot length and cuts per minute come from the spine:
+Silence is the sum of structural ``silence_gap`` candidates (explicit gaps
+and timeline holes of at least 1.25s). It is not a decoded quiet measurement.
+Dead air measured from a media file is its own ``silence_gap`` candidate and
+is not added here. Shot length and cuts per minute come from the spine:
 a cut is the join between two non-gap clips.
 """
 

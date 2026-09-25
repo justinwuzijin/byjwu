@@ -58,6 +58,7 @@ class IterateResult:
     starter: Path | None = None
     out_json: Path | None = None
     source: Path | None = None
+    signals_summary: str = ""
     decision_usage: dict = field(default_factory=dict)
     ledger: Ledger | None = None
 
@@ -85,6 +86,9 @@ def iterate(
     max_silence_seconds: float | None = None,
     min_shot_seconds: float | None = None,
     max_cuts_per_minute: float | None = None,
+    signals: str = "auto",
+    transcribe: str = "auto",
+    signal_cache: str | Path | None = None,
     global_taste_path: str | Path | None = None,
     feedback_path: str | Path | None = None,
     learn_from: str | Path | None = None,
@@ -173,6 +177,9 @@ def iterate(
                 "passes": passes,
                 "min_confidence": min_confidence,
                 "global_taste_path": global_taste_path,
+                "signals": signals,
+                "transcribe": transcribe,
+                "signal_cache": signal_cache,
             },
         )
     finally:
@@ -191,6 +198,7 @@ def iterate(
         warnings=list(dict.fromkeys(warnings)),
         starter=starter,
         source=Path(fcpxml) if fcpxml else starter,
+        signals_summary=(rounds[-1].get("signals") or {}).get("summary", "") if rounds else "",
         decision_usage=usage,
         ledger=total,
     )
@@ -213,6 +221,8 @@ def iterate(
         "rounds": rounds,
         "decision_usage": usage,
         "warnings": result.warnings,
+        "signals": rounds[-1].get("signals") if rounds else None,
+        "words": rounds[-1].get("words") if rounds else None,
     }
     out_json = destination / "iterate.json"
     out_json.write_text(dumps(payload), encoding="utf-8")
@@ -272,6 +282,8 @@ def _rounds(
             "learned": report.payload.get("learned") or [],
             "decision_usage": report.payload.get("decision_usage") or {},
             "next": str(report.out_applied or report.out_fcpxml or staged),
+            "words": report.payload["files"].get("applied_words") or report.payload["files"].get("words"),
+            "signals": _signal_summary(report),
         }
         rounds.append(row)
         applied.extend(cuts)
@@ -311,6 +323,8 @@ def format_report(result: IterateResult) -> str:
             f"{metrics['cuts_per_minute']:>8.2f}  "
             f"{applied}"
         )
+    if result.signals_summary:
+        lines.append(f"signals  {result.signals_summary}")
     if result.cleared:
         lines.append("clear  " + ", ".join(result.cleared))
     lines.append("human  " + (", ".join(result.human_reasons) if result.human_reasons else "none"))
@@ -321,6 +335,20 @@ def format_report(result: IterateResult) -> str:
     if result.out_json is not None:
         lines.append(f"json  {result.out_json}")
     return "\n".join(lines)
+
+
+def _signal_summary(report: Report) -> dict:
+    raw = report.payload.get("signals") or {}
+    return {
+        "audio": raw.get("audio"),
+        "transcript": raw.get("transcript"),
+        "whisper_tool": raw.get("whisper_tool"),
+        "summary": raw.get("summary") or "",
+        "word_count": raw.get("word_count", 0),
+        "reasons": list(raw.get("reasons") or []),
+        "unreachable": list(raw.get("unreachable") or []),
+        "cache_hits": dict(raw.get("cache_hits") or {}),
+    }
 
 
 def _human(reason: str, rounds: list[dict]) -> list[str]:

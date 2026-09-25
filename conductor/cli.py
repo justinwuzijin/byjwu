@@ -109,6 +109,9 @@ def main(argv: list[str] | None = None) -> int:
             apply=args.command == "apply",
             accept=_accept(getattr(args, "accept", None)),
             min_confidence=getattr(args, "min_confidence", None),
+            signals=args.signals,
+            transcribe=args.transcribe,
+            signal_cache=args.signal_cache,
             global_taste_path=args.global_taste,
             feedback_path=args.feedback,
             learn_from=args.learn_from,
@@ -155,6 +158,7 @@ def _add_analyze(parser: argparse.ArgumentParser) -> None:
         help="call live engines: Jev (OPENROUTER_API_KEY or TYPESAFE_API_KEY) for linear calls, Claude Opus (ANTHROPIC_API_KEY) for creative calls. Off by default.",
     )
     parser.add_argument("--html", action="store_true", help="also write a single-file HTML report")
+    _add_signals(parser)
 
 
 def _add_ingest(parser: argparse.ArgumentParser) -> None:
@@ -198,6 +202,7 @@ def _add_ingest(parser: argparse.ArgumentParser) -> None:
         type=float,
         help="with --apply and --pass, apply only auto-gated calls at or above this confidence",
     )
+    _add_signals(parser)
 
 
 def _add_iterate(parser: argparse.ArgumentParser) -> None:
@@ -265,6 +270,32 @@ def _add_iterate(parser: argparse.ArgumentParser) -> None:
         "--max-cuts-per-minute",
         type=float,
         help="stop when spine joins per minute are at or under this",
+    )
+    _add_signals(parser)
+
+
+def _add_signals(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--signals",
+        choices=("auto", "on", "off"),
+        default="auto",
+        help=(
+            "Silence and loudness from referenced media when ffmpeg and the files "
+            "are on this machine (default: auto). off skips. on records a warning if it cannot run."
+        ),
+    )
+    parser.add_argument(
+        "--transcribe",
+        choices=("auto", "on", "off"),
+        default="auto",
+        help=(
+            "Local word timings when no SRT was passed and faster-whisper or whisper.cpp "
+            "already has a model on disk (default: auto). Does not download a model."
+        ),
+    )
+    parser.add_argument(
+        "--signal-cache",
+        help="Directory for silence and transcript cache (default: ~/.cache/conductor, or CONDUCTOR_CACHE).",
     )
 
 
@@ -385,6 +416,9 @@ def _iterate(args) -> int:
         max_silence_seconds=args.max_silence_seconds,
         min_shot_seconds=args.min_shot_seconds,
         max_cuts_per_minute=args.max_cuts_per_minute,
+        signals=args.signals,
+        transcribe=args.transcribe,
+        signal_cache=args.signal_cache,
         global_taste_path=args.global_taste,
         feedback_path=args.feedback,
         learn_from=args.learn_from,
@@ -424,6 +458,9 @@ def _ingest(args) -> int:
         apply=args.apply,
         accept=accept,
         min_confidence=args.min_confidence,
+        signals=args.signals,
+        transcribe=args.transcribe,
+        signal_cache=args.signal_cache,
     )
     _print_report(result.report, starter=result.starter)
     for warning in result.warnings:

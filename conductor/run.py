@@ -23,9 +23,11 @@ from .metrics import measure
 from .passes import collect, resolve_names
 from .report import build_payload, dumps, render_html, render_markdown
 from .router import Ledger, Router, routing_table
+from .signals import gather
 from .taste import Taste, feedback_event, load_taste, write_taste
 from .timeutil import seconds
 from .transcript import load_transcript
+from .words import words_for_document, write_words
 
 
 @dataclass
@@ -69,6 +71,9 @@ def analyze(
     apply_passes: list[str] | None = None,
     allow_empty_apply: bool = False,
     skip_apply: Callable[[dict], bool] | None = None,
+    signals: str = "auto",
+    transcribe: str = "auto",
+    signal_cache: str | Path | None = None,
     global_taste_path: str | Path | None = None,
     feedback_path: str | Path | None = None,
     learn_from: str | Path | None = None,
@@ -98,7 +103,26 @@ def analyze(
     source_bytes = source.read_bytes()
     document = parse_fcpxml(source)
     sequences = _select(document, project)
-    cues = load_transcript(transcript_path) if transcript_path else []
+    signal_report = gather(
+        document,
+        sequences,
+        signals=signals,
+        transcribe=transcribe,
+        cache_dir=signal_cache,
+        transcript_supplied=transcript_path is not None,
+    )
+    if transcript_path:
+        cues = load_transcript(transcript_path)
+        transcript_present = True
+        transcript_name: str | None = str(transcript_path)
+    else:
+        cues = list(signal_report.cues)
+        transcript_present = signal_report.transcript == "whisper"
+        transcript_name = (
+            f"local:{signal_report.whisper_tool or 'whisper'}"
+            if transcript_present
+            else None
+        )
     taste = load_taste(taste_path, global_path=global_taste_path)
     learned: list[dict] = []
     learn_warnings: list[str] = []
@@ -115,8 +139,9 @@ def analyze(
     candidates = collect(
         sequences,
         cues,
-        transcript_present=transcript_path is not None,
+        transcript_present=transcript_present,
         requested=passes,
+        audio_silences=signal_report.silences,
     )
     bound, bind_warnings = bind_pending(taste, candidates)
     learn_warnings.extend(bind_warnings)
@@ -199,6 +224,8 @@ def analyze(
         "markdown": None,
         "html": None,
         "taste": None,
+        "words": None,
+        "applied_words": None,
     }
     if out_dir is not None:
         paths = output_paths(source, Path(out_dir))
@@ -217,6 +244,16 @@ def analyze(
         files["taste"] = str(paths["taste"])
         if html:
             files["html"] = str(paths["html"])
+        if signal_report.words:
+            write_words(paths["words"], document, signal_report)
+            files["words"] = str(paths["words"])
+            if out_applied is not None:
+                applied = parse_fcpxml(out_applied)
+                applied_words = words_for_document(
+                    applied, project=project, transcribe="cached", cache_dir=signal_cache
+                )
+                write_words(paths["applied_words"], applied, applied_words)
+                files["applied_words"] = str(paths["applied_words"])
 
     payload = build_payload(
         document=document,
@@ -225,7 +262,7 @@ def analyze(
         mode=mode,
         source_name=str(source),
         source_hash=hashlib.blake2b(source_bytes, digest_size=16).hexdigest(),
-        transcript_name=str(transcript_path) if transcript_path else None,
+        transcript_name=transcript_name,
         cue_count=len(cues),
         candidates=candidates,
         proposals=proposals,
@@ -239,6 +276,7 @@ def analyze(
         apply_warnings=[*learn_warnings, *apply_warnings],
         shadow=not bool(cuts),
         applied=bool(cuts),
+        signals=signal_report.to_state(),
         learned=learned,
         decision_usage=ledger.to_dict(),
         routing={
@@ -272,7 +310,7 @@ def analyze(
         out_markdown=out_md,
         out_html=out_html,
         out_taste=out_taste,
-        warnings=[*learn_warnings, *ledger.warnings, *apply_warnings],
+        warnings=[*signal_report.warnings, *learn_warnings, *ledger.warnings, *apply_warnings],
         ledger=ledger,
     )
 
@@ -287,6 +325,8 @@ def output_paths(source: Path, out_dir: Path) -> dict[str, Path]:
         "md": out_dir / f"{stem}.conductor.md",
         "html": out_dir / f"{stem}.conductor.html",
         "taste": out_dir / f"{stem}.taste.json",
+        "words": out_dir / f"{stem}.words.json",
+        "applied_words": out_dir / f"{stem}.conductor.applied.words.json",
     }
 
 

@@ -7,14 +7,14 @@ byjwu is an editing assistant for Final Cut Pro. You give it raw footage and mus
 ```text
 footage + music, or an FCPXML export
         ↓
-Grok Bot room  →  conductor engine  ←  Jev (logic) + Grok 4.7 (taste)
+Grok Bot room  →  conductor engine  ←  Jev (logic) + Opus 5.5 (taste)
         ↓
 new FCPXML  →  Final Cut Pro
 ```
 
 1. **Drop.** Footage, music, or an FCPXML export goes into a Grok Bot chat room or a watched folder.
 2. **Analyse.** The engine, `conductor`, reads the clips or timeline: where the gaps, silences, and duplicate clips are, what's being said, and how loud the music is.
-3. **Decide.** Clear problems, like a long gap or dead air, are cut by measured rules. Taste calls, like which shot opens or where a title goes, go to a language model (Grok 4.7 by default). A model can veto a rule's cut, but it can't invent one.
+3. **Decide.** Clear problems, like a long gap or dead air, are cut by measured rules. Taste calls, like which shot opens or where a title goes, go to the taste model, Opus 5.5. A model can veto a rule's cut, but it can't invent one.
 4. **Build.** The engine writes a new FCPXML. For an existing timeline, that's a copy with markers where it suggests changes, plus a version with the safe cuts applied. For raw footage, it assembles a full timeline: shots on the main storyline, cutaways above them, music that fades and dips under speech, and subtitles, titles, and background shapes.
 5. **Review.** You open the file in Final Cut. Your original library and media aren't touched, and every change is marked so you can check it.
 

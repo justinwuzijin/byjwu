@@ -8,7 +8,14 @@ A deletion is a half-open range on the sequence. Whole-clip removes, lifted
 filler, closed holes, and the tail of a tightened hold are all the same
 operation here. Splitting a clip keeps effects and role sources on every
 piece, and keeps markers and keywords whose time falls inside that piece.
-A connected clip that would be sliced in half is dropped and reported.
+A connected clip or secondary storyline that would be sliced in half is
+dropped and reported.
+
+A spine item that still has laned items on it is never removed wholesale.
+Before the ripple, the stretch those items cover is taken out of the
+deletion, so a gap under B-roll keeps the B-roll and only its bare head and
+tail close. Connected offsets are on the parent's own clock
+(:func:`conductor.timing.anchor_time`) and are never rewritten.
 """
 
 from __future__ import annotations
@@ -21,7 +28,7 @@ from fractions import Fraction
 from .errors import ConductorError
 from .fcpxml import CLIP_TAGS, Document, local
 from .timeutil import format_time, parse_time
-from .timing import has_time_map, kept_media, local_window, sequence_fps
+from .timing import anchor_time, has_time_map, kept_media, local_window, sequence_fps
 
 _TIMED = frozenset({"marker", "keyword", "chapter-marker"})
 
@@ -54,12 +61,134 @@ def apply_edits(document: Document, deletions: list[Deletion]) -> ApplyResult:
     by_sequence: dict[str, list[Deletion]] = {}
     for deletion in deletions:
         by_sequence.setdefault(deletion.sequence, []).append(deletion)
+    planned: list[tuple] = []
+    adjusted: list[Deletion] = []
     for sequence in document.sequences:
         group = by_sequence.get(sequence.name)
         if not group:
             continue
-        warnings.extend(_ripple(sequence, group))
-    return ApplyResult(cuts=[_cut_row(item) for item in deletions], warnings=warnings)
+        kept, notes = _shield_connected(sequence, group)
+        warnings.extend(notes)
+        planned.append((sequence, kept))
+        adjusted.extend(kept)
+    if not adjusted:
+        raise ConductorError(
+            "refusing to remove a clip that still has connected items on it"
+        )
+    for sequence, kept in planned:
+        if kept:
+            warnings.extend(_ripple(sequence, kept))
+    return ApplyResult(cuts=[_cut_row(item) for item in adjusted], warnings=warnings)
+
+
+def _shield_connected(sequence, deletions: list[Deletion]) -> tuple[list[Deletion], list[str]]:
+    """Punch connected coverage out of a deletion.
+
+    On a gap, the stretch under a laned item is the picture, so it stays. A
+    clip removed whole keeps the stretch its laned items sit on. A deletion
+    inside a longer clip is left to :func:`_piece`, which keeps a connected
+    item that fits a piece and warns about one that crosses the cut, so a
+    music bed on a lane does not block every cut above it.
+    """
+    fps = sequence_fps(sequence.frame_duration)
+    protected: list[tuple[Fraction, Fraction]] = []
+    for clip in sequence.spine:
+        if clip.element is None or not _removed_wholesale(clip, deletions):
+            continue
+        protected.extend(_anchored_spans(clip, fps))
+    if not protected:
+        return list(deletions), []
+    blockers = [
+        Deletion(
+            candidate_id="connected",
+            sequence=sequence.name,
+            start=start,
+            end=end,
+            action="keep",
+            pass_name="mechanical",
+        )
+        for start, end in _merge_spans(protected)
+    ]
+    warnings: list[str] = []
+    adjusted: list[Deletion] = []
+    for deletion in deletions:
+        pieces = _subtract(deletion.start, deletion.end, blockers)
+        kept = sum((end - start for start, end in pieces), Fraction(0))
+        covered = deletion.duration - kept
+        if covered > 0:
+            warnings.append(
+                f"kept {format_time(covered)} of {deletion.candidate_id} "
+                "because a connected clip covers it"
+            )
+        for start, end in pieces:
+            adjusted.append(
+                Deletion(
+                    candidate_id=deletion.candidate_id,
+                    sequence=deletion.sequence,
+                    start=start,
+                    end=end,
+                    action=deletion.action,
+                    pass_name=deletion.pass_name,
+                )
+            )
+    return adjusted, warnings
+
+
+def _removed_wholesale(clip, deletions: list[Deletion]) -> bool:
+    """A gap any deletion touches, or a clip a deletion covers end to end."""
+    for deletion in deletions:
+        if deletion.end <= clip.timeline_start or deletion.start >= clip.timeline_end:
+            continue
+        if clip.kind == "gap":
+            return True
+        if deletion.start <= clip.timeline_start and deletion.end >= clip.timeline_end:
+            return True
+    return False
+
+
+def _anchored_spans(clip, fps: Fraction) -> list[tuple[Fraction, Fraction]]:
+    """Timeline ranges of laned items and storylines, clipped to the spine item.
+
+    A disabled item is still footage the editor kept, so it is protected too.
+    """
+    element = clip.element
+    spans: list[tuple[Fraction, Fraction]] = []
+    for child in element:
+        tag = local(child.tag)
+        if not child.get("lane") or (tag not in CLIP_TAGS and tag != "spine"):
+            continue
+        offset = parse_time(child.get("offset"), Fraction(0))
+        start = anchor_time(element, clip.timeline_start, offset, fps)
+        end = start + _extent(child)
+        left = max(start, clip.timeline_start)
+        right = min(end, clip.timeline_end)
+        if right > left:
+            spans.append((left, right))
+    return spans
+
+
+def _extent(child: ET.Element) -> Fraction:
+    """Timeline length of a connected item. A storyline is the sum of its items."""
+    if local(child.tag) != "spine":
+        return parse_time(child.get("duration"), Fraction(0))
+    return sum(
+        (
+            parse_time(item.get("duration"), Fraction(0))
+            for item in child
+            if local(item.tag) in CLIP_TAGS
+        ),
+        Fraction(0),
+    )
+
+
+def _merge_spans(spans: list[tuple[Fraction, Fraction]]) -> list[tuple[Fraction, Fraction]]:
+    merged: list[list[Fraction]] = []
+    for start, end in sorted(spans):
+        if not merged or start > merged[-1][1]:
+            merged.append([start, end])
+        else:
+            merged[-1][1] = max(merged[-1][1], end)
+    return [(start, end) for start, end in merged]
 
 
 def _ripple(sequence, deletions: list[Deletion]) -> list[str]:
@@ -79,7 +208,9 @@ def _ripple(sequence, deletions: list[Deletion]) -> list[str]:
             continue
         if kept == [(clip.timeline_start, clip.timeline_end)]:
             new_offset = clip.timeline_start - _deleted_before(clip.timeline_start, deletions)
-            clip.element.set("offset", format_time(new_offset))
+            # Leave the attribute string alone when the clip did not move.
+            if new_offset != clip.offset:
+                clip.element.set("offset", format_time(new_offset))
             pieces.append(clip.element)
             continue
         for start, end in kept:
@@ -124,6 +255,11 @@ def _piece(element, clip, start: Fraction, end: Fraction, deletions: list[Deleti
             if placed is not None:
                 piece.append(placed)
             continue
+        if tag == "spine" and child.get("lane"):
+            placed = _place_connected(child, source_lo, source_hi, clip.name, warnings)
+            if placed is not None:
+                piece.append(placed)
+            continue
         if tag in _TIMED:
             placed = _place_timed(child, source_lo, source_hi)
             if placed is not None:
@@ -152,7 +288,7 @@ def _component(parent_kind: str, child: ET.Element) -> bool:
 def _place_connected(child, window_start: Fraction, window_end: Fraction, clip_name: str, warnings: list[str]):
     """``offset`` is on the parent's own clock, so a kept piece leaves it where it is."""
     offset = parse_time(child.get("offset"), Fraction(0))
-    duration = parse_time(child.get("duration"), Fraction(0))
+    duration = _extent(child)
     if offset + duration <= window_start or offset >= window_end:
         return None
     if offset < window_start or offset + duration > window_end:

@@ -18,3 +18,8 @@ demo/
 
 # rendered type and graphics, written beside an output FCPXML
 *.assets/
+
+# real Final Cut exports stay off the repo
+fixtures/*.real.*
+*.fcpxmld/
+private/

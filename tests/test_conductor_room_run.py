@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import xml.etree.ElementTree as ET
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -13,6 +14,8 @@ import pytest
 from conductor import room as room_module
 from conductor.cli import main
 from conductor.errors import ConductorError
+from conductor.fcpxml import parse_fcpxml
+from conductor.markers import marker_order_violations
 from conductor.room import WatchState, list_drops, register_assembler, room_run, scan_once
 
 FIXTURE = Path("fixtures/sample_interview.fcpxml")
@@ -165,6 +168,23 @@ def test_unsupported_fcpxml_version(tmp_path):
     message = next((tmp_path / "out").glob("*/room.md")).read_text(encoding="utf-8")
     assert "Export XML" in message
     assert "1.8" in message
+
+
+def test_a_real_fcpxml_1_14_export_runs_and_keeps_its_broll(tmp_path):
+    drop = tmp_path / "drop"
+    drop.mkdir()
+    xml = drop / "synthetic-export.fcpxml"
+    shutil.copy(Path("fixtures/real_export_shape.fcpxml"), xml)
+    result = room_run(xml, out_root=tmp_path / "out", brief="A travel vlog.")
+    payload = _assert_summary(result, kind="fcpxml")
+    assert "transcript" not in payload["signals"]
+    stop = json.loads((result.out_dir / "iterate.json").read_text(encoding="utf-8"))
+    assert {item["kind"] for item in stop["applied"]} == {"silence_gap"}
+    assert stop["needs_human"] is True
+    opened = Path(payload["open_in_final_cut"])
+    assert marker_order_violations(ET.parse(opened).getroot()) == []
+    gap = next(clip for clip in parse_fcpxml(opened).sequences[0].spine if clip.kind == "gap")
+    assert sum(1 for clip in gap.connected_clips if clip.lane is not None) == 4
 
 
 def test_local_media_missing(tmp_path):

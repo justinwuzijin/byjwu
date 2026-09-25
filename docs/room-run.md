@@ -51,7 +51,7 @@ room-run looks for `conductor.assemble.assemble`, or a callable passed to `condu
 `room-run` exits 2 and prints one sentence. Paste that sentence. The same text is in `room.md` of the timestamped folder when the run got far enough to create one.
 
 - A zip with no Final Cut XML.
-- An FCPXML version other than 1.8, 1.9, 1.10, or 1.11.
+- An FCPXML version other than 1.8 through 1.14.
 - A clip folder with no video files, or a timeline whose media was supposed to be inside the drop and is not there.
 
 Media that the XML names on another volume is not a failure. The summary says the run used the timeline only, and Final Cut may need Relink Files.

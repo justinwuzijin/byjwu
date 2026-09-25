@@ -24,6 +24,11 @@ subtitle_break     jev     Where does this subtitle line break, by the rules?
 subtitle_timing    jev     How long does this subtitle stay up, by the rules?
 subtitle_partial   jev     Is a word an edit cut part way through still shown?
 audio_check        jev     Is this breath, room tone, or clipped word a fault?
+covered_gap        jev     Does this gap under connected clips need a person?
+rhythm_shift       jev     Does this jump in average shot length need a look?
+rate_mix           jev     Does this run of conformed frame rates need a look?
+untrimmed_run      jev     Is this run of whole source clips an unselected string-out?
+silent_card        jev     Does this silent generator card need a title or a trim?
 colour_unseen      opus    What look, exposure, and skin treatment is needed?
 story_structure    opus    What order and shape does the story take?
 key_moments        opus    Which moments carry the video?
@@ -34,6 +39,8 @@ title_treatment    opus    Which text-distortion treatment does this title use?
 visual_treatment   opus    What grade, look, or effect does this shot want?
 montage            opus    Which shots make the montage, in what order?
 broll_selection    opus    Which coverage plays over this line?
+source_reuse       opus    Is this repeat of earlier footage a deliberate reprise?
+music_tail         opus    How should the cut end against a music bed that stops early?
 =================  ======  ==================================================
 
 Unknown kinds fall back to the pass default (``story`` and ``broll`` are
@@ -172,6 +179,16 @@ DECISION_TYPES: dict[str, DecisionType] = {
               _LINEAR + "The heard share of the word against the profile's keep threshold."),
         _type("audio_check", JEV, "Is this breath, room tone, or clipped word a fault?",
               _LINEAR + "Audio faults are defined by level and duration rules."),
+        _type("covered_gap", JEV, "Does this gap under connected clips need a person?",
+              _LINEAR + "Lane coverage over a primary gap is measured from the XML."),
+        _type("rhythm_shift", JEV, "Does this jump in average shot length need a look?",
+              _LINEAR + "A sliding average shot length against a fixed jump ratio."),
+        _type("rate_mix", JEV, "Does this run of conformed frame rates need a look?",
+              _LINEAR + "Conform rates against the sequence rate, counted from the XML."),
+        _type("untrimmed_run", JEV, "Is this run of whole source clips an unselected string-out?",
+              _LINEAR + "Clip in and out points against the asset's own start and duration."),
+        _type("silent_card", JEV, "Does this silent generator card need a title or a trim?",
+              _LINEAR + "A generator with no audio element and nothing on a lane, by length."),
         _type("colour_unseen", OPUS, "What look, exposure, and skin treatment is needed?",
               _CREATIVE + "Visual treatment is a look, not a rule."),
         _type("story_structure", OPUS, "What order and shape does the story take?",
@@ -192,6 +209,10 @@ DECISION_TYPES: dict[str, DecisionType] = {
               _CREATIVE + "Montage selection and rhythm are taste."),
         _type("broll_selection", OPUS, "Which coverage plays over this line?",
               _CREATIVE + "Which image illustrates a line is an editorial read."),
+        _type("source_reuse", OPUS, "Is this repeat of earlier footage a deliberate reprise?",
+              _CREATIVE + "Whether a recap earns its repeat is a montage call."),
+        _type("music_tail", OPUS, "How should the cut end against a music bed that stops early?",
+              _CREATIVE + "Ending on the song or on picture is a music call."),
     )
 }
 

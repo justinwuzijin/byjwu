@@ -1,0 +1,245 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE fcpxml>
+<fcpxml version="1.14">
+  <resources>
+    <format id="r1" name="FFVideoFormat3840x2160p2398" frameDuration="1001/24000s" width="3840" height="2160" colorSpace="1-1-1 (Rec. 709)"/>
+    <format id="rPortrait" name="FFVideoFormat2160x3840p2398" frameDuration="1001/24000s" width="2160" height="3840"/>
+    <effect id="eSolid" name="Custom" uid="FAKE-EFFECT-SOLID"/>
+    <effect id="eColor" name="Color Adjustments" uid="FAKE-EFFECT-COLOR"/>
+    <asset id="aTalk" name="clip_a" uid="FAKE-aTalk" start="0s" duration="8008000/24000s" hasVideo="1" hasAudio="1" format="r1" audioRate="48000">
+      <media-rep kind="original-media" sig="FAKE-aTalk" src="file:///Volumes/Media/clip_a.mov">
+        <bookmark>FAKE-BOOKMARK</bookmark>
+      </media-rep>
+      <metadata>
+        <md key="com.apple.proapps.mio.ingestDate" value="2020-01-01 00:00:00 +0000"/>
+      </metadata>
+    </asset>
+    <asset id="aCompound" name="compound_src" uid="FAKE-aCompound" start="0s" duration="4004000/24000s" hasVideo="1" hasAudio="1" format="r1" audioRate="48000">
+      <media-rep kind="original-media" sig="FAKE-aCompound" src="file:///Volumes/Media/compound_src.mov">
+        <bookmark>FAKE-BOOKMARK</bookmark>
+      </media-rep>
+      <metadata>
+        <md key="com.apple.proapps.mio.ingestDate" value="2020-01-01 00:00:00 +0000"/>
+      </metadata>
+    </asset>
+    <asset id="aRate" name="rate_src" uid="FAKE-aRate" start="0s" duration="5005000/24000s" hasVideo="1" hasAudio="1" format="r1" audioRate="48000">
+      <media-rep kind="original-media" sig="FAKE-aRate" src="file:///Volumes/Media/rate_src.mov">
+        <bookmark>FAKE-BOOKMARK</bookmark>
+      </media-rep>
+      <metadata>
+        <md key="com.apple.proapps.mio.ingestDate" value="2020-01-01 00:00:00 +0000"/>
+      </metadata>
+    </asset>
+    <asset id="aPortrait" name="portrait_src" uid="FAKE-aPortrait" start="0s" duration="4004000/24000s" hasVideo="1" hasAudio="1" format="rPortrait" audioRate="48000">
+      <media-rep kind="original-media" sig="FAKE-aPortrait" src="file:///Volumes/Media/portrait_src.mov">
+        <bookmark>FAKE-BOOKMARK</bookmark>
+      </media-rep>
+      <metadata>
+        <md key="com.apple.proapps.mio.ingestDate" value="2020-01-01 00:00:00 +0000"/>
+      </metadata>
+    </asset>
+    <asset id="aBroll" name="broll_src" uid="FAKE-aBroll" start="0s" duration="8008000/24000s" hasVideo="1" hasAudio="1" format="r1" audioRate="48000">
+      <media-rep kind="original-media" sig="FAKE-aBroll" src="file:///Volumes/Media/broll_src.mov">
+        <bookmark>FAKE-BOOKMARK</bookmark>
+      </media-rep>
+      <metadata>
+        <md key="com.apple.proapps.mio.ingestDate" value="2020-01-01 00:00:00 +0000"/>
+      </metadata>
+    </asset>
+    <asset id="aBed" name="bed_track" uid="FAKE-aBed" start="0s" duration="8008000/24000s" hasVideo="0" hasAudio="1" format="r1" audioRate="48000">
+      <media-rep kind="original-media" sig="FAKE-aBed" src="file:///Volumes/Media/bed_track.mov">
+        <bookmark>FAKE-BOOKMARK</bookmark>
+      </media-rep>
+      <metadata>
+        <md key="com.apple.proapps.mio.ingestDate" value="2020-01-01 00:00:00 +0000"/>
+      </metadata>
+    </asset>
+    <asset id="aHost" name="host_src" uid="FAKE-aHost" start="0s" duration="4004000/24000s" hasVideo="1" hasAudio="1" format="r1" audioRate="48000">
+      <media-rep kind="original-media" sig="FAKE-aHost" src="file:///Volumes/Media/host_src.mov">
+        <bookmark>FAKE-BOOKMARK</bookmark>
+      </media-rep>
+      <metadata>
+        <md key="com.apple.proapps.mio.ingestDate" value="2020-01-01 00:00:00 +0000"/>
+      </metadata>
+    </asset>
+    <asset id="aTail" name="tail_src" uid="FAKE-aTail" start="0s" duration="4004000/24000s" hasVideo="1" hasAudio="1" format="r1" audioRate="48000">
+      <media-rep kind="original-media" sig="FAKE-aTail" src="file:///Volumes/Media/tail_src.mov">
+        <bookmark>FAKE-BOOKMARK</bookmark>
+      </media-rep>
+      <metadata>
+        <md key="com.apple.proapps.mio.ingestDate" value="2020-01-01 00:00:00 +0000"/>
+      </metadata>
+    </asset>
+    <asset id="aHold0" name="hold_src_0" uid="FAKE-aHold0" start="0s" duration="8008000/24000s" hasVideo="1" hasAudio="1" format="r1" audioRate="48000">
+      <media-rep kind="original-media" sig="FAKE-aHold0" src="file:///Volumes/Media/hold_src_0.mov">
+        <bookmark>FAKE-BOOKMARK</bookmark>
+      </media-rep>
+      <metadata>
+        <md key="com.apple.proapps.mio.ingestDate" value="2020-01-01 00:00:00 +0000"/>
+      </metadata>
+    </asset>
+    <asset id="aHold1" name="hold_src_1" uid="FAKE-aHold1" start="0s" duration="8008000/24000s" hasVideo="1" hasAudio="1" format="r1" audioRate="48000">
+      <media-rep kind="original-media" sig="FAKE-aHold1" src="file:///Volumes/Media/hold_src_1.mov">
+        <bookmark>FAKE-BOOKMARK</bookmark>
+      </media-rep>
+      <metadata>
+        <md key="com.apple.proapps.mio.ingestDate" value="2020-01-01 00:00:00 +0000"/>
+      </metadata>
+    </asset>
+    <asset id="aWhole0" name="whole_src_0" uid="FAKE-aWhole0" start="0s" duration="720720/24000s" hasVideo="1" hasAudio="1" format="r1" audioRate="48000">
+      <media-rep kind="original-media" sig="FAKE-aWhole0" src="file:///Volumes/Media/whole_src_0.mov">
+        <bookmark>FAKE-BOOKMARK</bookmark>
+      </media-rep>
+      <metadata>
+        <md key="com.apple.proapps.mio.ingestDate" value="2020-01-01 00:00:00 +0000"/>
+      </metadata>
+    </asset>
+    <asset id="aWhole1" name="whole_src_1" uid="FAKE-aWhole1" start="0s" duration="720720/24000s" hasVideo="1" hasAudio="1" format="r1" audioRate="48000">
+      <media-rep kind="original-media" sig="FAKE-aWhole1" src="file:///Volumes/Media/whole_src_1.mov">
+        <bookmark>FAKE-BOOKMARK</bookmark>
+      </media-rep>
+      <metadata>
+        <md key="com.apple.proapps.mio.ingestDate" value="2020-01-01 00:00:00 +0000"/>
+      </metadata>
+    </asset>
+    <asset id="aWhole2" name="whole_src_2" uid="FAKE-aWhole2" start="0s" duration="720720/24000s" hasVideo="1" hasAudio="1" format="r1" audioRate="48000">
+      <media-rep kind="original-media" sig="FAKE-aWhole2" src="file:///Volumes/Media/whole_src_2.mov">
+        <bookmark>FAKE-BOOKMARK</bookmark>
+      </media-rep>
+      <metadata>
+        <md key="com.apple.proapps.mio.ingestDate" value="2020-01-01 00:00:00 +0000"/>
+      </metadata>
+    </asset>
+    <asset id="aWhole3" name="whole_src_3" uid="FAKE-aWhole3" start="0s" duration="720720/24000s" hasVideo="1" hasAudio="1" format="r1" audioRate="48000">
+      <media-rep kind="original-media" sig="FAKE-aWhole3" src="file:///Volumes/Media/whole_src_3.mov">
+        <bookmark>FAKE-BOOKMARK</bookmark>
+      </media-rep>
+      <metadata>
+        <md key="com.apple.proapps.mio.ingestDate" value="2020-01-01 00:00:00 +0000"/>
+      </metadata>
+    </asset>
+    <asset id="aWhole4" name="whole_src_4" uid="FAKE-aWhole4" start="0s" duration="720720/24000s" hasVideo="1" hasAudio="1" format="r1" audioRate="48000">
+      <media-rep kind="original-media" sig="FAKE-aWhole4" src="file:///Volumes/Media/whole_src_4.mov">
+        <bookmark>FAKE-BOOKMARK</bookmark>
+      </media-rep>
+      <metadata>
+        <md key="com.apple.proapps.mio.ingestDate" value="2020-01-01 00:00:00 +0000"/>
+      </metadata>
+    </asset>
+    <asset id="aWhole5" name="whole_src_5" uid="FAKE-aWhole5" start="0s" duration="720720/24000s" hasVideo="1" hasAudio="1" format="r1" audioRate="48000">
+      <media-rep kind="original-media" sig="FAKE-aWhole5" src="file:///Volumes/Media/whole_src_5.mov">
+        <bookmark>FAKE-BOOKMARK</bookmark>
+      </media-rep>
+      <metadata>
+        <md key="com.apple.proapps.mio.ingestDate" value="2020-01-01 00:00:00 +0000"/>
+      </metadata>
+    </asset>
+    <asset id="aWhole6" name="whole_src_6" uid="FAKE-aWhole6" start="0s" duration="720720/24000s" hasVideo="1" hasAudio="1" format="r1" audioRate="48000">
+      <media-rep kind="original-media" sig="FAKE-aWhole6" src="file:///Volumes/Media/whole_src_6.mov">
+        <bookmark>FAKE-BOOKMARK</bookmark>
+      </media-rep>
+      <metadata>
+        <md key="com.apple.proapps.mio.ingestDate" value="2020-01-01 00:00:00 +0000"/>
+      </metadata>
+    </asset>
+    <asset id="aWhole7" name="whole_src_7" uid="FAKE-aWhole7" start="0s" duration="720720/24000s" hasVideo="1" hasAudio="1" format="r1" audioRate="48000">
+      <media-rep kind="original-media" sig="FAKE-aWhole7" src="file:///Volumes/Media/whole_src_7.mov">
+        <bookmark>FAKE-BOOKMARK</bookmark>
+      </media-rep>
+      <metadata>
+        <md key="com.apple.proapps.mio.ingestDate" value="2020-01-01 00:00:00 +0000"/>
+      </metadata>
+    </asset>
+  </resources>
+  <library location="file:///Volumes/Media/Synthetic.fcpbundle/">
+    <event name="Synthetic Event" uid="00000000-0000-0000-0000-000000000001">
+      <project name="synthetic-export" uid="00000000-0000-0000-0000-000000000002">
+        <sequence format="r1" duration="12540528/24000s" tcStart="0s" tcFormat="NDF" audioLayout="stereo" audioRate="48k">
+          <spine>
+          <asset-clip ref="aTalk" offset="0/24000s" name="clip_a" start="100100/24000s" duration="192192/24000s" tcFormat="NDF" audioRole="dialogue">
+          </asset-clip>
+          <clip offset="192192/24000s" name="compound_a" start="4804800/24000s" duration="192192/24000s" tcFormat="NDF">
+            <video ref="aCompound" offset="0s" duration="4004000/24000s"/>
+            <clip lane="-1" offset="4852848/24000s" name="nested_audio" start="0s" duration="96096/24000s" tcFormat="NDF">
+              <audio ref="aCompound" lane="-1" offset="0s" duration="96096/24000s" role="dialogue.dialogue-1" srcCh="1, 2"/>
+            </clip>
+          </clip>
+          <asset-clip ref="aRate" offset="384384/24000s" name="rate_01" start="200200/24000s" duration="48048/24000s" tcFormat="NDF" audioRole="dialogue">
+            <conform-rate scaleEnabled="0" srcFrameRate="29.97"/>
+          </asset-clip>
+          <asset-clip ref="aRate" offset="432432/24000s" name="rate_02" start="280280/24000s" duration="48048/24000s" tcFormat="NDF" audioRole="dialogue">
+            <conform-rate scaleEnabled="0" srcFrameRate="29.97"/>
+          </asset-clip>
+          <asset-clip ref="aRate" offset="480480/24000s" name="rate_03" start="360360/24000s" duration="48048/24000s" tcFormat="NDF" audioRole="dialogue">
+            <conform-rate scaleEnabled="0" srcFrameRate="29.97"/>
+          </asset-clip>
+          <asset-clip ref="aRate" offset="528528/24000s" name="rate_04" start="440440/24000s" duration="48048/24000s" tcFormat="NDF" audioRole="dialogue">
+            <conform-rate scaleEnabled="0" srcFrameRate="29.97"/>
+          </asset-clip>
+          <asset-clip ref="aRate" offset="576576/24000s" name="rate_05" start="520520/24000s" duration="48048/24000s" tcFormat="NDF" audioRole="dialogue">
+            <conform-rate scaleEnabled="0" srcFrameRate="29.97"/>
+          </asset-clip>
+          <asset-clip ref="aRate" offset="624624/24000s" name="rate_06" start="600600/24000s" duration="48048/24000s" tcFormat="NDF" audioRole="dialogue">
+            <conform-rate scaleEnabled="0" srcFrameRate="29.97"/>
+          </asset-clip>
+          <asset-clip ref="aRate" offset="672672/24000s" name="rate_07" start="680680/24000s" duration="48048/24000s" tcFormat="NDF" audioRole="dialogue">
+            <conform-rate scaleEnabled="0" srcFrameRate="29.97"/>
+          </asset-clip>
+          <asset-clip ref="aRate" offset="720720/24000s" name="rate_08" start="760760/24000s" duration="48048/24000s" tcFormat="NDF" audioRole="dialogue">
+            <conform-rate scaleEnabled="0" srcFrameRate="29.97"/>
+          </asset-clip>
+          <asset-clip ref="aHold0" offset="768768/24000s" name="hold a" start="300300/24000s" duration="480480/24000s" tcFormat="NDF" audioRole="dialogue">
+          </asset-clip>
+          <asset-clip ref="aHold1" offset="1249248/24000s" name="hold b" start="300300/24000s" duration="480480/24000s" tcFormat="NDF" audioRole="dialogue">
+          </asset-clip>
+          <video ref="eSolid" offset="1729728/24000s" name="card_a" start="0s" duration="240240/24000s" videoRole="titles">
+          </video>
+          <asset-clip ref="aWhole0" offset="1969968/24000s" name="graded_clip" start="0/24000s" duration="720720/24000s" tcFormat="NDF" audioRole="dialogue">
+            <marker start="0s" duration="1001/24000s" value="Assembly" note="synthetic marker"/>
+            <audio-channel-source srcCh="1, 2" role="dialogue.dialogue-1"/>
+            <filter-video ref="eColor" name="Color Adjustments"/>
+          </asset-clip>
+          <asset-clip ref="aWhole1" offset="2690688/24000s" name="whole_02" start="0/24000s" duration="720720/24000s" tcFormat="NDF" audioRole="dialogue">
+          </asset-clip>
+          <asset-clip ref="aWhole2" offset="3411408/24000s" name="whole_03" start="0/24000s" duration="720720/24000s" tcFormat="NDF" audioRole="dialogue">
+          </asset-clip>
+          <asset-clip ref="aWhole3" offset="4132128/24000s" name="whole_04" start="0/24000s" duration="720720/24000s" tcFormat="NDF" audioRole="dialogue">
+          </asset-clip>
+          <asset-clip ref="aWhole4" offset="4852848/24000s" name="whole_05" start="0/24000s" duration="720720/24000s" tcFormat="NDF" audioRole="dialogue">
+          </asset-clip>
+          <asset-clip ref="aWhole5" offset="5573568/24000s" name="whole_06" start="0/24000s" duration="720720/24000s" tcFormat="NDF" audioRole="dialogue">
+          </asset-clip>
+          <asset-clip ref="aWhole6" offset="6294288/24000s" name="whole_07" start="0/24000s" duration="720720/24000s" tcFormat="NDF" audioRole="dialogue">
+          </asset-clip>
+          <asset-clip ref="aWhole7" offset="7015008/24000s" name="whole_08" start="0/24000s" duration="720720/24000s" tcFormat="NDF" audioRole="dialogue">
+          </asset-clip>
+          <asset-clip ref="aPortrait" offset="7735728/24000s" name="portrait_a" start="50050/24000s" duration="96096/24000s" tcFormat="NDF" audioRole="dialogue">
+            <adjust-transform position="0 0" scale="1.8 1.8" rotation="90"/>
+          </asset-clip>
+          <gap name="Gap" offset="7831824/24000s" start="120120000/24000s" duration="3411408/24000s">
+            <asset-clip ref="aBroll" lane="1" offset="122522400/24000s" name="broll_a" start="100100/24000s" duration="180180/24000s" audioRole="dialogue"/>
+            <asset-clip ref="aBroll" lane="1" offset="122702580/24000s" name="broll_b" start="140140/24000s" duration="180180/24000s" audioRole="dialogue"/>
+            <asset-clip ref="aBroll" lane="2" offset="122882760/24000s" name="broll_c" start="180180/24000s" duration="180180/24000s" audioRole="dialogue"/>
+            <asset-clip ref="aBroll" lane="1" offset="123062940/24000s" name="broll_d" start="220220/24000s" duration="180180/24000s" audioRole="dialogue"/>
+          </gap>
+          <video ref="eSolid" offset="11243232/24000s" name="card_b" start="0s" duration="240240/24000s" videoRole="titles">
+          </video>
+          <asset-clip ref="aHost" offset="11483472/24000s" name="bed_host" start="10010/24000s" duration="480480/24000s" audioRole="dialogue">
+            <asset-clip ref="aBed" lane="-1" offset="10010/24000s" name="bed_track" start="0s" duration="480480/24000s" audioRole="music"/>
+          </asset-clip>
+          <asset-clip ref="aTalk" offset="11963952/24000s" name="reprise_01" start="100100/24000s" duration="48048/24000s" tcFormat="NDF">
+          </asset-clip>
+          <asset-clip ref="aTalk" offset="12012000/24000s" name="reprise_02" start="100100/24000s" duration="48048/24000s" tcFormat="NDF">
+          </asset-clip>
+          <asset-clip ref="aTalk" offset="12060048/24000s" name="reprise_03" start="100100/24000s" duration="48048/24000s" tcFormat="NDF">
+          </asset-clip>
+          <asset-clip ref="aTalk" offset="12108096/24000s" name="reprise_04" start="100100/24000s" duration="48048/24000s" tcFormat="NDF">
+          </asset-clip>
+          <asset-clip ref="aTail" offset="12156144/24000s" name="tail_pad" start="20020/24000s" duration="384384/24000s" tcFormat="NDF" audioRole="dialogue">
+          </asset-clip>
+          </spine>
+        </sequence>
+      </project>
+    </event>
+  </library>
+</fcpxml>

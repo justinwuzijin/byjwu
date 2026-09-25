@@ -189,6 +189,13 @@ def test_every_builtin_candidate_kind_has_an_engine():
         assert classify(kind).engine in {"jev", "opus"}
 
 
+def test_xml_only_notes_route_by_what_they_decide():
+    for kind in ("covered_gap", "rhythm_shift", "rate_mix", "untrimmed_run", "silent_card"):
+        assert classify(kind, "pacing").engine == "jev"
+    for kind in ("source_reuse", "music_tail"):
+        assert classify(kind, "pacing").engine == "opus"
+
+
 def test_pass_defaults_and_unknown_kinds():
     assert classify("beat", "story").engine == "opus"
     assert classify("cutaway", "broll").engine == "opus"

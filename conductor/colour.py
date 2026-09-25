@@ -22,7 +22,7 @@ from __future__ import annotations
 from collections.abc import Sequence as SequenceOf
 
 from .candidates import Candidate
-from .fcpxml import Clip, Sequence
+from .fcpxml import Clip, Sequence, local
 from .transcript import Cue
 
 #: Relative aspect gap that counts as extreme when orientation already matches.
@@ -56,7 +56,7 @@ def _sequence(sequence: Sequence) -> list[Candidate]:
     anchor = spine[0] if spine else sequence.spine[0]
     found.append(_unseen(sequence, anchor))
     for clip in spine:
-        if clip.role is None:
+        if not _has_role(clip):
             found.append(_role(sequence, clip))
         aspect = _aspect(sequence, clip)
         if aspect is not None:
@@ -76,6 +76,36 @@ def _unseen(sequence: Sequence, clip: Clip) -> Candidate:
         ),
         signals={"check": "exposure_skin", "decoded_media": False},
     )
+
+
+def _has_role(clip: Clip) -> bool:
+    """True when this spine item, or the audio inside it, carries a role.
+
+    A connected title's ``videoRole`` belongs to the title, so it does not
+    clear the parent. A compound clip often keeps ``dialogue.dialogue-1`` on
+    the nested ``<audio>`` or ``<audio-channel-source>`` rather than on the
+    outer element. That is the clip's own role.
+    """
+    if clip.role:
+        return True
+    element = clip.element
+    if element is None:
+        return False
+    for node in element.iter():
+        if node is element:
+            continue
+        tag = local(node.tag)
+        if tag in {"audio-role-source", "video-role-source"} and node.get("role"):
+            return True
+        if tag == "audio" and (node.get("role") or node.get("audioRole")):
+            return True
+        if node.get("lane"):
+            continue
+        if tag in {"asset-clip", "clip", "video", "audio"} and (
+            node.get("audioRole") or node.get("videoRole")
+        ):
+            return True
+    return False
 
 
 def _role(sequence: Sequence, clip: Clip) -> Candidate:
@@ -117,6 +147,10 @@ def _aspect(sequence: Sequence, clip: Clip) -> Candidate | None:
             f"asset is {clip.width}×{clip.height} and the sequence is "
             f"{sequence.width}×{sequence.height} (relative aspect gap {relative:.2f})"
         )
+    transform = _transform(clip)
+    fitted = _fit_phrase(transform)
+    if fitted:
+        why = f"{why}. It is {fitted}"
     return _candidate(
         sequence,
         clip,
@@ -133,8 +167,42 @@ def _aspect(sequence: Sequence, clip: Clip) -> Candidate | None:
             "clip_width": clip.width,
             "clip_height": clip.height,
             "relative_delta": round(relative, 4),
+            "rotation": transform.get("rotation"),
+            "scale": transform.get("scale"),
         },
     )
+
+
+def _transform(clip: Clip) -> dict[str, str]:
+    element = clip.element
+    if element is None:
+        return {}
+    for child in element:
+        if local(child.tag) != "adjust-transform":
+            continue
+        found = {}
+        if child.get("rotation"):
+            found["rotation"] = child.get("rotation") or ""
+        if child.get("scale"):
+            found["scale"] = child.get("scale") or ""
+        return found
+    return {}
+
+
+def _fit_phrase(transform: dict[str, str]) -> str:
+    bits: list[str] = []
+    rotation = transform.get("rotation")
+    if rotation and rotation not in {"0", "0.0"}:
+        bits.append(f"rotated {rotation}°")
+    scale = transform.get("scale")
+    if scale and scale not in {"1 1", "1.0 1.0", "1"}:
+        amount = scale.split()[0]
+        bits.append(f"scaled {amount}×")
+    if not bits:
+        return ""
+    if len(bits) == 1:
+        return bits[0]
+    return f"{bits[0]} and {bits[1]}"
 
 
 def _mismatch(

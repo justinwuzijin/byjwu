@@ -1,6 +1,6 @@
 # byjwu
 
-byjwu edits [@byjustinwu](https://www.youtube.com/@byjustinwu) videos: raw footage and music go in, and a Final Cut Pro FCPXML comes out.
+byjwu helps me edit [@byjustinwu](https://www.youtube.com/@byjustinwu) videos: raw footage and music go in, and a Final Cut Pro FCPXML comes out.
 
 ## How it works
 

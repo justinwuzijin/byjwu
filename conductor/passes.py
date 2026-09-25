@@ -57,8 +57,10 @@ PASSES: dict[str, Pass] = {
         "mechanical",
         frozenset({"silence_gap", "short_clip"}),
         False,
-        "Silence gaps, quiet audio inside a clip when the file can be read, "
-        "and clips under half a second. The only pass eligible for an unattended apply.",
+        "Bare silence on the primary storyline, quiet audio inside a clip when "
+        "the file can be read, and clips under half a second. A gap that is "
+        "covered by a connected clip is not a cut. The only pass eligible for "
+        "an unattended apply.",
     ),
     "dialogue": _builtin(
         "dialogue",
@@ -69,9 +71,24 @@ PASSES: dict[str, Pass] = {
     ),
     "pacing": _builtin(
         "pacing",
-        frozenset({"long_static"}),
+        frozenset(
+            {
+                "long_static",
+                "covered_gap",
+                "source_reuse",
+                "rhythm_shift",
+                "rate_mix",
+                "untrimmed_run",
+                "silent_card",
+                "music_tail",
+            }
+        ),
         True,
-        "Long holds and low-speech stretches. Creative: review unless accepted.",
+        "Holds against the local pace, gaps sitting under connected clips, "
+        "repeated source ranges, sudden rhythm or frame-rate changes, an "
+        "untrimmed string-out, a silent generator card, and a music bed that "
+        "ends before the picture. Creative: review unless accepted. Those "
+        "notes are markers, not lifts.",
     ),
     "story": Pass(
         "story",

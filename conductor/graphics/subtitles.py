@@ -32,6 +32,7 @@ from ..errors import ConductorError
 from ..fcpxml import Clip, Sequence
 from ..router import Ask, Decision, Router
 from ..timeutil import parse_time, seconds
+from .diffusion import group_by
 from .profile import GraphicsProfile
 
 _SENTENCE_END = re.compile(r"[.?!…]['\")\]]*$")
@@ -235,36 +236,46 @@ def _assign(spans: list[Span], words: list[Word]) -> list[tuple[Span, Word]]:
 
 
 def _group(pairs: list[tuple[Span, Word]], profile: GraphicsProfile, sequence: str, prefix: str) -> list[Cue]:
+    """Phrase groups from Diffusion Studio's ``groupBy``, after a cut or a pause.
+
+    A spine cut and a phrase pause still close a group, because a subtitle
+    must not cross an edit. Inside a run, words are packed by character
+    length (``max_chars_per_line * max_lines``, the GUINEA preset's limit)
+    and then by spoken duration (the CLASSIC / WHISPER limit).
+    """
     subs = profile.subtitles
     pause = Fraction(subs.phrase_pause_seconds).limit_denominator(1000)
-    longest = Fraction(subs.max_seconds).limit_denominator(1000)
+    longest = float(Fraction(subs.max_seconds).limit_denominator(1000))
     capacity = subs.max_chars_per_line * subs.max_lines
-    cues: list[Cue] = []
-    current: list[Word] = []
-    current_span: int | None = None
-
-    def close() -> None:
-        nonlocal current
-        if current:
-            cues.append(
-                Cue(f"{prefix}{len(cues) + 1:05d}", sequence, current_span, current, current[0].start, current[-1].end)
-            )
-        current = []
-
+    runs: list[list[tuple[Span, Word]]] = []
+    current: list[tuple[Span, Word]] = []
     for span, word in pairs:
-        if current and (
-            span.index != current_span
-            or word.start - current[-1].end >= pause
-            or word.end - current[0].start > longest
-            or _line_count([*current, word], subs.max_chars_per_line) > subs.max_lines
-        ):
-            close()
-        current_span = span.index
-        current.append(word)
-        chars = len(" ".join(item.text for item in current))
-        if _SENTENCE_END.search(word.text) or (_SOFT_END.search(word.text) and chars >= 0.6 * capacity):
-            close()
-    close()
+        if current and (span.index != current[-1][0].index or word.start - current[-1][1].end >= pause):
+            runs.append(current)
+            current = []
+        current.append((span, word))
+    if current:
+        runs.append(current)
+
+    cues: list[Cue] = []
+    for run in runs:
+        span_index = run[0][0].index
+        words = [word for _span, word in run]
+        packed = group_by(words, length=max(capacity, 1))
+        for chunk in packed:
+            spoken = sum(float(word.end - word.start) for word in chunk)
+            pieces = group_by(chunk, duration=longest) if spoken > longest and len(chunk) > 1 else [chunk]
+            for piece in pieces:
+                cues.append(
+                    Cue(
+                        f"{prefix}{len(cues) + 1:05d}",
+                        sequence,
+                        span_index,
+                        piece,
+                        piece[0].start,
+                        piece[-1].end,
+                    )
+                )
     return cues
 
 

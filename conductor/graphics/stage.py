@@ -21,9 +21,10 @@ from ..fcpxml import Document, local, parse_fcpxml, write_document
 from ..router import Router
 from ..timeutil import format_time, parse_time
 from ..timing import _conform_scale, has_time_map
+from .diffusion import sample_keyframes
 from .encode import Encoded, encode
 from .profile import BLEND_MODES, GraphicsProfile, load_graphics_profile, parse_colour
-from .render import FontChoice, TitleSpec, rect_frames, rect_seed, resolve_font, title_frames
+from .render import FontChoice, TitleSpec, rect_schedule, rect_seed, resolve_font, title_frames
 from .render import RenderUnavailable
 from .subtitles import Cue, Word, load_words, plan_subtitles
 from .titles import TitleCard, plan_titles
@@ -31,6 +32,18 @@ from .titles import TitleCard, plan_titles
 BASIC_TITLE_UID = (
     ".../Titles.localized/Bumper:Opener.localized/Basic Title.localized/Basic Title.moti"
 )
+# Generator and filter ids follow Final Cut's localized effect paths. The
+# rectangle motion itself is Diffusion Studio's RectangleClip (position,
+# scale, opacity over time) plus its blur and hue-rotate effects, written
+# as native FCPXML instead of a pre-rendered alpha movie.
+SHAPES_UID = ".../Generators.localized/Elements.localized/Shapes.localized/Shapes.motn"
+GAUSSIAN_UID = ".../Filters.localized/Blur.localized/Gaussian.localized/Gaussian.motn"
+HUE_UID = ".../Filters.localized/Color.localized/Hue:Saturation.localized/Hue:Saturation.motn"
+# Treatments Final Cut can do with a title and keyframes. The rest (glitch
+# slice, RGB split, wave, blur) stay rendered alpha clips.
+_NATIVE_TREATMENTS = frozenset({"none", "scale_warp"})
+# Unspoken tail, from Diffusion Studio's WHISPER caption preset.
+_DIM = "#C4C4C4"
 _ANCHOR_BEFORE = frozenset(
     {
         "marker",
@@ -167,24 +180,28 @@ def _subtitles(sequence, cues: list[Cue], profile, effect_id, ids, result: Graph
     lane = _free_lane(sequence, positive=True)
     for clip_id, group in by_clip.items():
         clip = next(item for item in sequence.spine if item.id == clip_id)
+        colour = profile.subtitles.color or profile.typography.color
+        size = profile.subtitles.size * (sequence.height or 1080) / 1080
         for cue in group:
-            _title_element(
-                clip,
-                sequence,
-                effect_id,
-                lane,
-                cue.start,
-                cue.end - cue.start,
-                "\n".join(cue.lines) or cue.text,
-                profile.subtitle_font(),
-                profile.subtitles.face,
-                profile.subtitles.size * (sequence.height or 1080) / 1080,
-                profile.subtitles.color or profile.typography.color,
-                profile.subtitles.position_y,
-                profile,
-                ids,
-                name="Subtitle",
-            )
+            for start, end, active in _highlight_slices(cue):
+                _title_element(
+                    clip,
+                    sequence,
+                    effect_id,
+                    lane,
+                    start,
+                    end - start,
+                    "\n".join(cue.lines) or cue.text,
+                    profile.subtitle_font(),
+                    profile.subtitles.face,
+                    size,
+                    colour,
+                    profile.subtitles.position_y,
+                    profile,
+                    ids,
+                    name="Subtitle",
+                    runs=_highlight_runs(cue, active, profile.subtitles.face, colour),
+                )
 
 
 def _titles(sequence, cards, profile, font: FontChoice, destination, assets, ids, resources, result) -> None:
@@ -195,7 +212,7 @@ def _titles(sequence, cards, profile, font: FontChoice, destination, assets, ids
     for card in cards:
         if card.needs_review:
             _review_marker(sequence, card, profile)
-        if card.treatment == "none":
+        if card.treatment in _NATIVE_TREATMENTS:
             clip = document_clip(sequence, card.clip_id)
             duration = _fit(sequence, clip, card.timeline_start, _seconds(profile.text_fx.duration_seconds), frame)
             if duration <= 0:
@@ -205,6 +222,7 @@ def _titles(sequence, cards, profile, font: FontChoice, destination, assets, ids
                 card.timeline_start, duration, card.text, profile.title_font(), profile.text_fx.face,
                 profile.text_fx.size * height / 1080, profile.text_fx.color or profile.typography.color,
                 profile.text_fx.position_y, profile, ids, name=card.text,
+                keyframes=_title_motion(card.treatment, profile, float(duration)),
             )
             continue
         duration = _fit(
@@ -234,7 +252,6 @@ def _titles(sequence, cards, profile, font: FontChoice, destination, assets, ids
 
 def _rectangles(sequence, cards, profile, beats, destination, assets, ids, resources, result, frame_scale: float) -> None:
     layer = profile.rect_layer
-    frame = sequence.frame_duration
     width, height = sequence.width or 1920, sequence.height or 1080
     windows = _windows(sequence, cards, profile)
     if not windows:
@@ -246,33 +263,36 @@ def _rectangles(sequence, cards, profile, beats, destination, assets, ids, resou
             "No music beat grid was available, so the rectangle layer did not cut to a beat. "
             "Pass beats, or a beats.json of seconds beside the timeline."
         )
+    del destination, assets, frame_scale
+    shapes = ids.effect(resources, "Shapes", SHAPES_UID)
+    blur_id = ids.effect(resources, "Gaussian", GAUSSIAN_UID)
+    hue_id = ids.effect(resources, "Hue/Saturation", HUE_UID)
     for number, (start, end) in enumerate(windows):
         duration = end - start
-        frames = max(1, int(round(duration / frame)))
         local_beats = None
         if beats is not None and layer.beat_sync:
             local_beats = [float(beat - start) for beat in beats if start <= beat < end]
         seed = rect_seed(layer, (sequence.name, number, format_time(start)))
-        pixel_w, pixel_h = max(16, int(width * frame_scale)), max(16, int(height * frame_scale))
-        written = _render_mov(
-            rect_frames(layer, pixel_w, pixel_h, float(1 / frame), frames, seed, local_beats),
-            assets / f"rect-{number}.mov",
-            pixel_w, pixel_h, frame, profile.codec, result, "rectangle layer",
-        )
-        if written is None:
-            continue
-        for clip in sequence.spine:
-            overlap_start = max(start, clip.timeline_start)
-            overlap_end = min(end, clip.timeline_end)
-            if overlap_end <= overlap_start or clip.element is None:
+        rects = rect_schedule(layer, float(duration), seed, local_beats)
+        placed = 0
+        for rect in rects:
+            born = start + _seconds(max(0.0, rect.born))
+            dies = start + _seconds(min(float(duration), rect.dies))
+            if dies <= born:
                 continue
-            _connected_asset(
-                clip, sequence, written, destination, ids, resources, lane,
-                overlap_start, overlap_end - overlap_start, "byjwu rectangles",
-                layer.opacity, layer.blend_mode, movie_start=overlap_start - start,
-                width=pixel_w, height=pixel_h, asset_duration=frames * frame,
-            )
-        result.rectangles.append({"sequence": sequence.name, "start_seconds": float(start), "file": written.path.name})
+            for clip in sequence.spine:
+                overlap_start = max(born, clip.timeline_start)
+                overlap_end = min(dies, clip.timeline_end)
+                if overlap_end <= overlap_start or clip.element is None:
+                    continue
+                _shape_clip(
+                    clip, sequence, shapes, blur_id, hue_id, lane,
+                    overlap_start, overlap_end - overlap_start, rect, born, layer, width, height,
+                )
+                placed += 1
+        result.rectangles.append(
+            {"sequence": sequence.name, "start_seconds": float(start), "shapes": placed, "seed": seed}
+        )
 
 
 def _windows(sequence, cards, profile: GraphicsProfile) -> list[tuple[Fraction, Fraction]]:
@@ -334,10 +354,12 @@ class _Ids:
         return ident
 
 
-def _title_element(clip, sequence, effect_id, lane, start, duration, text, font, face, size, colour, position_y, profile, ids, name) -> None:
+def _title_element(
+    clip, sequence, effect_id, lane, start, duration, text, font, face, size, colour, position_y, profile, ids, name,
+    runs=None, keyframes=None,
+) -> None:
     if clip.element is None or duration <= 0:
         return
-    style_id = ids.style()
     title = ET.Element("title")
     title.set("ref", effect_id)
     title.set("lane", str(lane))
@@ -347,22 +369,131 @@ def _title_element(clip, sequence, effect_id, lane, start, duration, text, font,
     title.set("duration", format_time(duration))
     title.set("role", "Titles")
     body = ET.SubElement(title, "text")
-    node = ET.SubElement(body, "text-style", {"ref": style_id})
-    node.text = text
-    red, green, blue = parse_colour(colour)
+    pieces = runs or [(text, face, colour)]
+    defs = []
     shadow = parse_colour(profile.typography.shadow_color)
-    style = ET.SubElement(ET.SubElement(title, "text-style-def", {"id": style_id}), "text-style")
-    style.set("font", font)
-    style.set("fontSize", f"{size:g}")
-    style.set("fontFace", face)
-    style.set("fontColor", f"{red / 255:.4f} {green / 255:.4f} {blue / 255:.4f} 1")
-    style.set("alignment", "center")
-    style.set("shadowColor", f"{shadow[0] / 255:.4f} {shadow[1] / 255:.4f} {shadow[2] / 255:.4f} {profile.typography.shadow_opacity:g}")
-    style.set("shadowOffset", f"{profile.typography.shadow_offset:g} {profile.typography.shadow_angle:g}")
-    style.set("shadowBlurRadius", f"{profile.typography.shadow_blur:g}")
+    for chunk, chunk_face, chunk_colour in pieces:
+        style_id = ids.style()
+        node = ET.SubElement(body, "text-style", {"ref": style_id})
+        node.text = chunk
+        red, green, blue = parse_colour(chunk_colour)
+        style = ET.Element("text-style")
+        style.set("font", font)
+        style.set("fontSize", f"{size:g}")
+        style.set("fontFace", chunk_face)
+        style.set("fontColor", f"{red / 255:.4f} {green / 255:.4f} {blue / 255:.4f} 1")
+        style.set("alignment", "center")
+        style.set("shadowColor", f"{shadow[0] / 255:.4f} {shadow[1] / 255:.4f} {shadow[2] / 255:.4f} {profile.typography.shadow_opacity:g}")
+        style.set("shadowOffset", f"{profile.typography.shadow_offset:g} {profile.typography.shadow_angle:g}")
+        style.set("shadowBlurRadius", f"{profile.typography.shadow_blur:g}")
+        defs.append((style_id, style))
+    for style_id, style in defs:
+        ET.SubElement(title, "text-style-def", {"id": style_id}).append(style)
     y = (0.5 - position_y) * 100
-    ET.SubElement(title, "adjust-transform", {"position": f"0 {y:g}"})
+    transform = ET.SubElement(title, "adjust-transform", {"position": f"0 {y:g}"})
+    if keyframes:
+        _keyframe_param(transform, "scale", keyframes)
     _insert_anchor(clip.element, title)
+
+
+def _highlight_slices(cue: Cue) -> list[tuple[Fraction, Fraction, int]]:
+    """One title per spoken word, tiling the cue. The last slice holds to cue.end."""
+    if not cue.words:
+        return [(cue.start, cue.end, 0)] if cue.end > cue.start else []
+    slices = []
+    cursor = cue.start
+    for index, word in enumerate(cue.words):
+        start = max(cursor, min(word.start, cue.end))
+        if index + 1 < len(cue.words):
+            end = min(cue.end, max(start, cue.words[index + 1].start))
+        else:
+            end = cue.end
+        if end > start:
+            slices.append((start, end, index))
+            cursor = end
+    return slices
+
+
+def _highlight_runs(cue: Cue, active: int, face: str, colour: str) -> list[tuple[str, str, str]]:
+    """WHISPER-style active word: the spoken word stays the subtitle colour; the rest is dim."""
+    runs = []
+    for index, word in enumerate(cue.words):
+        chunk = word.text if index == 0 else " " + word.text
+        if index == active:
+            runs.append((chunk, "Bold", colour))
+        else:
+            runs.append((chunk, face, _DIM))
+    return runs or [(cue.text, face, colour)]
+
+
+def _title_motion(treatment: str, profile: GraphicsProfile, duration: float) -> list[tuple[str, str]] | None:
+    """Scale keyframes for ``scale_warp``. Values are Diffusion Studio factors, written as FCP percent."""
+    if treatment != "scale_warp" or duration <= 0:
+        return None
+    fx = profile.text_fx
+    start_scale = (fx.scale_from[0] + fx.scale_from[1]) / 2
+    end_scale = (fx.scale_to[0] + fx.scale_to[1]) / 2
+    span = min(float(fx.scale_seconds), duration)
+    frames = [(0.0, start_scale), (span, end_scale)]
+    points = [0.0, span] if span > 0 else [0.0]
+    return [
+        (format_time(_seconds(time)), f"{sample_keyframes(frames, time, 'smooth') * 100:g} {sample_keyframes(frames, time, 'smooth') * 100:g}")
+        for time in points
+    ]
+
+
+def _keyframe_param(parent: ET.Element, name: str, points: list[tuple[str, str]]) -> None:
+    param = ET.SubElement(parent, "param", {"name": name})
+    animation = ET.SubElement(param, "keyframeAnimation")
+    for index, (time, value) in enumerate(points):
+        attrs = {"time": time, "value": value}
+        if index + 1 < len(points):
+            attrs["interp"] = "smooth"
+        ET.SubElement(animation, "keyframe", attrs)
+
+
+def _shape_clip(clip, sequence, shapes, blur_id, hue_id, lane, start, duration, rect, born, layer, width, height) -> None:
+    """One RectangleClip as a Shapes generator, with blur and hue-rotate filters."""
+    if clip.element is None or duration <= 0:
+        return
+    local_start = float(start - born)
+    local_end = local_start + float(duration)
+    age0 = max(0.0, local_start - max(0.0, rect.born))
+    age1 = max(age0, local_end - max(0.0, rect.born))
+    aspect = width / height if height else 1
+    def position(age: float) -> str:
+        cx = rect.x + rect.vx * age
+        cy = rect.y + rect.vy * age
+        x = (cx - 0.5) * aspect * 100
+        y = (0.5 - cy) * 100
+        return f"{x:g} {y:g}"
+    scale0 = max(0.05, (1 + rect.grow * age0) * rect.w) * 100
+    scale1 = max(0.05, (1 + rect.grow * age1) * rect.w) * 100
+    node = ET.Element("video")
+    node.set("ref", shapes)
+    node.set("lane", str(lane))
+    node.set("offset", format_time(_offset(clip, sequence, start)))
+    node.set("name", "byjwu rectangles")
+    node.set("start", "3600s")
+    node.set("duration", format_time(duration))
+    transform = ET.SubElement(node, "adjust-transform", {"position": position(age0)})
+    _keyframe_param(
+        transform,
+        "position",
+        [("0s", position(age0)), (format_time(duration), position(age1))],
+    )
+    _keyframe_param(
+        transform,
+        "scale",
+        [("0s", f"{scale0:g} {scale0:g}"), (format_time(duration), f"{scale1:g} {scale1:g}")],
+    )
+    ET.SubElement(node, "adjust-blend", {"amount": f"{layer.opacity:g}", "mode": str(BLEND_MODES.get(layer.blend_mode, 0))})
+    blur = ET.SubElement(node, "filter-video", {"ref": blur_id, "name": "Gaussian"})
+    amount = max(0.0, layer.stroke * height)
+    ET.SubElement(blur, "param", {"name": "Amount", "value": f"{amount:g}"})
+    hue = ET.SubElement(node, "filter-video", {"ref": hue_id, "name": "Hue/Saturation"})
+    ET.SubElement(hue, "param", {"name": "Hue", "value": f"{(rect.colour % 12) * 30:g}"})
+    _insert_anchor(clip.element, node)
 
 
 def _connected_asset(

@@ -8,6 +8,7 @@ from pathlib import Path
 
 from conductor.fcpxml import local, parse_fcpxml
 from conductor.graphics import apply_graphics
+from conductor.graphics.diffusion import group_by, sample_keyframes
 from conductor.graphics.profile import from_mapping
 from conductor.graphics.render import rect_frame, rect_schedule
 from conductor.graphics.stage import BASIC_TITLE_UID
@@ -157,6 +158,26 @@ def test_graphics_package_ships_no_private_material():
     assert "*.assets/" in Path(".gitignore").read_text(encoding="utf-8")
     shipped = list(root.rglob("*.ttf")) + list(root.rglob("*.otf")) + list(root.rglob("*.ttc"))
     assert shipped == []
+
+
+def test_caption_grouping_and_native_shapes(tmp_path):
+    words = [
+        type("W", (), {"text": "one", "start": 0.0, "end": 0.4})(),
+        type("W", (), {"text": "two", "start": 0.4, "end": 0.8})(),
+        type("W", (), {"text": "three", "start": 0.8, "end": 1.2})(),
+    ]
+    assert [[word.text for word in group] for group in group_by(words, length=6)] == [["one", "two"], ["three"]]
+    assert sample_keyframes([(0.0, 1.0), (1.0, 3.0)], 0.5, "smooth") == 2.0
+    source = tmp_path / "cut.fcpxml"
+    source.write_text(FIXTURE, encoding="utf-8")
+    profile = _profile(coverage="full")
+    out = tmp_path / "native.fcpxml"
+    apply_graphics(source, out_path=out, words=WORDS, profile=profile, enabled=True)
+    text = out.read_text(encoding="utf-8")
+    assert 'name="byjwu rectangles"' in text
+    assert "keyframeAnimation" in text
+    assert "Shapes" in text
+    assert "Gaussian" in text
 
 
 def test_graphics_stay_off_without_a_flag_or_profile(tmp_path):

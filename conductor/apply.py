@@ -82,12 +82,17 @@ def _shield_connected(sequence, deletions: list[Deletion]) -> tuple[list[Deletio
     """Punch connected coverage out of a deletion.
 
     A spine gap or clip with anchored children is never removed wholesale.
-    Only the uncovered stretches are cut. The covered picture stays, and the
-    caller ripples what remains.
+    On a gap, the stretch under a laned item is the picture, so it stays. A
+    clip removed whole keeps the stretch its laned items sit on. A deletion
+    inside a longer clip is left to :func:`_piece`, which keeps a connected
+    clip that fits a piece and warns about one that crosses the cut, so a
+    music bed on a lane does not block every cut above it.
     """
     protected: list[tuple[Fraction, Fraction]] = []
     frame = sequence.frame_duration
     for clip in sequence.spine:
+        if not _removed_wholesale(clip, deletions):
+            continue
         protected.extend(_anchored_spans(clip, frame))
     if not protected:
         return list(deletions), []
@@ -125,6 +130,18 @@ def _shield_connected(sequence, deletions: list[Deletion]) -> tuple[list[Deletio
                 )
             )
     return adjusted, warnings
+
+
+def _removed_wholesale(clip, deletions: list[Deletion]) -> bool:
+    """A gap any deletion touches, or a clip a deletion covers end to end."""
+    for deletion in deletions:
+        if deletion.end <= clip.timeline_start or deletion.start >= clip.timeline_end:
+            continue
+        if clip.kind == "gap":
+            return True
+        if deletion.start <= clip.timeline_start and deletion.end >= clip.timeline_end:
+            return True
+    return False
 
 
 def _anchored_spans(clip, frame: Fraction) -> list[tuple[Fraction, Fraction]]:

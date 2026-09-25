@@ -399,6 +399,64 @@ def test_wholesale_gap_removal_keeps_the_connected_broll(tmp_path):
     assert [item.kind for item in again if item.kind == "silence_gap"] == []
 
 
+_BED = """
+<fcpxml version="1.14">
+  <resources>
+    <format id="r1" frameDuration="1/24s" width="1920" height="1080"/>
+    <asset id="r2" name="talk" format="r1" start="0s" duration="60s" hasVideo="1" hasAudio="1"/>
+    <asset id="r3" name="song" start="0s" duration="120s" hasAudio="1"/>
+  </resources>
+  <project name="Bed">
+    <sequence format="r1" duration="30s" tcStart="0s">
+      <spine>
+        <asset-clip ref="r2" offset="0s" name="Talk" start="10s" duration="20s">
+          <asset-clip ref="r3" lane="-1" offset="10s" name="Song" start="0s" duration="20s"/>
+        </asset-clip>
+        <asset-clip ref="r2" offset="20s" name="Card" start="40s" duration="10s">
+          <title ref="r9" lane="1" offset="43s" name="Title" start="0s" duration="4s"/>
+        </asset-clip>
+      </spine>
+    </sequence>
+  </project>
+</fcpxml>
+"""
+
+
+def _cut(sequence, start, end):
+    return Deletion(
+        candidate_id="c0001",
+        sequence=sequence,
+        start=Fraction(start),
+        end=Fraction(end),
+        action="remove",
+        pass_name="dialogue",
+    )
+
+
+def test_a_music_bed_does_not_block_a_cut_inside_its_clip():
+    document = parse_xml(_BED)
+    result = apply_edits(document, [_cut("Bed", 5, 7)])
+    assert [(row["start_seconds"], row["end_seconds"]) for row in result.cuts] == [(5.0, 7.0)]
+    assert not any("connected clip covers" in note for note in result.warnings)
+
+
+def test_removing_a_whole_clip_keeps_the_stretch_under_its_title():
+    document = parse_xml(_BED)
+    result = apply_edits(document, [_cut("Bed", 20, 30)])
+    assert [(row["start_seconds"], row["end_seconds"]) for row in result.cuts] == [
+        (20.0, 23.0),
+        (27.0, 30.0),
+    ]
+    assert any("connected clip covers" in note for note in result.warnings)
+    card = next(clip for clip in document.sequences[0].spine if clip.name == "Card")
+    assert card.element is not None
+    spine = next(node for node in document.tree.getroot().iter() if node.tag == "spine")
+    pieces = [node for node in spine if node.get("name") == "Card"]
+    assert len(pieces) == 1
+    assert pieces[0].get("duration") == "4s"
+    assert [child.get("name") for child in pieces[0] if child.get("lane")] == ["Title"]
+
+
 def test_markers_are_inserted_before_filters(tmp_path):
     document = parse_fcpxml(FIXTURE)
     montage = next(clip for clip in document.sequences[0].spine if clip.name == "C8379")

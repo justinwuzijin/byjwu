@@ -253,6 +253,10 @@ def _add_room(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument("--max-rounds", type=int, default=5, help="stop after this many rounds (default: 5)")
     parser.add_argument(
+        "--style",
+        help="assembly style when the drop has music and an assembler is installed (default: byjustinwu)",
+    )
+    parser.add_argument(
         "--live",
         action="store_true",
         help="call Jev. Requires OPENROUTER_API_KEY or TYPESAFE_API_KEY. Off by default.",
@@ -285,6 +289,7 @@ def _room(args) -> int:
         taste=args.taste,
         durations=args.durations,
         max_rounds=args.max_rounds,
+        style=args.style,
     )
     print(result.markdown, end="" if result.markdown.endswith("\n") else "\n")
     return 0
@@ -307,6 +312,7 @@ def _watch_room(args) -> int:
             taste=args.taste,
             durations=args.durations,
             max_rounds=args.max_rounds,
+            style=args.style,
             stable_seconds=args.stable_seconds,
             poll_seconds=args.poll_seconds,
             on_event=_show,

@@ -64,6 +64,8 @@ python -m conductor room-run ~/Desktop/jevid-in/cut.fcpxml \
 
 The same command takes a `.fcpxml`, a `.fcpxmld` bundle, a `.zip` of either, or a folder of clips. It detects which, and it does not modify the drop. Dry-run is the default. `--live` is how a bot calls Jev. An SRT or WebVTT sitting next to the timeline is picked up; `--transcript` overrides that. A `durations.json` in a clip folder is picked up the same way.
 
+When the drop also carries music (`.mp3`, `.wav`, `.aif`, `.m4a`, and similar), room-run hands it to a style assembler first (`--style`, default `byjustinwu`) if one is installed, then runs the loop on what it built. Without one, the clips are handled as above and the summary says the music was not placed.
+
 Each run writes a new folder, `~/Desktop/jevid-out/<name>-<timestamp>/`, so repeating it is safe. `room.md` in that folder is the chat summary (input kind, duration before and after, cuts with timecodes, rows flagged for the editor, stop reason, which signals were available, and the file to open). `room.json` is the same summary. The shadow FCPXML is always there.
 
 `python -m conductor room-run --watch ~/Desktop/jevid-in` processes new drops after the copy has finished, and skips ones it has already recorded. Setup for that process is in [docs/room-run.md](docs/room-run.md). That note is for the person who runs the bot, not for the editor.

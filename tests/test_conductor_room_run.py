@@ -10,9 +10,10 @@ from pathlib import Path
 
 import pytest
 
+from conductor import room as room_module
 from conductor.cli import main
 from conductor.errors import ConductorError
-from conductor.room import WatchState, room_run, scan_once
+from conductor.room import WatchState, list_drops, register_assembler, room_run, scan_once
 
 FIXTURE = Path("fixtures/sample_interview.fcpxml")
 SRT = Path("fixtures/sample_interview.srt")
@@ -50,7 +51,8 @@ def _assert_summary(result, *, kind: str) -> dict:
     assert payload["input"]["kind"] == kind
     assert payload["stop_reason"]
     assert payload["duration"]["before_seconds"] >= payload["duration"]["after_seconds"]
-    assert payload["signals_label"] in {"none", "transcript", "media", "transcript, media"}
+    assert set(payload["signals"]) <= {"transcript", "media", "music"}
+    assert payload["signals_label"] == (", ".join(payload["signals"]) or "none")
     shadow = Path(payload["shadow"])
     open_path = Path(payload["open_in_final_cut"])
     assert shadow.is_file()
@@ -272,3 +274,132 @@ def test_watcher_records_a_bad_drop_once(tmp_path):
     log = (out / "room-run.log").read_text(encoding="utf-8")
     assert log.count("error ") == 1
     assert log.count("skip ") == 1
+
+
+@pytest.fixture
+def no_assembler(monkeypatch):
+    register_assembler(None)
+    monkeypatch.setattr(room_module, "find_assembler", lambda: None)
+
+
+@pytest.fixture
+def assembler():
+    calls: list[dict] = []
+
+    def fake(*, media, fcpxml, music, style, out_dir):
+        calls.append({"media": media, "fcpxml": fcpxml, "music": music, "style": style, "out_dir": out_dir})
+        timeline = Path(out_dir) / "assembled.fcpxml"
+        shutil.copy(FIXTURE, timeline)
+        return {"fcpxml": str(timeline)}
+
+    register_assembler(fake)
+    yield calls
+    register_assembler(None)
+
+
+def _selects_with_music(tmp_path: Path) -> Path:
+    folder = tmp_path / "selects"
+    shutil.copytree(SELECTS, folder)
+    (folder / "track.mp3").write_bytes(b"ID3")
+    return folder
+
+
+def test_music_without_an_assembler_falls_back_to_ingest(tmp_path, no_assembler):
+    folder = _selects_with_music(tmp_path)
+    result = room_run(folder, out_root=tmp_path / "out", brief=BRIEF)
+    payload = _assert_summary(result, kind="media")
+    assert payload["flow"] == "ingest+iterate"
+    assert payload["style"] is None
+    assert payload["signals"] == ["media", "music"]
+    assert payload["music"] == [str(folder.resolve() / "track.mp3")]
+    assert any("no assemble step" in warning for warning in payload["warnings"])
+    assert "Flow: ingest+iterate" in result.markdown
+    assert Path(payload["starter"]).is_file()
+
+
+def test_music_goes_to_the_assembler_then_iterate(tmp_path, assembler):
+    folder = _selects_with_music(tmp_path)
+    before = {path: path.read_bytes() for path in folder.rglob("*") if path.is_file()}
+    result = room_run(folder, out_root=tmp_path / "out", brief=BRIEF)
+    payload = _assert_summary(result, kind="media")
+    assert payload["flow"] == "assemble+iterate"
+    assert payload["style"] == "byjustinwu"
+    assert "Flow: assemble+iterate (style byjustinwu)" in result.markdown
+    assert len(assembler) == 1
+    call = assembler[0]
+    assert call["media"] == folder.resolve()
+    assert [path.name for path in call["music"]] == ["track.mp3"]
+    assert call["out_dir"] == result.out_dir / "assemble"
+    assert payload["assembled_fcpxml"] == str((result.out_dir / "assemble" / "assembled.fcpxml").resolve())
+    assert payload["starter"] is None
+    assert payload["cuts"]
+    assert {path: path.read_bytes() for path in folder.rglob("*") if path.is_file()} == before
+
+
+def test_style_flag_reaches_the_assembler(tmp_path, assembler):
+    folder = _selects_with_music(tmp_path)
+    code = main(["room-run", str(folder), "--style", "loose", "--out-root", str(tmp_path / "out")])
+    assert code == 0
+    assert assembler[0]["style"] == "loose"
+
+
+def test_timeline_music_assets_are_detected(tmp_path, assembler):
+    xml = tmp_path / "in" / "cut.fcpxml"
+    xml.parent.mkdir()
+    xml.write_text(_xml(src="file:///Volumes/Media/score.wav"), encoding="utf-8")
+    result = room_run(xml, out_root=tmp_path / "out", brief=BRIEF)
+    assert result.payload["flow"] == "assemble+iterate"
+    assert result.payload["music"] == ["/Volumes/Media/score.wav"]
+    assert assembler[0]["fcpxml"] == xml.resolve()
+    assert assembler[0]["media"] is None
+
+
+def test_assembler_without_a_timeline_is_a_clear_failure(tmp_path):
+    register_assembler(lambda **_: None)
+    try:
+        with pytest.raises(ConductorError, match="without an FCPXML"):
+            room_run(_selects_with_music(tmp_path), out_root=tmp_path / "out", brief=BRIEF)
+    finally:
+        register_assembler(None)
+
+
+def test_loose_music_travels_with_loose_clips(tmp_path):
+    inbox = tmp_path / "in"
+    inbox.mkdir()
+    (inbox / "song.mp3").write_bytes(b"ID3")
+    assert list_drops(inbox) == []
+    (inbox / "a.mp4").write_bytes(b"clip")
+    drops = list_drops(inbox)
+    assert len(drops) == 1
+    assert drops[0].force_media is True
+    assert [path.name for path in drops[0].members] == ["a.mp4", "song.mp3"]
+
+
+def test_watcher_survives_an_unexpected_error(tmp_path, monkeypatch):
+    inbox = tmp_path / "in"
+    out = tmp_path / "out"
+    inbox.mkdir()
+    shutil.copy(FIXTURE, inbox / "cut.fcpxml")
+
+    def boom(*_args, **_kwargs):
+        raise RuntimeError("disk went away")
+
+    monkeypatch.setattr(room_module, "room_run", boom)
+    state = WatchState.load(out)
+    scan_once(inbox, out, state, now=0.0, stable_seconds=0)
+    events = scan_once(inbox, out, state, now=1.0, stable_seconds=0)
+    assert [event.status for event in events] == ["error"]
+    assert "RuntimeError: disk went away" in events[0].message
+    assert "RuntimeError" in (out / "room-run.log").read_text(encoding="utf-8")
+
+
+def test_unexpected_error_still_leaves_a_note(tmp_path, monkeypatch):
+    def boom(*_args, **_kwargs):
+        raise OSError("permission denied")
+
+    monkeypatch.setattr(room_module, "_run_iterate", boom)
+    with pytest.raises(ConductorError, match="OSError: permission denied"):
+        room_run(FIXTURE, out_root=tmp_path, brief=BRIEF)
+    note = json.loads(next(tmp_path.glob("*/room.json")).read_text(encoding="utf-8"))
+    assert note["ok"] is False
+    assert "permission denied" in note["error"]

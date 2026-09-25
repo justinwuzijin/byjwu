@@ -5,6 +5,12 @@ bundle, a ``.zip`` of either, or a folder of clips. Timelines go through
 ``iterate``. A clip folder goes through the same loop, which writes the
 starter FCPXML and then iterates. The drop is only read.
 
+A drop with music files (in the folder, or named by the timeline's assets)
+goes to an assembler first when one is available (``register_assembler``, or
+``conductor.assemble.assemble``), with ``--style`` (default ``byjustinwu``).
+The FCPXML it returns is iterated. Without an assembler the run falls back to
+the flow above and says so in the summary.
+
 Each run writes a new timestamped folder under ``--out-root`` (default
 ``~/Desktop/jevid-out``). ``room.md`` is the chat text. ``room.json`` is the
 same summary. The shadow FCPXML from the last round is always on disk; the
@@ -17,12 +23,15 @@ changing, skips digests it has already recorded, and appends ``room-run.log``.
 from __future__ import annotations
 
 import hashlib
+import importlib
+import inspect
 import json
 import os
 import re
 import stat
 import time
 import zipfile
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from fractions import Fraction
@@ -44,8 +53,12 @@ SUPPORTED_FCPXML = ("1.8", "1.9", "1.10", "1.11")
 LEDGER_NAME = ".room-run.json"
 LOG_NAME = "room-run.log"
 
+MUSIC_EXTENSIONS = frozenset({".mp3", ".wav", ".aif", ".aiff", ".m4a", ".aac", ".flac", ".caf"})
+DEFAULT_STYLE = "byjustinwu"
+
 _STEM_RE = re.compile(r"[^A-Za-z0-9._-]+")
-_SIDECAR_SUFFIXES = frozenset({".srt", ".vtt", ".txt", ".md"})
+_RESULT_KEYS = ("fcpxml", "out_fcpxml", "timeline", "path")
+_ASSEMBLER: Callable[..., object] | None = None
 
 
 @dataclass
@@ -62,6 +75,11 @@ class Prepared:
     warnings: list[str] = field(default_factory=list)
     media_present: bool = False
     media_note: str | None = None
+    music: list[Path] = field(default_factory=list)
+    flow: str = "iterate"
+    style: str | None = None
+    assembled: Path | None = None
+    timeline_hint: Path | None = None
 
 
 @dataclass
@@ -128,12 +146,14 @@ def room_run(
     durations: str | Path | None = None,
     max_rounds: int = 5,
     force_media: bool = False,
+    style: str | None = None,
     now: datetime | None = None,
 ) -> RoomRun:
     """Detect ``path``, run the iterate loop, and write ``room.md`` plus ``room.json``.
 
     Dry-run unless ``live`` is set. The path that was passed in is not modified.
-    A second call writes a new folder.
+    A second call writes a new folder. When the drop carries music and an
+    assembler is available, the assembled timeline is what gets iterated.
     """
     given = Path(path).expanduser()
     if not given.exists():
@@ -155,6 +175,7 @@ def room_run(
         )
         if prepared.fcpxml is not None:
             _inspect_timeline(prepared)
+        _route_music(prepared, dest, brief=brief, style=style, live=live, taste=taste)
         result = _run_iterate(
             prepared,
             dest,
@@ -177,6 +198,10 @@ def room_run(
         if friendly is exc:
             raise
         raise friendly from exc
+    except Exception as exc:  # noqa: BLE001 - the bot needs a sentence, not a traceback
+        friendly = ConductorError(_unexpected(exc))
+        _write_failure(dest, given, friendly)
+        raise friendly from exc
 
 
 def watch(
@@ -189,6 +214,7 @@ def watch(
     taste: str | Path | None = None,
     durations: str | Path | None = None,
     max_rounds: int = 5,
+    style: str | None = None,
     stable_seconds: float = 2.0,
     poll_seconds: float = 1.0,
     max_scans: int | None = None,
@@ -221,6 +247,7 @@ def watch(
             taste=taste,
             durations=durations,
             max_rounds=max_rounds,
+            style=style,
         )
         if on_event is not None:
             for event in events:
@@ -244,6 +271,7 @@ def scan_once(
     taste: str | Path | None = None,
     durations: str | Path | None = None,
     max_rounds: int = 5,
+    style: str | None = None,
 ) -> list[WatchEvent]:
     """Process inbox items whose size has stayed the same for ``stable_seconds``.
 
@@ -271,7 +299,14 @@ def scan_once(
             continue
         if moment - previous[1] < stable_seconds:
             continue
-        digest = _digest(drop)
+        try:
+            digest = _digest(drop)
+        except (ConductorError, OSError) as exc:
+            state.pending.pop(key, None)
+            message = f"error {drop.path} {exc}"
+            _log(root, message)
+            events.append(WatchEvent(drop.path, "error", str(exc)))
+            continue
         remembered = state.seen.get(digest)
         if remembered is not None:
             if digest not in state.announced:
@@ -291,14 +326,16 @@ def scan_once(
                 durations=durations,
                 max_rounds=max_rounds,
                 force_media=drop.force_media,
+                style=style,
             )
-        except ConductorError as exc:
-            if _digest(drop) == digest:
-                state.seen[digest] = _seen_row(drop.path, ok=False, error=str(exc))
+        except Exception as exc:  # noqa: BLE001 - one bad drop must not stop the watcher
+            text = str(exc) if isinstance(exc, ConductorError) else _unexpected(exc)
+            if _still(drop, digest):
+                state.seen[digest] = _seen_row(drop.path, ok=False, error=text)
                 state.save(root)
-            message = f"error {drop.path} {exc}"
+            message = f"error {drop.path} {text}"
             _log(root, message)
-            events.append(WatchEvent(drop.path, "error", str(exc)))
+            events.append(WatchEvent(drop.path, "error", text))
             continue
         state.seen[digest] = _seen_row(
             drop.path,
@@ -317,7 +354,11 @@ def scan_once(
 
 
 def list_drops(inbox: Path) -> list[Drop]:
-    """Top-level drops. Loose video files in the inbox are one media drop."""
+    """Top-level drops. Loose video files in the inbox are one media drop.
+
+    Loose transcripts, ``durations.json``, and music travel with loose clips.
+    Without loose clips they are not a drop on their own.
+    """
     children = [
         child
         for child in inbox.iterdir()
@@ -328,7 +369,11 @@ def list_drops(inbox: Path) -> list[Drop]:
         child
         for child in children
         if child.is_file()
-        and (child.suffix.lower() in {".srt", ".vtt"} or child.name.lower() == "durations.json")
+        and (
+            child.suffix.lower() in {".srt", ".vtt"}
+            or child.suffix.lower() in MUSIC_EXTENSIONS
+            or child.name.lower() == "durations.json"
+        )
     ]
     drops: list[Drop] = []
     if loose:
@@ -565,6 +610,11 @@ def _media_prepared(
         candidate = source / "durations.json"
         if candidate.is_file():
             durations_path = candidate
+    music = sorted(
+        (item for item in _visible(source) if item.is_file() and item.suffix.lower() in MUSIC_EXTENSIONS),
+        key=lambda item: item.name.lower(),
+    )
+    timelines = [item for item in _visible(source) if item.is_file() and item.suffix.lower() == ".fcpxml"]
     return Prepared(
         kind="media",
         contained=None,
@@ -576,6 +626,9 @@ def _media_prepared(
         local_root=source,
         warnings=warnings,
         media_present=True,
+        music=music,
+        flow="ingest+iterate",
+        timeline_hint=timelines[0] if len(timelines) == 1 else None,
     )
 
 
@@ -609,6 +662,7 @@ def _inspect_timeline(prepared: Prepared) -> None:
     present, note = _external_media(document, root)
     prepared.media_present = present
     prepared.media_note = note
+    prepared.music = _timeline_music(document, root)
 
 
 def _run_iterate(
@@ -630,11 +684,155 @@ def _run_iterate(
         max_rounds=max_rounds,
     )
     try:
+        if prepared.assembled is not None:
+            return iterate(fcpxml=prepared.assembled, **shared)
         if prepared.media is not None:
             return iterate(media=prepared.media, durations_path=prepared.durations, **shared)
         return iterate(fcpxml=prepared.fcpxml, **shared)
     except ConductorError as exc:
         raise _chat(exc) from exc
+
+
+def register_assembler(fn: Callable[..., object] | None) -> None:
+    """Route music drops to ``fn``. ``None`` goes back to discovery.
+
+    Without a registration, ``conductor.assemble.assemble`` is used when that
+    module exists. The callable receives the keywords from ``_assemble_kwargs``
+    that its signature accepts, and returns the FCPXML it wrote: a path, a
+    mapping, or an object with ``fcpxml`` / ``out_fcpxml`` / ``timeline`` /
+    ``path``. room-run then iterates that file like any other timeline.
+    """
+    global _ASSEMBLER
+    _ASSEMBLER = fn
+
+
+def find_assembler() -> Callable[..., object] | None:
+    if _ASSEMBLER is not None:
+        return _ASSEMBLER
+    try:
+        module = importlib.import_module("conductor.assemble")
+    except ModuleNotFoundError as exc:
+        if exc.name == "conductor.assemble":
+            return None
+        raise
+    fn = getattr(module, "assemble", None)
+    return fn if callable(fn) else None
+
+
+def _route_music(
+    prepared: Prepared,
+    dest: Path,
+    *,
+    brief: str | None,
+    style: str | None,
+    live: bool,
+    taste: str | Path | None,
+) -> None:
+    if not prepared.music:
+        return
+    names = ", ".join(path.name for path in prepared.music)
+    assembler = find_assembler()
+    if assembler is None:
+        what = (
+            "the clips were sequenced in filename order and the music was not placed"
+            if prepared.media is not None
+            else "the timeline was iterated as it stands"
+        )
+        prepared.warnings.append(
+            f"Music found ({names}), but no assemble step is installed here, so {what}."
+        )
+        return
+    chosen = (style or DEFAULT_STYLE).strip() or DEFAULT_STYLE
+    out_dir = dest / "assemble"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    kwargs = _assemble_kwargs(
+        prepared,
+        out_dir=out_dir,
+        brief=brief,
+        style=chosen,
+        live=live,
+        taste=taste,
+    )
+    try:
+        returned = assembler(**_accepted(assembler, kwargs))
+    except ConductorError as exc:
+        raise ConductorError(f"The {chosen} assembly did not finish. {exc}") from exc
+    except TypeError as exc:
+        raise ConductorError(
+            f"The assemble step does not take the arguments room-run passes ({exc}). "
+            "Update the assembler or room-run so they agree."
+        ) from exc
+    timeline = _assembled_path(returned)
+    if timeline is None:
+        raise ConductorError(
+            f"The {chosen} assembly finished without an FCPXML, so there is nothing to open in Final Cut."
+        )
+    prepared.assembled = timeline
+    prepared.flow = "assemble+iterate"
+    prepared.style = chosen
+
+
+def _assemble_kwargs(
+    prepared: Prepared,
+    *,
+    out_dir: Path,
+    brief: str | None,
+    style: str,
+    live: bool,
+    taste: str | Path | None,
+) -> dict:
+    return {
+        "media": prepared.media,
+        "fcpxml": prepared.fcpxml or prepared.timeline_hint,
+        "music": list(prepared.music),
+        "style": style,
+        "brief": brief,
+        "out_dir": out_dir,
+        "live": live,
+        "transcript_path": prepared.transcript,
+        "taste_path": taste,
+        "durations_path": prepared.durations,
+    }
+
+
+def _accepted(fn: Callable[..., object], kwargs: dict) -> dict:
+    try:
+        params = inspect.signature(fn).parameters
+    except (TypeError, ValueError):
+        return kwargs
+    if any(param.kind is inspect.Parameter.VAR_KEYWORD for param in params.values()):
+        return kwargs
+    return {key: value for key, value in kwargs.items() if key in params}
+
+
+def _assembled_path(returned: object) -> Path | None:
+    value: object = returned
+    if isinstance(returned, dict):
+        value = next((returned[key] for key in _RESULT_KEYS if returned.get(key)), None)
+    elif not isinstance(returned, (str, os.PathLike)):
+        value = next(
+            (getattr(returned, key) for key in _RESULT_KEYS if getattr(returned, key, None)),
+            None,
+        )
+    if not isinstance(value, (str, os.PathLike)):
+        return None
+    path = Path(value)
+    if path.is_dir():
+        path = _info_fcpxml(path) or path
+    if not path.is_file() or path.suffix.lower() != ".fcpxml":
+        return None
+    return path.resolve()
+
+
+def _timeline_music(document: Document, root: Path) -> list[Path]:
+    found: list[Path] = []
+    for asset in sorted(document.assets.values(), key=lambda item: item.id):
+        if not asset.src:
+            continue
+        path = _src_path(asset.src, root)
+        if path.suffix.lower() in MUSIC_EXTENSIONS and path not in found:
+            found.append(path)
+    return found
 
 
 def _summarize(prepared: Prepared, result: IterateResult, dest: Path) -> RoomRun:
@@ -687,6 +885,10 @@ def _summarize(prepared: Prepared, result: IterateResult, dest: Path) -> RoomRun
         "iterate_json": str(result.out_json) if result.out_json else None,
         "starter": str(result.starter) if result.starter else None,
         "brief": _iterate_brief(result),
+        "flow": prepared.flow,
+        "style": prepared.style,
+        "assembled_fcpxml": str(prepared.assembled) if prepared.assembled else None,
+        "music": [str(path) for path in prepared.music],
         "media_note": prepared.media_note,
         "warnings": [*prepared.warnings, *result.warnings],
     }
@@ -703,6 +905,7 @@ def _markdown(payload: dict) -> str:
         "# jevid",
         "",
         f"Input: {payload['input']['name']} ({kind})",
+        f"Flow: {payload['flow']}" + (f" (style {payload['style']})" if payload.get("style") else ""),
         f"Duration: {duration['before']} → {duration['after']}",
         f"Stop: {payload['stop_reason']}",
         f"Signals: {payload['signals_label']}",
@@ -802,6 +1005,8 @@ def _signals(prepared: Prepared) -> list[str]:
         found.append("transcript")
     if prepared.kind == "media" or prepared.media_present:
         found.append("media")
+    if prepared.music:
+        found.append("music")
     return found
 
 
@@ -1091,11 +1296,12 @@ def _now() -> datetime:
 
 
 def _fingerprint(path: Path) -> tuple:
-    if path.is_file():
-        return (("file", _hash_file(path)),)
+    """Size and mtime of every file. Ingest byte-hashes the clips it reads."""
+    files = [path] if path.is_file() else _files_under(path)
     rows = []
-    for file in _files_under(path):
-        rows.append((file.relative_to(path).as_posix(), _hash_file(file)))
+    for file in files:
+        info = file.stat()
+        rows.append((file.as_posix(), info.st_size, info.st_mtime_ns))
     return tuple(rows)
 
 
@@ -1106,10 +1312,6 @@ def _files_under(path: Path) -> list[Path]:
         if file.is_file() and not _skipped(file.relative_to(path))
     ]
     return sorted(files, key=lambda item: item.as_posix())
-
-
-def _hash_file(path: Path) -> str:
-    return hashlib.blake2b(path.read_bytes(), digest_size=16).hexdigest()
 
 
 def _drop_key(drop: Drop) -> str:
@@ -1141,7 +1343,9 @@ def _digest(drop: Drop) -> str:
         digest.update(rel.encode())
         digest.update(b"\0")
         try:
-            digest.update(file.read_bytes())
+            with file.open("rb") as handle:
+                for chunk in iter(lambda: handle.read(1 << 20), b""):
+                    digest.update(chunk)
         except OSError as exc:
             raise ConductorError(
                 f"Could not read {file}: {exc}. "
@@ -1201,6 +1405,21 @@ def _clock_seconds(value: float) -> str:
 
 def _fraction(value: float) -> Fraction:
     return Fraction(str(value))
+
+
+def _unexpected(exc: Exception) -> str:
+    return (
+        f"jevid stopped on this drop ({type(exc).__name__}: {exc}). "
+        "The original was not written by jevid. Check the drop can be read and the output folder written, "
+        "then drop it again."
+    )
+
+
+def _still(drop: Drop, digest: str) -> bool:
+    try:
+        return _digest(drop) == digest
+    except (ConductorError, OSError):
+        return False
 
 
 def _missing_path(path: Path) -> str:

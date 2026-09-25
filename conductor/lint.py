@@ -347,6 +347,46 @@ def _soft(plan: EditPlan, report: LintReport, bands: dict[str, tuple[float, floa
                 )
             )
     _repeats(spine, report)
+    _harmony(plan, report)
+
+
+def _harmony(plan: EditPlan, report: LintReport) -> None:
+    """Soft AV-harmony: visual-only cuts should sit within 0.1s of a keypoint."""
+    if not plan.keypoints:
+        report.stats["av_harmony"] = None
+        return
+    moments = _visual_cuts(plan)
+    fraction = _near_keypoints(moments, plan.keypoints, tolerance=0.1)
+    report.stats["av_harmony"] = None if fraction is None else round(fraction, 4)
+    if fraction is None:
+        return
+    if fraction + 1e-9 < 0.8:
+        report.soft.append(
+            Finding(
+                "soft",
+                "av_harmony",
+                f"{fraction:.0%} of visual cuts sit within 0.1s of a music keypoint",
+            )
+        )
+
+
+def _near_keypoints(moments: list[float], keypoints: list[float], *, tolerance: float) -> float | None:
+    if not moments or not keypoints:
+        return None
+    hits = sum(1 for moment in moments if any(abs(point - moment) <= tolerance + 1e-9 for point in keypoints))
+    return hits / len(moments)
+
+
+def _visual_cuts(plan: EditPlan) -> list[float]:
+    moments: list[float] = []
+    for clip in plan.cutaways():
+        moments.append(float(clip.timeline_start))
+        moments.append(float(clip.timeline_end))
+    for clip in plan.spine():
+        if clip.has_audio:
+            continue
+        moments.append(float(clip.timeline_end))
+    return moments
 
 
 def _repeats(spine: list[PlanClip], report: LintReport) -> None:

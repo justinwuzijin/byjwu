@@ -175,7 +175,67 @@ def _copy(plan: EditPlan) -> EditPlan:
         ],
         words=[PlanWord(word.text, word.start, word.end, word.sequence) for word in plan.words],
         cuts=list(plan.cuts),
+        keypoints=list(plan.keypoints),
     )
+
+
+def harmony_plan() -> EditPlan:
+    """Visual cuts on a 120 BPM grid. Spine cuts are dialogue and sit off the beat."""
+    beats = [i * 0.5 for i in range(9)]
+    return EditPlan(
+        name="Harmony",
+        frame_duration=FRAME,
+        width=1920,
+        height=1080,
+        duration=Fraction(4),
+        expects_music=True,
+        keypoints=beats,
+        clips=[
+            _clip(
+                SPINE, "talk", 0, 4,
+                source_start=Fraction(0), source_end=Fraction(4),
+                asset_id="a", text="Hold this line.", has_audio=True,
+            ),
+            _clip(
+                CUTAWAY, "insert", 0, 4,
+                source_start=Fraction(0), source_end=Fraction(4),
+                asset_id="b", lane=1,
+            ),
+            _clip(
+                MUSIC, "bed", 0, 4,
+                source_start=Fraction(0), source_end=Fraction(4),
+                asset_id="m", fade_in=FRAME, fade_out=FRAME, has_audio=True,
+            ),
+        ],
+        words=[PlanWord("Hold", Fraction(1, 5), Fraction(1))],
+    )
+
+
+def shift_cutaway_offbeat(plan: EditPlan) -> EditPlan:
+    """Pull the cutaway out off the nearest keypoint, still on a frame."""
+    copied = _copy(plan)
+    insert = next(clip for clip in copied.clips if clip.role == CUTAWAY)
+    insert.timeline_end = Fraction(15, 4)  # 3.75s, 0.25s from 3.5 and from 4.0
+    insert.source_end = Fraction(15, 4)
+    return copied
+
+
+def rank_snapped_over_offbeat() -> int:
+    snapped = harmony_plan()
+    return best_of(
+        [snapped, shift_cutaway_offbeat(snapped)],
+        critic=_harmony_critic(),
+        profile=PROFILE,
+    )
+
+
+def _harmony_critic():
+    def critic(payload: dict) -> dict:
+        fraction = payload["lint"]["stats"].get("av_harmony")
+        score = 5 if fraction == 1 else 2
+        return _verdict(score)
+
+    return critic
 
 
 def rank_original_first() -> int:

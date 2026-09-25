@@ -89,6 +89,7 @@ from cutmcp.jev import MAX_OPTIONS, USD_PER_M_INPUT_TOKENS, choice, noul
 
 from . import jev, opus
 from .errors import ConductorError
+from .rules import VETO_OPTIONS, RuleHit, decision_mode as resolve_decision_mode, evaluate
 from .schema import SchemaError, example, validate
 
 JEV = "jev"
@@ -312,6 +313,7 @@ class Verdict:
     model: str | None = None
     rationale: str = ""
     cached: bool = False
+    rule: dict | None = None
 
 
 @dataclass
@@ -510,6 +512,8 @@ class Router:
         jev_window: int = JEV_WINDOW,
         opus_window: int = OPUS_WINDOW,
         fallback_discount: float = FALLBACK_DISCOUNT,
+        decision_mode: str | None = None,
+        mock_veto: str | None = None,
     ) -> None:
         if jev_window < 1 or opus_window < 1:
             raise ConductorError("router windows must be at least 1")
@@ -519,6 +523,9 @@ class Router:
         self.jev_window = jev_window
         self.opus_window = opus_window
         self.fallback_discount = fallback_discount
+        self.decision_mode = decision_mode if decision_mode is not None else resolve_decision_mode()
+        self.mock_veto = mock_veto
+        self.thresholds: dict[str, float] = {}
         self.ledger = Ledger()
         self._clients: dict[str, Any] = {JEV: jev_client, OPUS: opus_client}
         self._owned: list[Any] = []
@@ -580,8 +587,11 @@ class Router:
         brief: str,
         taste: Mapping[str, Any],
         ledger: Ledger | None = None,
+        thresholds: Mapping[str, float] | None = None,
     ) -> tuple[dict[str, Verdict], list[dict]]:
         """Verdicts keyed by candidate id, plus one receipt per batch."""
+        if thresholds is not None:
+            self.thresholds = dict(thresholds)
         ledger = ledger or self.ledger
         verdicts: dict[str, Verdict] = {}
         receipts: list[dict] = []
@@ -607,7 +617,10 @@ class Router:
         pending: dict[str, list[tuple[Any, DecisionType]]] = {}
         for item, dtype in pairs:
             usage.items += 1
-            key = self._key(JEV, dtype.name, _content(item.to_state()), brief, prefs, "candidate-v1")
+            key = self._key(
+                JEV, dtype.name, _content(item.to_state()), brief, prefs,
+                ["candidate-v2", self.decision_mode],
+            )
             hit = self._cache.get(key)
             if hit is not None:
                 usage.cache_hits += 1
@@ -619,21 +632,48 @@ class Router:
         heads = [(key, group[0]) for key, group in pending.items()]
         for window in _windows(heads, self.jev_window, lambda entry: entry[1][0].to_state()):
             items = [item for _key, (item, _dtype) in window]
+            hits = {
+                item.id: hit
+                for item in items
+                if (hit := _rule_hit(self, item)) is not None
+            }
             state = {"brief": brief, "taste": dict(taste), "candidates": [item.to_state() for item in items]}
+            if hits:
+                state["proposed_cuts"] = {
+                    item_id: {
+                        "action": hit.action,
+                        "evidence": hit.evidence,
+                        "rule": hit.name,
+                        "measurement": hit.measurement,
+                        "threshold": hit.threshold,
+                        "threshold_name": hit.threshold_name,
+                    }
+                    for item_id, hit in hits.items()
+                }
             questions: dict = {}
             for item in items:
-                questions.update(questions_for(item.id))
-            fresh = self._ask_jev(state, questions, usage)
-            if fresh is None:
-                reason = self._down[JEV]
+                if item.id in hits:
+                    questions[f"{item.id}_veto"] = _veto_question(item.id, hits[item.id])
+                else:
+                    questions.update(questions_for(item.id))
+            open_questions = {
+                key: spec for key, spec in questions.items() if not str(key).endswith("_veto")
+            }
+            asked = questions if self.live else open_questions
+            fresh = self._ask_jev(state, asked, usage) if asked else None
+            answers: dict[str, Verdict] = {}
+            if fresh is None and open_questions:
+                reason = self._down.get(JEV) or "Jev unavailable"
                 usage.down_reason = usage.down_reason or reason
-                usage.fallback_items += len(window)
+                missed = [item for item in items if item.id not in hits]
+                usage.fallback_items += len(missed)
                 ledger.warn(
                     f"Jev unavailable ({reason}). Linear calls used the deterministic rules "
                     f"at confidence x{self.fallback_discount}."
                 )
-                answers = {}
                 for _key, (item, dtype) in window:
+                    if item.id in hits:
+                        continue
                     action, confidence, risk = jev.policy(item.to_state(), taste)
                     answers[item.id] = Verdict(
                         action=action,
@@ -650,10 +690,11 @@ class Router:
                     key: {"action": verdict.action, "confidence": verdict.confidence, "risk": verdict.risk}
                     for key, verdict in answers.items()
                 }, error=reason))
-            else:
+            elif fresh is not None:
                 receipts.append(_jev_receipt(fresh, state, questions))
-                answers = {}
                 for key, (item, dtype) in window:
+                    if item.id in hits:
+                        continue
                     action_answer = fresh.answers[f"{item.id}_action"]
                     risk_answer = fresh.answers[f"{item.id}_risk"]
                     raw = str(action_answer.value)
@@ -668,6 +709,23 @@ class Router:
                         model=fresh.model,
                     )
                     self._cache[key] = _cacheable(answers[item.id])
+            for key, (item, dtype) in window:
+                if item.id not in hits:
+                    continue
+                veto_value, veto_confidence = _veto_answer(self, fresh, item.id)
+                answers[item.id] = _rule_verdict(
+                    dtype, hits[item.id], veto=veto_value, model_confidence=veto_confidence,
+                    detail=_rule_detail(self, fresh),
+                )
+                self._cache[key] = _cacheable(answers[item.id])
+            if hits and fresh is None and not open_questions:
+                receipts.append(_receipt(
+                    JEV, "logic", None, state, questions,
+                    {
+                        item_id: {"action": verdict.action, "confidence": verdict.confidence, "rule": verdict.rule}
+                        for item_id, verdict in answers.items()
+                    },
+                ))
             for key, (head, _dtype) in window:
                 verdict = answers[head.id]
                 for index, (item, _dt) in enumerate(pending[key]):
@@ -951,6 +1009,77 @@ class Router:
             ensure_ascii=False,
         )
         return hashlib.blake2b(blob.encode("utf-8"), digest_size=16).hexdigest()
+
+
+def _rule_hit(router: Router, item) -> RuleHit | None:
+    if router.decision_mode != "logic-first" or not router.thresholds:
+        return None
+    hit = evaluate(item, router.thresholds)
+    if hit is None or not hit.applies:
+        return None
+    return hit
+
+
+def _veto_question(item_id: str, hit: RuleHit):
+    return choice(
+        f"Candidate {item_id} already has a measured cut: {hit.action}. {hit.evidence}. "
+        "You may allow that cut or veto it. You do not choose a different action.",
+        VETO_OPTIONS,
+        add_none=False,
+    )
+
+
+def _veto_answer(router: Router, fresh, item_id: str) -> tuple[str, float]:
+    if fresh is not None:
+        answer = fresh.answers.get(f"{item_id}_veto")
+        if answer is not None:
+            return str(answer.value), float(answer.confidence)
+    if router.mock_veto:
+        return router.mock_veto, 0.9
+    return "allow", 0.5
+
+
+def _rule_detail(router: Router, fresh) -> str:
+    if fresh is None and router.live:
+        return f"Jev unavailable: {router._down.get(JEV, '')}. Measured rule applied with no veto."
+    if not router.live:
+        return "logic-first. The mock model is advisory at 0.5 and does not gate the cut."
+    return "logic-first. The model may veto this measured cut. It does not set the score."
+
+
+def _rule_verdict(dtype: DecisionType, hit: RuleHit, *, veto: str, model_confidence: float, detail: str) -> Verdict:
+    vetoed = bool(veto) and veto != "allow"
+    reason = VETO_OPTIONS.get(veto, "") if vetoed else ""
+    if vetoed and not reason:
+        reason = veto
+    rule = hit.to_dict()
+    rule["vetoed"] = vetoed
+    rule["veto_reason"] = reason
+    rule["model_confidence"] = model_confidence
+    if vetoed:
+        return Verdict(
+            action="mark_review",
+            confidence=hit.confidence,
+            risk=0.0,
+            engine="rules",
+            source="veto",
+            decision_type=dtype.name,
+            why=dtype.why,
+            detail=detail,
+            rationale=reason,
+            rule=rule,
+        )
+    return Verdict(
+        action=hit.action,
+        confidence=hit.confidence,
+        risk=0.1,
+        engine="rules",
+        source="logic",
+        decision_type=dtype.name,
+        why=dtype.why,
+        detail=detail,
+        rule=rule,
+    )
 
 
 def questions_for(candidate_id: str) -> dict:

@@ -22,6 +22,7 @@ from .fcpxml import Document, Sequence
 from .metrics import section_pacing
 from .notes import editor_notes
 from .router import format_usage
+from .rules import format_rules
 from .timeutil import clock, seconds, smpte
 
 PROTOCOL = "cut-conductor.room"
@@ -54,6 +55,7 @@ def build_payload(
     learned: list[dict] | None = None,
     decision_usage: dict | None = None,
     routing: dict | None = None,
+    rules: dict | None = None,
 ) -> dict:
     by_id = {item.id: item for item in candidates}
     proposal_by_id = {item.candidate_id: item for item in proposals}
@@ -116,6 +118,7 @@ def build_payload(
         },
         "learned": learned or [],
         "decision_usage": decision_usage or {},
+        "rules": rules or {},
         "routing": routing or {},
         "receipts": receipts,
     }
@@ -134,6 +137,7 @@ def render_markdown(payload: dict) -> str:
         f"- Brief: {payload['brief']}",
         f"- Markers added this run: {payload['markers_added']}",
         f"- Cuts written: {len(payload['cuts'])}",
+        f"- Decision mode: `{(payload.get('rules') or {}).get('mode', 'logic-first')}`",
         f"- Signals: {payload.get('signals', {}).get('summary') or 'not recorded'}",
         "",
     ]
@@ -170,6 +174,9 @@ def render_markdown(payload: dict) -> str:
         lines.append("No candidate was judged `keep`. Regions that were not candidates are untouched.")
     else:
         lines.append(_table(kept))
+    rules = payload.get("rules") or {}
+    if rules:
+        lines.extend(["", "## Decisions", "", *format_rules(rules)])
     taste_lines = _taste_lines(payload)
     if taste_lines:
         lines.extend(["", "## Taste", "", *taste_lines])

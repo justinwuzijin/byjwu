@@ -18,11 +18,12 @@ from .errors import ConductorError
 from .fcpxml import Document, parse_fcpxml, write_document
 from .feedback import bind_pending, diff_fcpxml, ingest_notes
 from .jev import dry_run_forced
-from .markers import apply_markers
+from .markers import apply_markers, mark_applied_cuts
 from .metrics import measure
 from .passes import collect, resolve_names
 from .report import build_payload, dumps, render_html, render_markdown
 from .router import Ledger, Router, routing_table
+from .rules import evaluate, format_rules, nudge_thresholds, resolve_thresholds
 from .signals import gather
 from .taste import Taste, feedback_event, load_taste, write_taste
 from .timeutil import seconds
@@ -146,6 +147,14 @@ def analyze(
     bound, bind_warnings = bind_pending(taste, candidates)
     learn_warnings.extend(bind_warnings)
     learned.extend(bound)
+    before = resolve_thresholds(learned=taste.rule_thresholds)
+    updated, nudge_notes = nudge_thresholds(before, learned)
+    changed = {
+        key: value for key, value in updated.items() if abs(value - float(before[key])) > 1e-9
+    }
+    if changed:
+        taste.rule_thresholds = {**taste.rule_thresholds, **changed}
+    learn_warnings.extend(nudge_notes)
     owned = router is None
     if router is None:
         router = Router(live=bool(live) and not dry_run_forced())
@@ -187,6 +196,7 @@ def analyze(
         if deletions:
             applied_doc = parse_fcpxml(source)
             result = apply_edits(applied_doc, deletions)
+            mark_applied_cuts(applied_doc, result.deletions, proposals, candidates)
             cuts = result.cuts
             apply_warnings = result.warnings
             by_candidate = {item.id: item for item in candidates}
@@ -211,6 +221,7 @@ def analyze(
                             "timeline_end_seconds": seconds(deletion.end),
                             "source": "person" if accept else "auto",
                             "engine": f"{proposal.engine}/{proposal.engine_source}",
+                            "rule": (proposal.rule or {}).get("name"),
                         },
                     )
                 )
@@ -279,6 +290,7 @@ def analyze(
         signals=signal_report.to_state(),
         learned=learned,
         decision_usage=ledger.to_dict(),
+        rules=_rules_report(candidates, proposals, cuts, taste, router),
         routing={
             name: row
             for name, row in routing_table().items()
@@ -294,6 +306,9 @@ def analyze(
         out_taste = paths["taste"]
         out_json.write_text(dumps(payload), encoding="utf-8")
         out_md.write_text(render_markdown(payload), encoding="utf-8")
+        (Path(out_dir) / "DECISIONS.md").write_text(
+            _decisions_markdown(payload), encoding="utf-8"
+        )
         write_taste(taste, out_taste)
         if html:
             out_html = paths["html"]
@@ -313,6 +328,56 @@ def analyze(
         warnings=[*signal_report.warnings, *learn_warnings, *ledger.warnings, *apply_warnings],
         ledger=ledger,
     )
+
+
+def _rules_report(candidates, proposals, cuts, taste, router) -> dict:
+    thresholds = resolve_thresholds(learned=taste.rule_thresholds, overrides=taste.rule_overrides)
+    by_id = {item.candidate_id: item for item in proposals}
+    fired = []
+    vetoed = []
+    for candidate in candidates:
+        hit = evaluate(candidate, thresholds)
+        proposal = by_id.get(candidate.id)
+        rule = (proposal.rule if proposal else None) or (hit.to_dict() if hit else None)
+        if not rule:
+            continue
+        if hit is None and not rule.get("name"):
+            continue
+        row = {
+            "candidate_id": candidate.id,
+            "rule": rule.get("name"),
+            "action": rule.get("action"),
+            "measurement": rule.get("measurement"),
+            "measurement_label": rule.get("measurement_label"),
+            "threshold": rule.get("threshold"),
+            "threshold_name": rule.get("threshold_name"),
+            "confidence": rule.get("confidence"),
+            "evidence": rule.get("evidence"),
+            "applied": bool(proposal and proposal.disposition == "auto" and candidate.id in {cut.get("candidate_id") for cut in cuts}),
+            "vetoed": bool(rule.get("vetoed")),
+        }
+        fired.append(row)
+        if rule.get("vetoed"):
+            vetoed.append({
+                "candidate_id": candidate.id,
+                "rule": rule.get("name"),
+                "reason": rule.get("veto_reason") or (proposal.rationale if proposal else ""),
+            })
+    applied = sum(1 for row in fired if row["applied"])
+    mode = router.decision_mode if router is not None else "logic-first"
+    return {
+        "mode": mode,
+        "thresholds": thresholds,
+        "fired": fired,
+        "applied": applied,
+        "vetoed": vetoed,
+    }
+
+
+def _decisions_markdown(payload: dict) -> str:
+    rules = payload.get("rules") or {}
+    lines = ["# DECISIONS", "", *format_rules(rules), ""]
+    return "\n".join(lines)
 
 
 def output_paths(source: Path, out_dir: Path) -> dict[str, Path]:

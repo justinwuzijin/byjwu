@@ -21,6 +21,7 @@ from .errors import ConductorError
 from .gates import Gates, route
 from .passes import is_creative
 from .router import Ledger, Router, Verdict, questions_for
+from .rules import resolve_thresholds
 from .taste import Taste
 from .timeutil import short_clock
 
@@ -67,6 +68,7 @@ class Proposal:
     engine_model: str | None = None
     rationale: str = ""
     cached: bool = False
+    rule: dict | None = None
 
     def attribution(self) -> dict:
         return {
@@ -78,6 +80,7 @@ class Proposal:
             "engine_model": self.engine_model,
             "rationale": self.rationale,
             "cached": self.cached,
+            "rule": self.rule,
         }
 
 
@@ -101,8 +104,12 @@ def judge(
     if router is None:
         router = Router(live=live)
     try:
+        thresholds = resolve_thresholds(
+            learned=getattr(taste, "rule_thresholds", None),
+            overrides=getattr(taste, "rule_overrides", None),
+        )
         verdicts, receipts = router.judge_candidates(
-            candidates, brief=brief, taste=taste.to_state(), ledger=ledger
+            candidates, brief=brief, taste=taste.to_state(), ledger=ledger, thresholds=thresholds,
         )
     finally:
         if owned:
@@ -220,6 +227,12 @@ def _proposal(candidate: Candidate, verdict: Verdict, gates: Gates, taste: Taste
         )
         if disposition == "auto" and verdict.source == "rules":
             action, disposition = "mark_review", "review"
+        rule = verdict.rule or {}
+        if rule.get("applies") and verdict.source == "logic" and not rule.get("vetoed"):
+            if not _taste_blocks(taste_reason):
+                action, disposition = raw, "auto"
+        if rule.get("vetoed") or verdict.source == "veto":
+            action, disposition = "mark_review", "review"
     human = disposition in {"review", "escalate"}
     name = None
     note = None
@@ -262,6 +275,7 @@ def _proposal(candidate: Candidate, verdict: Verdict, gates: Gates, taste: Taste
         engine_model=verdict.model,
         rationale=verdict.rationale,
         cached=verdict.cached,
+        rule=verdict.rule,
     )
 
 
@@ -304,9 +318,28 @@ def _note(
         parts.append(f"{verdict.engine}_says={_trim(verdict.rationale, 160)}")
     if verdict.detail:
         parts.append(f"engine_note={_trim(verdict.detail, 160)}")
+    rule = verdict.rule or {}
+    if rule.get("name"):
+        parts.append(f"rule={rule['name']}")
+        parts.append(f"measurement={rule.get('measurement_label')} {rule.get('measurement')}")
+        parts.append(f"threshold={rule.get('threshold_name')} {rule.get('threshold')}")
+    if rule.get("veto_reason"):
+        parts.append(f"veto={_trim(rule['veto_reason'], 160)}")
     if disposition in {"review", "escalate"}:
         parts.append("needs_human=yes")
     return " | ".join(parts)
+
+
+def _taste_blocks(reason: str | None) -> bool:
+    """An editor rejection still closes auto. A model score does not."""
+    if not reason:
+        return False
+    text = reason.lower()
+    return (
+        "rejected" in text
+        or "auto-apply closed" in text
+        or "auto-apply threshold raised" in text
+    )
 
 
 def _trim(text: str, limit: int) -> str:

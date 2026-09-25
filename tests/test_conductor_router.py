@@ -238,10 +238,16 @@ def test_dry_run_attributes_every_row_and_counts_calls(env, tmp_path):
     env.setenv("OPENROUTER_API_KEY", JEV_KEY)
     report = analyze(FIXTURE, transcript_path=SRT, brief=BRIEF, out_dir=tmp_path)
     rows = report.changes + report.payload["kept"]
-    assert rows and all(row["engine"] in {"jev", "opus"} for row in rows)
-    assert all(row["engine_source"] == "mock" and row["engine_why"] for row in rows)
+    assert rows and all(row["engine"] in {"jev", "opus", "rules"} for row in rows)
+    ruled = [row for row in rows if row["engine"] == "rules"]
+    assert ruled and all(row["engine_source"] == "logic" and row["engine_why"] for row in ruled)
+    assert all(
+        row["engine_source"] == "mock" and row["engine_why"]
+        for row in rows
+        if row["engine"] != "rules"
+    )
     by_kind = {row["kind"]: row for row in rows}
-    assert by_kind["silence_gap"]["engine"] == "jev"
+    assert by_kind["silence_gap"]["engine"] == "rules"
     assert by_kind["colour_unseen"]["engine"] == "opus"
     assert by_kind["colour_unseen"]["rationale"].startswith("dry-run mock")
     usage = report.payload["decision_usage"]["engines"]
@@ -250,7 +256,8 @@ def test_dry_run_attributes_every_row_and_counts_calls(env, tmp_path):
     assert usage["jev"]["status"] == "mock" and usage["opus"]["status"] == "mock"
     assert report.payload["routing"]["silence_gap"]["engine"] == "jev"
     shadow = report.out_fcpxml.read_text()
-    assert "engine=jev/mock | decision=silence_gap" in shadow
+    assert "engine=rules/logic | decision=silence_gap" in shadow
+    assert "rule=bare_uncovered_gap" in shadow
     assert "engine=opus/mock | decision=colour_unseen" in shadow
     markdown = report.out_markdown.read_text()
     assert "## Decision engines" in markdown and "| jev | mock | 1 |" in markdown
@@ -280,7 +287,7 @@ def test_live_run_uses_both_engines_and_sums_tokens(env, tmp_path):
     assert colour["confidence"] == 0.72 and colour["disposition"] == "review"
     assert "warm" in colour["rationale"]
     gap = next(row for row in report.changes if row["kind"] == "silence_gap")
-    assert (gap["engine"], gap["engine_source"], gap["disposition"]) == ("jev", "live", "auto")
+    assert (gap["engine"], gap["engine_source"], gap["disposition"]) == ("rules", "logic", "auto")
     usage = report.payload["decision_usage"]
     assert usage["engines"]["jev"]["input_tokens"] == 1000
     assert usage["engines"]["jev"]["provider_cost_usd"] == pytest.approx(0.000042)
@@ -294,6 +301,7 @@ def test_live_run_uses_both_engines_and_sums_tokens(env, tmp_path):
 
 
 def test_jev_down_falls_back_to_rules_and_never_auto(env, tmp_path):
+    env.setenv("CONDUCTOR_DECISION_MODE", "model-gated")
     env.setenv("OPENROUTER_API_KEY", JEV_KEY)
     jev_host = Jev(status=503, body=f"bad gateway for Bearer {JEV_KEY}")
     with Router(live=True, jev_client=jev_host.client(), jev_window=2) as router:
@@ -322,6 +330,7 @@ def test_jev_down_falls_back_to_rules_and_never_auto(env, tmp_path):
 
 
 def test_rules_are_never_auto_even_with_a_loose_gate(env, tmp_path):
+    env.setenv("CONDUCTOR_DECISION_MODE", "model-gated")
     env.setenv("ANTHROPIC_API_KEY", OPUS_KEY)
     taste = tmp_path / "taste.json"
     taste.write_text(json.dumps({"version": 1, "gates": {"auto_confidence": 0.6, "review_confidence": 0.55}}))
@@ -350,7 +359,7 @@ def test_opus_missing_key_leaves_creative_calls_for_review(env, tmp_path):
     assert "ANTHROPIC_API_KEY" in usage["down_reason"]
     assert "engine=opus/unavailable" in report.out_fcpxml.read_text()
     gap = next(row for row in report.changes if row["kind"] == "silence_gap")
-    assert gap["engine_source"] == "live"
+    assert gap["engine_source"] == "logic"
 
 
 @pytest.mark.parametrize(

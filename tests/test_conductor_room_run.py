@@ -173,8 +173,8 @@ def test_unsupported_fcpxml_version(tmp_path):
 def test_a_real_fcpxml_1_14_export_runs_and_keeps_its_broll(tmp_path):
     drop = tmp_path / "drop"
     drop.mkdir()
-    xml = drop / "swiss-italy.fcpxml"
-    shutil.copy(Path("fixtures/swiss-italy.fcpxml"), xml)
+    xml = drop / "synthetic-export.fcpxml"
+    shutil.copy(Path("fixtures/real_export_shape.fcpxml"), xml)
     result = room_run(xml, out_root=tmp_path / "out", brief="A travel vlog.")
     payload = _assert_summary(result, kind="fcpxml")
     assert "transcript" not in payload["signals"]
@@ -184,7 +184,7 @@ def test_a_real_fcpxml_1_14_export_runs_and_keeps_its_broll(tmp_path):
     opened = Path(payload["open_in_final_cut"])
     assert marker_order_violations(ET.parse(opened).getroot()) == []
     gap = next(clip for clip in parse_fcpxml(opened).sequences[0].spine if clip.kind == "gap")
-    assert sum(1 for clip in gap.connected_clips if clip.lane is not None) == 8
+    assert sum(1 for clip in gap.connected_clips if clip.lane is not None) == 4
 
 
 def test_local_media_missing(tmp_path):

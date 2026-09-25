@@ -69,6 +69,19 @@ matches them with caption text. Ideas only; no code was copied.
 - **Descript** — sample fewer frames on a static shot and more when the
   frame is full of text. The mock backend does not decode frames.
 
+## Transcript segment index
+
+`conductor/segments.py` caches a transcript segment index and asks Jev once
+to pick from it. Ideas only; no code was copied.
+
+- **Clip Fast** (Burhan Usman, 2026) — pre-split a long transcript into
+  segments under a length cap, then one Jev call picks the matches.
+- **TextTiling** (Hearst, 1997) — topic boundaries where lexical cohesion
+  between neighbouring windows drops. The scorer here is written from that
+  description.
+- **ClipsAI** — the same windowed cohesion idea applied to sentences. The
+  repository is MIT; this module does not copy it.
+
 ## Diffusion Studio audit
 
 Searched the tree for Diffusion Studio names (`diffusion`, `DiffusionStudio`,

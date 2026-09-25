@@ -146,6 +146,7 @@ def assemble(
     material: Material | None = None,
     assets_dir: str | Path | None = None,
     signals: SignalProvider | None = None,
+    signal_cache: str | Path | None = None,
 ) -> AssemblyResult:
     brief = (brief or "").strip() or DEFAULT_BRIEF
     profile = style if isinstance(style, StyleProfile) else load_style(style)
@@ -194,6 +195,10 @@ def assemble(
     decisions, receipts = select(
         units, hints, brief=brief, profile=profile, taste=taste, router=router, prior=prior
     )
+    from ..segments import finish_timeline, index_footage, keyword_match_text, settings_from_profile
+
+    indexed = index_footage(material.footage, profile, cache_dir=signal_cache)
+    segment_settings = settings_from_profile(profile)
     layout = Layout(
         material,
         profile,
@@ -204,6 +209,7 @@ def assemble(
         name=title,
         router=router,
         brief=brief,
+        segment_keywords=keyword_match_text(indexed.segments) if segment_settings.broll_keywords else "",
     )
     if material.songs and material.songs[0].beats and profile.get("music.start_on_downbeat"):
         choice = choose_music_offset(material.songs[0].beats, [], router=router, brief=brief)
@@ -211,6 +217,18 @@ def assemble(
             layout.music_source_start = Fraction(str(choice.source_start))
     timeline = layout.run()
     warnings.extend(layout.warnings)
+    segment_report = finish_timeline(
+        timeline,
+        indexed,
+        router,
+        brief=brief,
+        music_segments=layout.segments,
+        footage=material.footage,
+    )
+    if segment_report.get("hook"):
+        warnings.append("cold open: a short line was placed before the intro")
+    if segment_report.get("chapters"):
+        warnings.append(f"chapter markers: {segment_report['chapters']}")
     if not timeline.spine:
         raise ConductorError("assembly placed nothing; every range was dropped")
     assets = Path(assets_dir) if assets_dir else destination / "assets"

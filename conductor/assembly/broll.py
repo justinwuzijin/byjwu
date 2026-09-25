@@ -321,10 +321,12 @@ def rank_clips(
     density: Density,
     used: Sequence[tuple[str, Fraction, Fraction]],
     captioner: MockCaptioner | LiveCaptioner | None = None,
+    extra_match: str = "",
 ) -> list[ScoredClip]:
     """Cosine rank. Near-duplicate source overlaps collapse to one range."""
     captioner = captioner or MockCaptioner()
-    query = embed(f"{slot.window} {slot.keyword}")
+    extra = f" {extra_match}" if extra_match else ""
+    query = embed(f"{slot.window} {slot.keyword}{extra}")
     scored: list[ScoredClip] = []
     for clip in clips:
         if clip.duration <= 0:
@@ -535,6 +537,7 @@ def plan_cutaways(
     brief: str = "",
     mock_value: str | None = None,
     captioner: MockCaptioner | LiveCaptioner | None = None,
+    extra_match: str = "",
 ) -> tuple[list[Placement], dict[str, Decision], list[dict], bool]:
     """Full slot-and-match pass. The bool is False when nothing scored above zero."""
     density = density or Density()
@@ -546,7 +549,9 @@ def plan_cutaways(
     ranked: list[tuple[Slot, list[ScoredClip]]] = []
     any_score = False
     for slot in slots:
-        options = rank_clips(slot, clips, density=density, used=used, captioner=captioner)
+        options = rank_clips(
+            slot, clips, density=density, used=used, captioner=captioner, extra_match=extra_match
+        )
         if options:
             any_score = True
             ranked.append((slot, options))
@@ -629,6 +634,7 @@ def cover_speech(
     router: Router | None,
     brief: str,
     media_for: Callable[[Unit], Media],
+    extra_match: str = "",
 ) -> CoverResult:
     """Place keyword cutaways over ``hosts``. ``applied`` is False to fall back."""
     by_id = {unit.id: unit for unit in units}
@@ -644,6 +650,7 @@ def cover_speech(
         beat_mode=beat_mode,
         router=router,
         brief=brief,
+        extra_match=extra_match,
     )
     if not applied:
         return CoverResult(applied=False)

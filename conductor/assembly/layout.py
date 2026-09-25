@@ -112,6 +112,7 @@ class Layout:
         name: str,
         router=None,
         brief: str = "",
+        segment_keywords: str = "",
     ):
         self.material = material
         self.profile = profile
@@ -132,6 +133,7 @@ class Layout:
         self.warnings: list[str] = []
         self.router = router
         self.brief = brief
+        self.segment_keywords = segment_keywords
         self.receipts: list[dict] = []
         self.seed = int(profile.get("background.art.seed"))
         self.min_shot = self._f(profile.get("cuts.min_shot_seconds"))
@@ -390,6 +392,7 @@ class Layout:
             router=self.router,
             brief=self.brief,
             media_for=self._clip_media,
+            extra_match=self.segment_keywords,
         )
         if not result.applied:
             return None

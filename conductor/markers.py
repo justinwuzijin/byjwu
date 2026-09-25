@@ -201,6 +201,28 @@ def _marker_start(element: ET.Element) -> Fraction:
     return parse_time(element.get("start"), Fraction(0))
 
 
+def add_marker(
+    element: ET.Element,
+    *,
+    start: Fraction,
+    duration: Fraction,
+    value: str,
+    note: str,
+    completed: str | None = "0",
+) -> None:
+    """Insert one review marker before audio-channel sources and filters."""
+    if _already_present(element, value):
+        return
+    _append_marker(
+        element,
+        start=start,
+        duration=duration,
+        value=value,
+        note=note,
+        completed=completed,
+    )
+
+
 def _append_marker(
     element: ET.Element,
     *,

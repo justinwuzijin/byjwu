@@ -942,6 +942,7 @@ def _summarize(
         "media_note": prepared.media_note,
         "decision_usage": _usage(result, router),
         "rules": _rules_from_round(last),
+        "lint": last.get("lint"),
         "warnings": list(
             dict.fromkeys(
                 [*prepared.warnings, *result.warnings, *(router.ledger.warnings if router else [])]
@@ -998,6 +999,7 @@ def _markdown(payload: dict) -> str:
         for cut in payload["cuts"]:
             clip = f" — {cut['clip_name']}" if cut.get("clip_name") else ""
             lines.append(f"- {cut['timecode']} {cut['action']} ({cut['pass']}){clip}")
+    lines.extend(_room_lint(payload))
     lines.extend(["", "## Flagged for the editor", ""])
     if not payload["flagged"]:
         lines.append("None.")
@@ -1029,6 +1031,34 @@ def _usage(result: IterateResult, router: Router | None) -> dict:
     if result.ledger is not None:
         total.merge(result.ledger)
     return total.to_dict()
+
+
+def _room_lint(payload: dict) -> list[str]:
+    lint = payload.get("lint")
+    if not lint:
+        return []
+    lines = ["", "## Lint", ""]
+    if lint.get("blocked"):
+        lines.append(f"Export blocked. {lint.get('blocked_reason') or ''}".rstrip())
+    else:
+        lines.append("No hard lint blocked the export.")
+    body = lint.get("lint") or {}
+    hard = body.get("hard") or []
+    soft = body.get("soft") or []
+    if hard:
+        lines.append("Hard:")
+        for finding in hard:
+            lines.append(f"- {finding['code']}: {finding['message']}")
+    if soft:
+        lines.append("Warnings:")
+        for finding in soft:
+            lines.append(f"- {finding['code']}: {finding['message']}")
+    critic = lint.get("critic") or []
+    if not critic or critic[0].get("skipped"):
+        lines.append("Critic skipped (no taste model available).")
+    else:
+        lines.append(f"Critic: {critic[-1].get('action')}.")
+    return lines
 
 
 def _flag_line(item: dict) -> str:

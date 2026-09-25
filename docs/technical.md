@@ -81,7 +81,7 @@ A rule cut keeps covered b-roll, because apply still refuses to drop a connected
 | Engine | Decision types | When the engine is not there |
 |---|---|---|
 | Jev | `silence_gap`, `short_clip`, `filler_pause`, `long_static`, `colour_role`, `colour_aspect`, `take_keep`, `take_compare`, `cut_gate`, `pacing_violation`, `subtitle_break`, `audio_check` | When Jev is down and no measured rule applies, the deterministic policy answers at 0.85× confidence (`engine_source` `rules`). Never another model. That fallback is never `auto`. A measured rule in `logic-first` still cuts. |
-| Opus | `colour_unseen`, `story_structure`, `key_moments`, `music`, `typography`, `visual_treatment`, `montage`, `broll_selection` | The call becomes a review marker with no action (`engine_source` `unavailable`). Nothing is auto-applied. |
+| Opus | `colour_unseen`, `story_structure`, `key_moments`, `music`, `typography`, `visual_treatment`, `montage`, `broll_selection`, `timeline_critic` | The call becomes a review marker with no action (`engine_source` `unavailable`). Nothing is auto-applied. The timeline critic is skipped entirely when the taste model is down or the run is a dry-run. |
 
 The engine decides. The gate still decides who may act: dialogue filler is a Jev call, and it stays in review because the pass is creative. Threshold comparisons inside the gate are arithmetic, so they stay code.
 
@@ -92,6 +92,8 @@ Calls are batched: one Jev request per 24 candidates (48 questions), one Opus re
 The assembly engine and future passes call the same router: `Router.decide([Ask(...)])`. See the docstring in `conductor/router.py`. A new decision type is a `register_decision(name, engine=..., question=..., why=...)`.
 
 Subtitle line breaks (`subtitle_break`), how long a cue stays up (`subtitle_timing`), and whether a word an edit cut in half is shown (`subtitle_partial`) are Jev calls. Which section titles appear (`title_placement`) and which distortion each uses (`title_treatment`) are Opus calls. With no Opus answer the title is still placed, on the profile's default treatment, and the clip gets a review marker.
+
+Before an applied cut or an assembled starter is written, the in-memory plan is linted (`conductor/lint.py`). Hard findings that this edit introduced block the file. Findings already on the input are reported and do not block a cut that did not create them. Soft findings compare pacing with a style profile's P10–P90 bands; a missing band is skipped. The critic (`timeline_critic`) reads a compact JSON summary, scores pacing, clip selection, visual-script fit, and story arc from 1 to 5, and may only approve, flag a span, or veto a cut. It cannot add clips. At most two rounds. Dry-run and a missing taste model skip it. `room.md` includes the lint report. Sources are credited in `docs/CREDITS.md`.
 
 ## The bot roster
 

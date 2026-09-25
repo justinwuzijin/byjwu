@@ -27,7 +27,9 @@ from pathlib import Path
 from urllib.parse import quote
 
 from .errors import ConductorError
-from .fcpxml import write_document
+from .fcpxml import parse_xml, write_document
+from .lint import lint_plan
+from .plan import plan_from_document
 from .report import dumps
 from .run import Report, analyze
 from .timeutil import format_time, parse_time, seconds
@@ -332,6 +334,7 @@ def ingest(
     _refuse_media_overwrite(found, starter)
     before = {clip.path: clip.blake2b for clip in found.clips}
     tree = render_starter(found.clips, name=sequence_name)
+    gate_tree(tree)
     write_document(tree, starter)
     text = brief.strip() if brief and brief.strip() else DEFAULT_BRIEF
     report = analyze(
@@ -610,6 +613,15 @@ def _assert_media_unchanged(before: dict[Path, str]) -> None:
     for path, digest in before.items():
         if not path.is_file() or file_hash(path) != digest:
             raise ConductorError(f"refusing to finish: source media changed: {path}")
+
+
+def gate_tree(tree: ET.ElementTree, *, expects_music: bool = False) -> None:
+    """Lint a timeline still in memory. Raises before any FCPXML file is written."""
+    document = parse_xml(ET.tostring(tree.getroot(), encoding="unicode"))
+    report = lint_plan(plan_from_document(document, expects_music=expects_music), check_media=True)
+    if report.blocked:
+        detail = "; ".join(item.message for item in report.hard[:5])
+        raise ConductorError(f"refusing to write FCPXML: {detail}")
 
 
 def _refuse_media_overwrite(found: Inventory, starter: Path) -> None:

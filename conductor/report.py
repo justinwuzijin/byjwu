@@ -53,6 +53,7 @@ def build_payload(
     applied: bool,
     signals: dict | None = None,
     learned: list[dict] | None = None,
+    lint: dict | None = None,
     decision_usage: dict | None = None,
     routing: dict | None = None,
     rules: dict | None = None,
@@ -117,6 +118,7 @@ def build_payload(
             "unreachable": [],
         },
         "learned": learned or [],
+        "lint": lint,
         "decision_usage": decision_usage or {},
         "rules": rules or {},
         "routing": routing or {},
@@ -180,6 +182,7 @@ def render_markdown(payload: dict) -> str:
     taste_lines = _taste_lines(payload)
     if taste_lines:
         lines.extend(["", "## Taste", "", *taste_lines])
+    lines.extend(["", *_lint_section(payload)])
     lines.extend(["", *_usage_section(payload)])
     lines.extend(
         [
@@ -445,6 +448,32 @@ def _table(rows: list[dict]) -> str:
             + " |"
         )
     return "\n".join([header, rule, *body])
+
+
+def _lint_section(payload: dict) -> list[str]:
+    lint = payload.get("lint")
+    if not lint:
+        return []
+    lines = ["## Lint", ""]
+    if lint.get("blocked"):
+        lines.append(f"Export blocked. {lint.get('blocked_reason') or ''}".rstrip())
+    else:
+        lines.append("Export allowed.")
+    hard = (lint.get("lint") or {}).get("hard") or []
+    soft = (lint.get("lint") or {}).get("soft") or []
+    if not hard and not soft:
+        lines.append("No findings.")
+    for finding in hard:
+        lines.append(f"- hard {finding['code']}: {finding['message']}")
+    for finding in soft:
+        lines.append(f"- warning {finding['code']}: {finding['message']}")
+    critic = lint.get("critic") or []
+    if critic and critic[0].get("skipped"):
+        lines.append("Critic skipped (no taste model available).")
+    elif critic:
+        lines.append(f"Critic: {critic[-1].get('action')}.")
+    lines.append("")
+    return lines
 
 
 def _taste_lines(payload: dict) -> list[str]:

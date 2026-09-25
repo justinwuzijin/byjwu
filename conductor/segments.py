@@ -305,6 +305,9 @@ def place_hook(timeline, hook: Segment, media) -> None:
     duration = _frame_span(hook.end - hook.start, frame)
     if duration <= 0:
         return
+    src = _frame_span(hook.start, frame)
+    if _source_already_used(timeline, media, src, src + duration):
+        return
     _shift(timeline, duration)
     for segment in getattr(timeline, "music_segments", ()):
         segment.start += duration
@@ -317,13 +320,27 @@ def place_hook(timeline, hook: Segment, media) -> None:
         section="intro",
         name=media.name,
         media=media,
-        start=_frame_span(hook.start, frame),
+        start=src,
         role="dialogue",
         tags={"hook": True, "segment": hook.id, "speech": True, "reason": "cold open before the intro"},
     )
     timeline.spine.insert(0, item)
     if timeline.sections:
         timeline.sections[0].start = Fraction(0)
+
+
+def _source_already_used(timeline, media, start, end) -> bool:
+    """True when this picture range is already on the timeline for the same media."""
+    key = getattr(media, "key", None)
+    for item in [*getattr(timeline, "spine", ()), *getattr(timeline, "connected", ())]:
+        other = getattr(item, "media", None)
+        if other is None or getattr(other, "key", None) != key:
+            continue
+        other_start = item.start
+        other_end = other_start + item.duration
+        if start < other_end and other_start < end:
+            return True
+    return False
 
 
 def mark_chapters(timeline, segments: list[Segment], settings: SegmentSettings) -> int:

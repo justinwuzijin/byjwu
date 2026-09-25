@@ -23,7 +23,7 @@ The generator writes ten clips and two click tracks: 48 seconds at 120 BPM, then
 
 ## Scores
 
-Overall **95.9** out of 100 on the sidecar run. Lint passed. The critic approved. The pytest requires overall at least 88 and every dimension at least 80.
+Overall **95.8** out of 100 on the sidecar run. Lint passed. The critic approved. The pytest requires overall at least 88 and every dimension at least 80.
 
 | Dimension | Score |
 |---|---|
@@ -32,7 +32,7 @@ Overall **95.9** out of 100 on the sidecar run. Lint passed. The critic approved
 | Hygiene (retakes and filler) | 100 |
 | Beat | 100 |
 | B-roll | 80 |
-| Ducking | 83.3 |
+| Ducking | 81.8 |
 | Type and chapters | 100 |
 | Colour notes | 100 |
 | Structure | 100 |
@@ -53,22 +53,26 @@ Pacing compares each section’s average shot length with the profile, inside th
 
 ## Speech, no sidecars
 
-With `espeak-ng` and `faster-whisper` tiny (MIT, already on disk, `local_files_only`), the same shoot was generated with no `.srt` and no word-timed JSON. Assembly calls the local whisper path in `conductor/signals.py`. This run:
+With `espeak-ng` and `faster-whisper` `base.en`, the same shoot was generated with no `.srt` and no word-timed JSON. Assembly calls the local whisper path in `conductor/signals.py`. This run:
 
 | Dimension | Score |
 |---|---|
-| Overall | 85.7 |
-| Pacing | 40.3 |
+| Overall | 96.6 |
+| Pacing | 100 |
 | Hook | 100 |
 | Hygiene | 100 |
 | Beat | 100 |
 | B-roll | 80 |
-| Ducking | 88.2 |
+| Ducking | 90.0 |
 | Type and chapters | 100 |
 | Colour notes | 100 |
 | Structure | 100 |
 
-Lint failed: the head of `04_talk_breath` is used twice. The critic blocked on that. Tiny whisper mis-hears espeak and splits holds, which is why pacing falls. If neither faster-whisper nor whisper.cpp is installed, or no model is on disk, assembly says so and falls back to silence ranges. That path does not call a network API.
+Lint passed. The critic approved. `tests/test_eval_e2e.py::test_no_sidecar_room_run_matches_the_style` is the same path. It is marked slow and skips when `espeak-ng` or `faster-whisper` is missing.
+
+`base.en` is the default. It is the Systran CTranslate2 conversion of the OpenAI Whisper English weights (MIT), about 150 MB. On a laptop CPU, int8 is a few times faster than realtime, which is enough for a full shoot. `tiny` mis-hears espeak and splits holds. `small.en` is more accurate, but it is several times slower and about 500 MB, which is the wrong trade for a CPU pass over a whole folder. If `base.en` is already in the Hugging Face cache it is used even when `tiny` is cached too. If nothing is cached, it is downloaded once and a log line records the cache directory. `CONDUCTOR_WHISPER_MODEL` set to a missing name does not trigger that download.
+
+If `faster-whisper` is not installed, `room-run` says to install it with `pip install 'byjwu[whisper]'` (the `whisper` extra in `pyproject.toml`). Silence ranges stay the network-free fallback.
 
 ## Drop folder
 
@@ -94,4 +98,4 @@ B-roll scores 80. The profile barely covers talk, so the montage is the B-roll, 
 
 The timeline is a few minutes because the shoot is ten clips. The profile’s length target is the long diary runtime. The score does not punish that gap. A real drop would.
 
-The 95.9 number is the sidecar run, where word times are exact. Ducking is 83.3 because the score now reads the music level under dialogue, and a few spans are not all the way down at the profile's silent bed. The no-sidecar run above is what a camera file gets: local whisper, then the same assembler. Pacing and the reused head of one take are the gap between those two. A silence cut that used to drop a music bed now keeps the part of the bed that still sits on the remaining picture.
+The 95.8 number is the sidecar run, where word times come from the SRT. Ducking is 81.8 because the score reads the music level under dialogue, and a few spans are not all the way down at the profile's silent bed. The 96.6 number is the no-sidecar run: `base.en` word times, then the same assembler. A take's picture range is reserved once, so the head of a clip is not laid twice. Holds group on pause length, the segment index, and staying on the same take, so a misheard word does not open a new shot. A silence sliver beside a music bed is left in the shot, so a montage cut stays on the beat.

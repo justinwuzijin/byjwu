@@ -5,10 +5,12 @@ How a Grok bot room drives Cut Conductor. v1 is the library and the CLI. No bot 
 The shared object is one timeline plus one brief. The timeline is a Final Cut export, or a starter sequence built from a selects folder. The shared artifact is the JSON report (`protocol` `cut-conductor.room`, `protocol_version` 1).
 
 ```text
-~/Desktop/jevid-in  (export, or a selects folder)
-    → Transcript supplies SRT/VTT (optional)
+~/Desktop/jevid-in  (export, bundle, zip, or a selects folder)
+    → room-run detects which
+    → Transcript supplies SRT/VTT when one is sitting next to the timeline
     → Conductor iterate: analyze, then auto-apply mechanical cuts only
-    → ~/Desktop/jevid-out/vN
+    → ~/Desktop/jevid-out/<name>-<timestamp>/vN
+    → room.md and room.json for the chat
     → stop on metrics, no further mechanical cut, or the round cap
     → a person only for escalate, or when the cap hits
     → accept/reject events land in taste.json
@@ -21,22 +23,20 @@ The person does not run the CLI. The bots do.
 
 | folder | who writes it | what it holds |
 |---|---|---|
-| `~/Desktop/jevid-in` | the person | a selects folder, or one FCPXML export |
-| `~/Desktop/jevid-out` | the Conductor bot | `starter.fcpxml` when the input was a folder, `v1/` … `vN/`, and `iterate.json` |
+| `~/Desktop/jevid-in` | the person | a selects folder, one FCPXML export, a `.fcpxmld` bundle, or a zip of either |
+| `~/Desktop/jevid-out/<name>-<timestamp>/` | the Conductor bot | `room.md`, `room.json`, `starter.fcpxml` when the input was a folder, `v1/` … `vN/`, and `iterate.json` |
 
-Nothing in this repo watches those folders or uploads media. The bot on that machine is what reads the path and writes the next file. Final Cut is still opened by a person, and only to import the FCPXML the room points at.
+The bot runs one command. It detects the drop, calls `iterate`, and does not modify the input. A second run writes a new timestamped folder.
 
 ```bash
-python -m conductor iterate \
-  --media ~/Desktop/jevid-in \
+python -m conductor room-run ~/Desktop/jevid-in/cut.fcpxml \
   --brief "A tight interview. Keep the guest's story, lose dead air." \
-  --transcript ~/Desktop/jevid-in/interview.srt \
-  --taste taste.json \
-  --out-dir ~/Desktop/jevid-out \
-  --max-rounds 5
+  --out-root ~/Desktop/jevid-out
 ```
 
-An export uses `--fcpxml` instead of `--media`. Exactly one of the two.
+A folder of clips, a `.fcpxmld` bundle, or a `.zip` uses the same command. A drop with music goes to the style assembler first when one is installed (`flow` `assemble+iterate`); otherwise it takes the usual path with a warning. The hook contract is in [room-run.md](room-run.md). Dry-run is the default. `--live` calls Jev. `room.md` is what the bot pastes into chat. `room.json` is `protocol` `cut-conductor.room-run`, `protocol_version` 1. It points at `iterate.json` and the per-round `*.conductor.json` files. It does not replace them.
+
+`room-run --watch ~/Desktop/jevid-in` is the optional inbox process (debounce, skip already processed, log). Operators set that up from [room-run.md](room-run.md). The editor does not run it. Final Cut is still opened by a person, and only to import the FCPXML named in the summary.
 
 ## Selects folder
 
@@ -93,7 +93,7 @@ Silence is the sum of `silence_gap` candidates: bare primary gaps, the uncovered
 
 The room JSON may include `notes` (the same paragraphs as the markdown editor's notes) and `sequences[].pacing` (section averages). Bots that ignore those fields are unchanged.
 
-`iterate.json` at the output root is `protocol` `cut-conductor.iterate`, `protocol_version` 1. Bots post `stop_reason`, `needs_human`, `human_reasons`, `applied`, and `rounds`. Each round still has its own `*.conductor.json` (`cut-conductor.room`). Do not invent a third schema.
+`iterate.json` at the output root is `protocol` `cut-conductor.iterate`, `protocol_version` 1. Bots post `stop_reason`, `needs_human`, `human_reasons`, `applied`, and `rounds`. Each round still has its own `*.conductor.json` (`cut-conductor.room`). `room-run` adds `room.json` (`cut-conductor.room-run`) as the chat summary that points at those files. Do not invent another schema.
 
 `needs_human` is true when the last round's escalate count is above zero, or `stop_reason` is `max-rounds`. A `metrics` or `no-progress` stop with no escalate is the bot finishing. Review rows are marked and left for later. The loop does not `--accept` them.
 
@@ -105,12 +105,12 @@ The transcript stays on the clock of the file you passed. After a ripple, later 
 
 Owns the brief, which passes run, the taste file, the iterate loop, and whether a one-shot run is shadow or apply.
 
-- Calls `python -m conductor iterate` for the unattended loop, or `conductor.analyze` / `conductor.ingest` for a single shadow pass.
+- Calls `python -m conductor room-run` for a drop. That calls `iterate` (and, for a clip folder, the starter FCPXML `iterate` already writes). `conductor.analyze` / `conductor.ingest` remain the one-shot library calls.
 - Actions stay inside `{keep, tighten, remove, mark_review, escalate}`. A bot does not add a sixth.
 - Default for a one-shot command is shadow. Apply is a separate command and a separate file. Iterate's apply is the mechanical auto gate only, and it still writes a new file.
 - Applies an unattended cut only when the gate marked it `auto` and the pass is mechanical.
 - Applies a review call only when a person named that candidate id with `--accept`. Iterate does not do this.
-- Writes `*.conductor.json` per round and `iterate.json` for the loop. Do not invent another schema.
+- Writes `*.conductor.json` per round, `iterate.json` for the loop, and `room.json` / `room.md` for the chat summary. Do not invent another schema.
 
 ### Transcript
 

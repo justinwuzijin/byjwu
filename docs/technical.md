@@ -54,13 +54,33 @@ A logic-first decision mode is not on this branch. Measured rules such as uncove
 
 The note on a marker is assembled afterwards from the action, the confidence, and the reason. No model writes it.
 
+### How decisions are made
+
+Measured facts are decided by rules in `conductor/rules.py`. A model does not have to score them above 0.80 before they cut. `CONDUCTOR_DECISION_MODE` defaults to `logic-first`. `model-gated` restores the old gate.
+
+In `logic-first`, a rule that clears its threshold is the cut. Confidence starts at 0.80 once the measurement is past the line and rises toward 0.99 as the margin grows. The model sees the proposed cut and the evidence, and may only veto with a named reason. A veto is logged and becomes a review marker. Fuzzy taste calls (story, music, type, montage, colour) still go to Jev or Opus exactly as before, and the creative passes still do not auto-apply.
+
+The rules and their placeholder defaults:
+
+| rule | what it measures | default |
+|---|---|---|
+| `bare_uncovered_gap` | bare primary gap with no connected picture | `bare_gap_seconds` 1.25 |
+| `dead_air` | audio silence, or a word-timing pause | `max_pause_seconds` 0.5, plus Diffusion Studio's `silence_rms_threshold` 0.02, `silence_padding_seconds` 0.5, `silence_min_gap_seconds` 0.5 |
+| `flash_frame` | spine clip shorter than K frames | `flash_frames` 5 |
+| `exact_duplicate` | a later take whose source in and out match an earlier one | identical range |
+| `untrimmed_hold` | a hold with no dialogue, longer than the style's max shot | `max_shot_seconds` 45 until a style profile sets it |
+
+Thresholds resolve in order: those defaults, then `styles/<name>/profile` when the file is present, then learned `rule_thresholds` on the taste file, then per-run overrides. A re-export or an accepted/rejected marker nudges the matching threshold by a bounded step and writes it back. Silence defaults are seeded from Diffusion Studio core's `removeSilences` (RMS hop, 0.5 s minimum gap, 0.5 s padding). It is not a dependency.
+
+A rule cut keeps covered b-roll, because apply still refuses to drop a connected clip that covers the range. The shadow FCPXML is the undo: every applied rule cut has a marker naming the rule, the measurement, and the threshold. The run writes the same tally to `DECISIONS.md` and to the room summary: which rules fired, how many cuts applied, and which vetoes, with why.
+
 ### The decision router
 
 `conductor/router.py` holds the list. Each decision type names its engine and the reason. Every row in the report, and every marker note, says which engine made the call (`engine=jev/live`, `engine=opus/mock`, …).
 
 | Engine | Decision types | When the engine is not there |
 |---|---|---|
-| Jev | `silence_gap`, `short_clip`, `filler_pause`, `long_static`, `colour_role`, `colour_aspect`, `take_keep`, `take_compare`, `cut_gate`, `pacing_violation`, `subtitle_break`, `audio_check` | The deterministic rules answer instead, at 0.85× confidence (`engine_source` `rules`). Never another model. A rules call is never `auto`. |
+| Jev | `silence_gap`, `short_clip`, `filler_pause`, `long_static`, `colour_role`, `colour_aspect`, `take_keep`, `take_compare`, `cut_gate`, `pacing_violation`, `subtitle_break`, `audio_check` | When Jev is down and no measured rule applies, the deterministic policy answers at 0.85× confidence (`engine_source` `rules`). Never another model. That fallback is never `auto`. A measured rule in `logic-first` still cuts. |
 | Opus | `colour_unseen`, `story_structure`, `key_moments`, `music`, `typography`, `visual_treatment`, `montage`, `broll_selection` | The call becomes a review marker with no action (`engine_source` `unavailable`). Nothing is auto-applied. |
 
 The engine decides. The gate still decides who may act: dialogue filler is a Jev call, and it stays in review because the pass is creative. Threshold comparisons inside the gate are arithmetic, so they stay code.

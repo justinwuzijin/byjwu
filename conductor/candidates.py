@@ -390,6 +390,7 @@ def _short(sequence: Sequence, clip: Clip, cues: list[Cue]) -> Candidate:
         signals={
             "duration_seconds": seconds(clip.duration),
             "flash": clip.duration < FLASH_CLIP,
+            "frame_seconds": seconds(sequence.frame_duration) if sequence.frame_duration else None,
         },
         cues=cues,
     )
@@ -652,6 +653,7 @@ def _source_reuse(sequence: Sequence) -> list[Candidate]:
             overlap, earlier = best
             shorter = min(later.duration, earlier.duration)
             share = float(overlap / shorter) if shorter else 0.0
+            identical = later.start == earlier.start and later.duration == earlier.duration
             found.append(
                 _make(
                     kind="source_reuse",
@@ -664,8 +666,12 @@ def _source_reuse(sequence: Sequence) -> list[Candidate]:
                     reason=(
                         f"{later.name} repeats {_num(overlap)}s already used in "
                         f"{earlier.name} at {_tc(earlier.timeline_start)} "
-                        f"({share:.0%} of the shorter use). Marked for a look; "
-                        "a repeat can be a reprise."
+                        f"({share:.0%} of the shorter use). "
+                        + (
+                            "The source in and out match exactly."
+                            if identical
+                            else "Marked for a look; a repeat can be a reprise."
+                        )
                     ),
                     signals={
                         "asset_id": asset_id,
@@ -673,10 +679,13 @@ def _source_reuse(sequence: Sequence) -> list[Candidate]:
                         "fraction_of_shorter": round(share, 4),
                         "earlier_name": earlier.name,
                         "earlier_start_seconds": seconds(earlier.timeline_start),
-                        "do_not_cut": True,
+                        "source_start_seconds": seconds(later.start),
+                        "source_duration_seconds": seconds(later.duration),
+                        "identical": identical,
+                        "do_not_cut": not identical,
                     },
                     cues=[],
-                    span="note",
+                    span="clip" if identical else "note",
                 )
             )
     return found

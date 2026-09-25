@@ -23,7 +23,7 @@ Accepted inputs:
 
 The drop is only read. Each run creates `~/Desktop/jevid-out/<name>-<YYYYMMDD-HHMMSS>/`. Running it again creates another folder.
 
-`room.md` is the chat text: input kind, flow, duration before and after, cuts with timecodes, rows flagged for the editor, stop reason, signals (`transcript`, `media`, `music`, or `none`), and the absolute path to open in Final Cut. `room.json` is the same object (`protocol` `cut-conductor.room-run`). Paste `room.md`. Do not re-sort the flagged list; it follows the round report. Cut timecodes are positions on the timeline before that cut. Flagged times are positions on the file to open.
+`room.md` is the chat text: input kind, flow, duration before and after, cuts with timecodes, rows flagged for the editor, stop reason, signals (`transcript`, `media`, `music`, `audio` when ffmpeg read the clips, `words` when a local transcript ran, or `none`), an `Audio and words:` line with the media-signal summary, and the absolute path to open in Final Cut. `room.json` is the same object (`protocol` `cut-conductor.room-run`). It also carries `media_signals` (the last round's `signals` summary and skip reasons) and `words` (the words file for the FCPXML to open, or null). `room-run` runs media signals with the `auto` defaults; see [Media signals](room-protocol.md#media-signals). Paste `room.md`. Do not re-sort the flagged list; it follows the round report. Cut timecodes are positions on the timeline before that cut. Flagged times are positions on the file to open.
 
 A shadow FCPXML is always written. The path in the summary is the timeline to import (the last round's cut when that round cut something, otherwise the shadow, which already includes earlier cuts and the markers).
 
@@ -40,7 +40,9 @@ A drop that carries music goes through an assembler before the loop, when one is
 | yes | assembler with `--style` (default `byjustinwu`), then iterate its FCPXML | `assemble+iterate` |
 | no | the usual path; a warning says the music was not placed | `ingest+iterate` or `iterate` |
 
-room-run looks for `conductor.assemble.assemble`, or a callable passed to `conductor.room.register_assembler`. It passes only the keywords the callable's signature names, from: `media`, `fcpxml`, `music`, `style`, `brief`, `out_dir` (`<run>/assemble/`), `live`, `transcript_path`, `taste_path`, `durations_path`. The callable returns the FCPXML it wrote, as a path, a mapping, or an object with `fcpxml`, `out_fcpxml`, `timeline`, or `path`. The drop is still only read, and the summary still names the file to open.
+room-run looks for `conductor.assemble.assemble`, or a callable passed to `conductor.room.register_assembler`. It passes only the keywords the callable's signature names, from: `media`, `fcpxml`, `music`, `style`, `brief`, `out_dir` (`<run>/assemble/`), `live`, `transcript_path`, `taste_path`, `durations_path`, `router`. The callable returns the FCPXML it wrote, as a path, a mapping, or an object with `fcpxml`, `out_fcpxml`, `timeline`, or `path`. The drop is still only read, and the summary still names the file to open.
+
+`router` is the `conductor.router.Router` the whole run shares. An assembler makes its calls with `router.decide([Ask(...)])`: linear ones (take comparison, cut gates, subtitle breaks) go to Jev, creative ones (story, key moments, music, type, montage) go to Claude Opus 5.5, with the same fallbacks, cache, and counter as the passes. `room.json` has `decision_usage` for the assembler and the loop together, and `room.md` has a `Decisions:` line.
 
 ## Failures the bot can paste
 

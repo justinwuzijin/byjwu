@@ -8,12 +8,14 @@ A deletion is a half-open range on the sequence. Whole-clip removes, lifted
 filler, closed holes, and the tail of a tightened hold are all the same
 operation here. Splitting a clip keeps effects and role sources on every
 piece, and keeps markers and keywords whose time falls inside that piece.
-A connected clip that would be sliced in half is dropped and reported.
+A connected clip or secondary storyline that would be sliced in half is
+dropped and reported.
 
-Connected offsets stay in the parent's timebase. Shifting a spine item along
-the sequence does not rewrite them. Trimming the parent's in point only
-rewrites an offset that was stored as seconds from that in point; a Final Cut
-timebase offset stays put and the parent's ``start`` moves instead.
+A spine item that still has laned items on it is never removed wholesale.
+Before the ripple, the stretch those items cover is taken out of the
+deletion, so a gap under B-roll keeps the B-roll and only its bare head and
+tail close. Connected offsets are on the parent's own clock
+(:func:`conductor.timing.anchor_time`) and are never rewritten.
 """
 
 from __future__ import annotations
@@ -24,8 +26,9 @@ from dataclasses import dataclass
 from fractions import Fraction
 
 from .errors import ConductorError
-from .fcpxml import CLIP_TAGS, Document, anchored_local, is_primary_story, local
+from .fcpxml import CLIP_TAGS, Document, local
 from .timeutil import format_time, parse_time
+from .timing import anchor_time, has_time_map, kept_media, local_window, sequence_fps
 
 _TIMED = frozenset({"marker", "keyword", "chapter-marker"})
 
@@ -81,19 +84,18 @@ def apply_edits(document: Document, deletions: list[Deletion]) -> ApplyResult:
 def _shield_connected(sequence, deletions: list[Deletion]) -> tuple[list[Deletion], list[str]]:
     """Punch connected coverage out of a deletion.
 
-    A spine gap or clip with anchored children is never removed wholesale.
     On a gap, the stretch under a laned item is the picture, so it stays. A
     clip removed whole keeps the stretch its laned items sit on. A deletion
     inside a longer clip is left to :func:`_piece`, which keeps a connected
-    clip that fits a piece and warns about one that crosses the cut, so a
+    item that fits a piece and warns about one that crosses the cut, so a
     music bed on a lane does not block every cut above it.
     """
+    fps = sequence_fps(sequence.frame_duration)
     protected: list[tuple[Fraction, Fraction]] = []
-    frame = sequence.frame_duration
     for clip in sequence.spine:
-        if not _removed_wholesale(clip, deletions):
+        if clip.element is None or not _removed_wholesale(clip, deletions):
             continue
-        protected.extend(_anchored_spans(clip, frame))
+        protected.extend(_anchored_spans(clip, fps))
     if not protected:
         return list(deletions), []
     blockers = [
@@ -144,33 +146,20 @@ def _removed_wholesale(clip, deletions: list[Deletion]) -> bool:
     return False
 
 
-def _anchored_spans(clip, frame: Fraction) -> list[tuple[Fraction, Fraction]]:
-    """Timeline ranges of laned children. Lane-less compound media is not one."""
+def _anchored_spans(clip, fps: Fraction) -> list[tuple[Fraction, Fraction]]:
+    """Timeline ranges of laned items and storylines, clipped to the spine item.
+
+    A disabled item is still footage the editor kept, so it is protected too.
+    """
     element = clip.element
     spans: list[tuple[Fraction, Fraction]] = []
-    if element is None:
-        children = [
-            (child.offset, child.duration)
-            for child in clip.connected_clips
-            if child.lane is not None
-        ]
-    else:
-        children = []
-        for child in element:
-            if local(child.tag) not in CLIP_TAGS or not child.get("lane"):
-                continue
-            children.append(
-                (
-                    parse_time(child.get("offset"), Fraction(0)),
-                    parse_time(child.get("duration"), Fraction(0)),
-                )
-            )
-    for offset, duration in children:
-        local_pos, _mode = anchored_local(
-            clip.start, clip.duration, offset, duration, frame=frame
-        )
-        start = clip.timeline_start + local_pos
-        end = start + duration
+    for child in element:
+        tag = local(child.tag)
+        if not child.get("lane") or (tag not in CLIP_TAGS and tag != "spine"):
+            continue
+        offset = parse_time(child.get("offset"), Fraction(0))
+        start = anchor_time(element, clip.timeline_start, offset, fps)
+        end = start + _extent(child)
         left = max(start, clip.timeline_start)
         right = min(end, clip.timeline_end)
         if right > left:
@@ -178,10 +167,23 @@ def _anchored_spans(clip, frame: Fraction) -> list[tuple[Fraction, Fraction]]:
     return spans
 
 
+def _extent(child: ET.Element) -> Fraction:
+    """Timeline length of a connected item. A storyline is the sum of its items."""
+    if local(child.tag) != "spine":
+        return parse_time(child.get("duration"), Fraction(0))
+    return sum(
+        (
+            parse_time(item.get("duration"), Fraction(0))
+            for item in child
+            if local(item.tag) in CLIP_TAGS
+        ),
+        Fraction(0),
+    )
+
+
 def _merge_spans(spans: list[tuple[Fraction, Fraction]]) -> list[tuple[Fraction, Fraction]]:
-    ordered = sorted(spans)
     merged: list[list[Fraction]] = []
-    for start, end in ordered:
+    for start, end in sorted(spans):
         if not merged or start > merged[-1][1]:
             merged.append([start, end])
         else:
@@ -212,9 +214,7 @@ def _ripple(sequence, deletions: list[Deletion]) -> list[str]:
             pieces.append(clip.element)
             continue
         for start, end in kept:
-            piece, dropped = _piece(
-                clip.element, clip, start, end, deletions, sequence.frame_duration
-            )
+            piece, dropped = _piece(clip.element, clip, start, end, deletions, sequence)
             warnings.extend(dropped)
             pieces.append(piece)
     for child in list(spine):
@@ -227,37 +227,41 @@ def _ripple(sequence, deletions: list[Deletion]) -> list[str]:
     return warnings
 
 
-def _piece(element, clip, start: Fraction, end: Fraction, deletions: list[Deletion], frame: Fraction):
+def _piece(element, clip, start: Fraction, end: Fraction, deletions: list[Deletion], sequence):
     local_start = start - clip.timeline_start
-    source_start = clip.start + local_start
-    source_end = source_start + (end - start)
+    local_end = end - clip.timeline_start
+    if element is None:
+        source_start = clip.start + local_start
+        source_end = source_start + (end - start)
+    else:
+        fps = sequence_fps(sequence.frame_duration)
+        source_start, source_end = local_window(element, local_start, local_end, fps)
+    source_lo, source_hi = (
+        (source_start, source_end)
+        if source_start <= source_end
+        else (source_end, source_start)
+    )
     piece = copy.deepcopy(element)
     for child in list(piece):
         piece.remove(child)
     warnings: list[str] = []
     for child in list(element):
         tag = local(child.tag)
-        if is_primary_story(local(element.tag), child):
-            # The compound's own media. Its offset stays in container time;
-            # the parent's start and duration are the trim.
-            piece.append(copy.deepcopy(child))
-            continue
         if tag in CLIP_TAGS:
-            placed = _place_connected(
-                child,
-                parent_start=clip.start,
-                parent_duration=clip.duration,
-                local_start=local_start,
-                piece_duration=end - start,
-                clip_name=clip.name,
-                warnings=warnings,
-                frame=frame,
-            )
+            if _component(local(element.tag), child):
+                piece.append(copy.deepcopy(child))
+                continue
+            placed = _place_connected(child, source_lo, source_hi, clip.name, warnings)
+            if placed is not None:
+                piece.append(placed)
+            continue
+        if tag == "spine" and child.get("lane"):
+            placed = _place_connected(child, source_lo, source_hi, clip.name, warnings)
             if placed is not None:
                 piece.append(placed)
             continue
         if tag in _TIMED:
-            placed = _place_timed(child, source_start, source_end)
+            placed = _place_timed(child, source_lo, source_hi)
             if placed is not None:
                 piece.append(placed)
             continue
@@ -266,38 +270,34 @@ def _piece(element, clip, start: Fraction, end: Fraction, deletions: list[Deleti
     piece.set("offset", format_time(offset))
     piece.set("start", format_time(source_start))
     piece.set("duration", format_time(end - start))
+    if element is not None and element.get("audioStart") is not None and not has_time_map(element):
+        audio_start, audio_end = kept_media(
+            element, local_start, local_end, sequence_fps(sequence.frame_duration), audio=True
+        )
+        piece.set("audioStart", format_time(audio_start))
+        if element.get("audioDuration") is not None:
+            piece.set("audioDuration", format_time(abs(audio_end - audio_start)))
     return piece, warnings
 
 
-def _place_connected(
-    child,
-    *,
-    parent_start: Fraction,
-    parent_duration: Fraction,
-    local_start: Fraction,
-    piece_duration: Fraction,
-    clip_name: str,
-    warnings: list[str],
-    frame: Fraction,
-):
+def _component(parent_kind: str, child: ET.Element) -> bool:
+    """A lane-less ``<audio>`` / ``<video>`` inside a ``clip`` is its media, not a connected item."""
+    return child.get("lane") is None and parent_kind in {"clip", "sync-clip"}
+
+
+def _place_connected(child, window_start: Fraction, window_end: Fraction, clip_name: str, warnings: list[str]):
+    """``offset`` is on the parent's own clock, so a kept piece leaves it where it is."""
     offset = parse_time(child.get("offset"), Fraction(0))
-    duration = parse_time(child.get("duration"), Fraction(0))
-    local_pos, mode = anchored_local(
-        parent_start, parent_duration, offset, duration, frame=frame
-    )
-    local_end = local_start + piece_duration
-    if local_pos + duration <= local_start or local_pos >= local_end:
+    duration = _extent(child)
+    if offset + duration <= window_start or offset >= window_end:
         return None
-    if local_pos < local_start or local_pos + duration > local_end:
+    if offset < window_start or offset + duration > window_end:
         warnings.append(
             f"dropped connected clip {child.get('name') or local(child.tag)!r} "
             f"on {clip_name!r}; it crossed a cut"
         )
         return None
-    placed = copy.deepcopy(child)
-    if mode == "edit":
-        placed.set("offset", format_time(offset - local_start))
-    return placed
+    return copy.deepcopy(child)
 
 
 def _place_timed(child, source_start: Fraction, source_end: Fraction):

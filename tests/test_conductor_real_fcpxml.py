@@ -89,7 +89,6 @@ def test_swiss_italy_parses_the_real_spine():
     gap = next(clip for clip in sequence.spine if clip.kind == "gap")
     laned = [clip for clip in gap.connected_clips if clip.lane is not None]
     assert len(laned) == 8
-    assert {clip.anchor for clip in laned} == {"media"}
     assert laned[0].local_offset > 90
     # Child offset is in the gap's source time. Adding it to the gap offset
     # lands past the end of the sequence; subtracting the gap start does not.
@@ -311,7 +310,7 @@ def test_media_time_trim_reoffsets_the_connected_clip(tmp_path):
     _on_sequence_grid(report.out_applied)
 
 
-def test_edit_local_title_inside_a_trim_keeps_its_place(tmp_path):
+def test_a_title_inside_a_trim_keeps_its_place(tmp_path):
     document = parse_xml(
         """
         <fcpxml version="1.11">
@@ -320,7 +319,7 @@ def test_edit_local_title_inside_a_trim_keeps_its_place(tmp_path):
             <sequence format="r1" duration="8s" tcStart="0s">
               <spine>
                 <asset-clip ref="r2" offset="0s" name="Talk" start="12s" duration="8s">
-                  <asset-clip ref="r3" lane="1" offset="3s" name="Title" start="0s" duration="2s"/>
+                  <asset-clip ref="r3" lane="1" offset="15s" name="Title" start="0s" duration="2s"/>
                 </asset-clip>
               </spine>
             </sequence>
@@ -329,7 +328,7 @@ def test_edit_local_title_inside_a_trim_keeps_its_place(tmp_path):
         """
     )
     title = document.sequences[0].spine[0].connected_clips[0]
-    assert title.anchor == "edit" and title.timeline_start == 3
+    assert title.timeline_start == 3 and title.local_offset == 3
     apply_edits(
         document,
         [
@@ -348,8 +347,92 @@ def test_edit_local_title_inside_a_trim_keeps_its_place(tmp_path):
     trimmed = parse_fcpxml(dest).sequences[0].spine[0]
     assert trimmed.duration == 6 and trimmed.start == 14 and trimmed.offset == 0
     assert trimmed.connected_clips[0].name == "Title"
-    assert trimmed.connected_clips[0].offset == 1
+    # The offset stays on the parent's clock; the parent's start moved instead.
+    assert trimmed.connected_clips[0].offset == 15
+    assert trimmed.connected_clips[0].timeline_start == 1
     assert trimmed.connected_clips[0].duration == 2
+
+
+_CLOCKS = """
+<fcpxml version="1.14">
+  <resources>
+    <format id="r1" frameDuration="1/24s" width="1920" height="1080"/>
+    <asset id="a1" name="talk" format="r1" start="0s" duration="600s" hasVideo="1" hasAudio="1"/>
+    <asset id="b1" name="broll" format="r1" start="0s" duration="600s" hasVideo="1"/>
+  </resources>
+  <project name="Clocks">
+    <sequence format="r1" duration="40s" tcStart="0s">
+      <spine>
+        <gap name="Gap" offset="0s" start="3600s" duration="10s">
+          <asset-clip ref="b1" lane="1" offset="3602s" name="OnGap" start="0s" duration="3s"/>
+        </gap>
+        <asset-clip ref="a1" offset="10s" name="Talk" start="100s" duration="20s">
+          <spine lane="1" offset="104s">
+            <asset-clip ref="b1" offset="0s" name="Story1" start="40s" duration="2s"/>
+            <asset-clip ref="b1" offset="2s" name="Story2" start="50s" duration="3s"/>
+          </spine>
+          <asset-clip ref="b1" lane="2" offset="110s" name="Off" start="0s" duration="2s" enabled="0"/>
+        </asset-clip>
+        <asset-clip ref="a1" offset="30s" name="Fast" start="0s" duration="10s">
+          <conform-rate scaleEnabled="1" srcFrameRate="48"/>
+          <asset-clip ref="b1" lane="1" offset="4s" name="Scaled" start="0s" duration="1s"/>
+        </asset-clip>
+      </spine>
+    </sequence>
+  </project>
+</fcpxml>
+"""
+
+
+def test_connected_items_use_the_parent_clock_everywhere():
+    document = parse_xml(_CLOCKS)
+    spine = document.sequences[0].spine
+    by_name = {
+        clip.name: clip
+        for item in spine
+        for clip in _descendants(item)
+    }
+    # On a gap, the parent's clock starts at the gap's start.
+    assert by_name["OnGap"].timeline_start == 2
+    # A secondary storyline starts at its offset on the parent's clock, and
+    # its items follow from there.
+    assert by_name["Story1"].timeline_start == 14
+    assert by_name["Story1"].storyline and by_name["Story1"].lane == 1
+    assert by_name["Story2"].timeline_start == 16
+    # Disabled items are parsed on the same clock and flagged.
+    assert by_name["Off"].timeline_start == 20
+    assert by_name["Off"].enabled is False
+    # A 48 fps clip conformed into 24 fps plays at half speed: 4s of media is 8s.
+    assert by_name["Scaled"].timeline_start == 38
+
+
+def test_storylines_and_disabled_clips_survive_a_gap_ripple(tmp_path):
+    document = parse_xml(_CLOCKS)
+    result = apply_edits(
+        document,
+        [
+            Deletion(
+                candidate_id="c0001",
+                sequence="Clocks",
+                start=Fraction(0),
+                end=Fraction(10),
+                action="remove",
+                pass_name="mechanical",
+            )
+        ],
+    )
+    assert [(row["start_seconds"], row["end_seconds"]) for row in result.cuts] == [
+        (0.0, 2.0),
+        (5.0, 10.0),
+    ]
+    dest = tmp_path / "clocks.fcpxml"
+    write_document(document.tree, dest)
+    spine = parse_fcpxml(dest).sequences[0].spine
+    by_name = {clip.name: clip for item in spine for clip in _descendants(item)}
+    assert by_name["OnGap"].timeline_start == 0
+    assert by_name["Story1"].timeline_start == 7
+    assert by_name["Story2"].timeline_start == 9
+    assert by_name["Off"].timeline_start == 13 and by_name["Off"].enabled is False
 
 
 def _descendants(clip):

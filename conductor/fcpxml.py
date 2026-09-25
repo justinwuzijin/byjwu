@@ -5,11 +5,13 @@ elements to those nodes and writes the same tree, so unknown effects, keywords,
 roles, filters, and keyframes survive. This is not a full DTD implementation —
 compound clips that live only inside a ``<media>`` resource are not walked.
 
-Anchored items in a real Final Cut export store ``offset`` in the parent
-clip's timebase (the same numbers as the parent's ``start``). A lower third
-at the head of a clip whose ``start`` is ``12s`` is ``offset="12s"``, not
-``offset="0s"``. Hand-built XML in this repo uses seconds from the in point.
-:func:`anchored_local` picks the reading that actually lands on the parent.
+A connected item's ``offset`` is on its parent's local clock, which begins at
+the parent's ``start``. A lower third at the head of a clip whose ``start`` is
+``12s`` is ``offset="12s"``. Placement uses :func:`conductor.timing.anchor_time`,
+the same rule the apply and media paths use, including a gap's ``start``, a
+time-conformed parent, and a secondary storyline (``<spine lane=...>``), whose
+items follow each other from the storyline's own offset. ``enabled="0"`` items
+are parsed and flagged, not dropped.
 """
 
 from __future__ import annotations
@@ -41,7 +43,8 @@ CLIP_TAGS = frozenset(
 )
 
 #: A compound's lane-less story element is its media, not an anchored item.
-COMPOUND_TAGS = frozenset({"clip", "sync-clip", "ref-clip", "mc-clip"})
+#: Same set as ``apply._component`` and ``timing._component``.
+COMPOUND_TAGS = frozenset({"clip", "sync-clip"})
 
 
 def is_primary_story(parent_tag: str, child: ET.Element) -> bool:
@@ -112,10 +115,12 @@ class Clip:
     element: ET.Element | None = None
     width: int | None = None
     height: int | None = None
-    #: Seconds from the parent's in point. Spine items use the ``offset`` attribute.
+    #: Timeline seconds from the parent's in point. Spine items use the ``offset`` attribute.
     local_offset: Fraction | None = None
-    #: ``spine`` for primary items, ``media`` for Final Cut's timebase, ``edit`` for seconds-from-in-point.
-    anchor: str = "spine"
+    #: An item inside a secondary storyline (``<spine lane=...>``) on the parent.
+    storyline: bool = False
+    #: ``enabled="0"`` in the XML. Still footage the editor kept.
+    enabled: bool = True
     asset_id: str | None = None
     conform: str | None = None
     source_frame: Fraction | None = None
@@ -236,8 +241,7 @@ def _document(root: ET.Element, tree: ET.ElementTree, source: Path | None) -> Do
                     child,
                     clip_id=f"s{len(sequences)}c{index}",
                     parent_offset=Fraction(0),
-                    parent_start=Fraction(0),
-                    parent_duration=Fraction(0),
+                    timeline_start=parse_time(child.get("offset"), Fraction(0)),
                     connected=False,
                     assets=assets,
                     formats=formats,
@@ -335,70 +339,29 @@ def _assets(root: ET.Element) -> dict[str, Asset]:
     return found
 
 
-def anchored_local(
-    parent_start: Fraction,
-    parent_duration: Fraction,
-    offset: Fraction,
-    duration: Fraction,
-    *,
-    frame: Fraction = Fraction(1, 24),
-) -> tuple[Fraction, str]:
-    """Seconds from the parent's in point, and which offset convention that was.
-
-    ``media`` means ``offset`` lives in the parent's timebase, so the local
-    position is ``offset - parent_start``. ``edit`` means ``offset`` is already
-    seconds from the in point. A few frames of overhang still count as landing
-    on the parent, which is how a J-cut is stored.
-    """
-    if parent_duration <= 0:
-        return offset, "edit"
-    slop = frame * 12 if frame > 0 else Fraction(1, 2)
-    media = offset - parent_start
-    edit = offset
-    media_hit = _window_overlap(media, duration, parent_duration, slop)
-    edit_hit = _window_overlap(edit, duration, parent_duration, slop)
-    if media_hit > edit_hit:
-        return media, "media"
-    if edit_hit > media_hit:
-        return edit, "edit"
-    if parent_start == 0 or media == edit:
-        return edit, "edit"
-    if abs(offset - parent_start) <= abs(offset):
-        return media, "media"
-    return edit, "edit"
-
-
-def _window_overlap(
-    local: Fraction, duration: Fraction, parent_duration: Fraction, slop: Fraction
-) -> Fraction:
-    left = max(local, -slop)
-    right = min(local + duration, parent_duration + slop)
-    if right <= left:
-        return Fraction(0)
-    return right - left
-
-
 def _clip(
     elem: ET.Element,
     clip_id: str,
     parent_offset: Fraction,
-    parent_start: Fraction,
-    parent_duration: Fraction,
+    timeline_start: Fraction,
     connected: bool,
     assets: dict[str, Asset],
     formats: dict[str, FormatInfo],
     frame: Fraction,
+    storyline_lane: int | None = None,
 ) -> Clip:
+    """``timeline_start`` is where ``elem`` begins on the sequence clock.
+
+    ``parent_offset`` is where the owning spine or connected item begins, so
+    ``local_offset`` is the distance from the parent's in point.
+    """
+    from .timing import anchor_time, sequence_fps
+
+    fps = sequence_fps(frame)
     offset = parse_time(elem.get("offset"), Fraction(0))
     start = parse_time(elem.get("start"), Fraction(0))
     duration = parse_time(elem.get("duration"), Fraction(0))
-    if connected:
-        local_offset, anchor = anchored_local(
-            parent_start, parent_duration, offset, duration, frame=frame
-        )
-    else:
-        local_offset, anchor = offset, "spine"
-    timeline_start = parent_offset + local_offset
+    local_offset = timeline_start - parent_offset if connected else offset
     roles: list[str] = []
     markers: list[XmlMarker] = []
     connected_clips: list[Clip] = []
@@ -413,13 +376,13 @@ def _clip(
         elif tag == "conform-rate" and conform is None:
             conform = child.get("srcFrameRate")
         elif tag in CLIP_TAGS and not is_primary_story(local(elem.tag), child):
+            child_offset = parse_time(child.get("offset"), Fraction(0))
             connected_clips.append(
                 _clip(
                     child,
                     clip_id=f"{clip_id}k{child_index}",
                     parent_offset=timeline_start,
-                    parent_start=start,
-                    parent_duration=duration,
+                    timeline_start=anchor_time(elem, timeline_start, child_offset, fps),
                     connected=True,
                     assets=assets,
                     formats=formats,
@@ -427,6 +390,30 @@ def _clip(
                 )
             )
             child_index += 1
+        elif tag == "spine" and child.get("lane"):
+            story = anchor_time(
+                elem, timeline_start, parse_time(child.get("offset"), Fraction(0)), fps
+            )
+            story_lane = _lane(child.get("lane"))
+            story_enabled = child.get("enabled") != "0"
+            for item in child:
+                if local(item.tag) not in CLIP_TAGS:
+                    continue
+                placed = _clip(
+                    item,
+                    clip_id=f"{clip_id}k{child_index}",
+                    parent_offset=timeline_start,
+                    timeline_start=story + parse_time(item.get("offset"), Fraction(0)),
+                    connected=True,
+                    assets=assets,
+                    formats=formats,
+                    frame=frame,
+                    storyline_lane=story_lane,
+                )
+                if not story_enabled:
+                    placed.enabled = False
+                connected_clips.append(placed)
+                child_index += 1
     name = elem.get("name") or elem.get("ref") or local(elem.tag)
     lane_raw = elem.get("lane")
     ref = elem.get("ref")
@@ -451,7 +438,7 @@ def _clip(
         audio_role=elem.get("audioRole"),
         video_role=elem.get("videoRole"),
         roles=tuple(roles),
-        lane=int(lane_raw) if lane_raw and lane_raw.lstrip("-").isdigit() else None,
+        lane=storyline_lane if storyline_lane is not None else _lane(lane_raw),
         connected=connected,
         markers=markers,
         connected_clips=connected_clips,
@@ -459,7 +446,8 @@ def _clip(
         width=width,
         height=height,
         local_offset=local_offset,
-        anchor=anchor,
+        storyline=storyline_lane is not None,
+        enabled=elem.get("enabled") != "0",
         asset_id=asset_id,
         conform=conform,
         source_frame=source_frame,
@@ -467,6 +455,12 @@ def _clip(
         asset_duration=None if asset is None else asset.duration,
         asset_has_audio=None if asset is None else asset.has_audio,
     )
+
+
+def _lane(value: str | None) -> int | None:
+    if value and value.lstrip("-").isdigit():
+        return int(value)
+    return None
 
 
 def _nested_asset_ref(elem: ET.Element, assets: dict[str, Asset]) -> str | None:

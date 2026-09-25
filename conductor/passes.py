@@ -26,7 +26,7 @@ from collections.abc import Callable
 from collections.abc import Sequence as SequenceOf
 from dataclasses import dataclass
 
-from .candidates import Candidate, assign_ids, generate
+from .candidates import AudioSilence, Candidate, assign_ids, generate
 from .colour import generate as colour_generate
 from .errors import ConductorError
 from .fcpxml import Sequence
@@ -57,9 +57,10 @@ PASSES: dict[str, Pass] = {
         "mechanical",
         frozenset({"silence_gap", "short_clip"}),
         False,
-        "Bare silence on the primary storyline, and clips under half a second. "
-        "A gap that is covered by a connected clip is not a cut. The only pass "
-        "eligible for an unattended apply.",
+        "Bare silence on the primary storyline, quiet audio inside a clip when "
+        "the file can be read, and clips under half a second. A gap that is "
+        "covered by a connected clip is not a cut. The only pass eligible for "
+        "an unattended apply.",
     ),
     "dialogue": _builtin(
         "dialogue",
@@ -168,12 +169,20 @@ def collect(
     *,
     transcript_present: bool,
     requested: Sequence[str] | None = None,
+    audio_silences: SequenceOf[AudioSilence] | None = None,
 ) -> list[Candidate]:
     """Run the named passes and number the candidates in timeline order."""
     names = resolve_names(requested)
     pool: list[Candidate] = []
     for sequence in sequences:
-        pool.extend(generate(sequence, cues, transcript_present=transcript_present))
+        pool.extend(
+            generate(
+                sequence,
+                cues,
+                transcript_present=transcript_present,
+                audio_silences=audio_silences,
+            )
+        )
     found: list[Candidate] = []
     for name in names:
         spec = PASSES[name]

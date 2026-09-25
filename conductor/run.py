@@ -22,9 +22,12 @@ from .markers import apply_markers
 from .metrics import measure
 from .passes import collect, resolve_names
 from .report import build_payload, dumps, render_html, render_markdown
+from .router import Ledger, Router, routing_table
+from .signals import gather
 from .taste import Taste, feedback_event, load_taste, write_taste
 from .timeutil import seconds
 from .transcript import load_transcript
+from .words import words_for_document, write_words
 
 
 @dataclass
@@ -40,6 +43,7 @@ class Report:
     out_html: Path | None = None
     out_taste: Path | None = None
     warnings: list[str] = field(default_factory=list)
+    ledger: Ledger | None = None
 
     @property
     def candidates(self):
@@ -67,9 +71,13 @@ def analyze(
     apply_passes: list[str] | None = None,
     allow_empty_apply: bool = False,
     skip_apply: Callable[[dict], bool] | None = None,
+    signals: str = "auto",
+    transcribe: str = "auto",
+    signal_cache: str | Path | None = None,
     global_taste_path: str | Path | None = None,
     feedback_path: str | Path | None = None,
     learn_from: str | Path | None = None,
+    router: Router | None = None,
 ) -> Report:
     """Run the named passes and write a shadow proposal.
 
@@ -86,12 +94,35 @@ def analyze(
     is the editor's re-export. The diff is appended to the project taste
     before this run judges. ``feedback_path`` is a notes file from a room
     bot. ``global_taste_path`` is read-only.
+
+    ``router`` shares a decision cache and engine health across calls; its
+    ``live`` wins over ``live``. Without one, a router is opened and closed
+    here. The payload's ``decision_usage`` counts this call only.
     """
     source = Path(fcpxml_path)
     source_bytes = source.read_bytes()
     document = parse_fcpxml(source)
     sequences = _select(document, project)
-    cues = load_transcript(transcript_path) if transcript_path else []
+    signal_report = gather(
+        document,
+        sequences,
+        signals=signals,
+        transcribe=transcribe,
+        cache_dir=signal_cache,
+        transcript_supplied=transcript_path is not None,
+    )
+    if transcript_path:
+        cues = load_transcript(transcript_path)
+        transcript_present = True
+        transcript_name: str | None = str(transcript_path)
+    else:
+        cues = list(signal_report.cues)
+        transcript_present = signal_report.transcript == "whisper"
+        transcript_name = (
+            f"local:{signal_report.whisper_tool or 'whisper'}"
+            if transcript_present
+            else None
+        )
     taste = load_taste(taste_path, global_path=global_taste_path)
     learned: list[dict] = []
     learn_warnings: list[str] = []
@@ -108,16 +139,28 @@ def analyze(
     candidates = collect(
         sequences,
         cues,
-        transcript_present=transcript_path is not None,
+        transcript_present=transcript_present,
         requested=passes,
+        audio_silences=signal_report.silences,
     )
     bound, bind_warnings = bind_pending(taste, candidates)
     learn_warnings.extend(bind_warnings)
     learned.extend(bound)
-    use_live = bool(live) and not dry_run_forced()
-    proposals, receipts = judge(candidates, brief, live=use_live, taste=taste)
+    owned = router is None
+    if router is None:
+        router = Router(live=bool(live) and not dry_run_forced())
+    ledger = Ledger()
+    try:
+        proposals, receipts = judge(
+            candidates, brief, live=router.live, taste=taste, router=router, ledger=ledger
+        )
+    finally:
+        if owned:
+            router.close()
+    use_live = router.live
     mode = "live" if use_live else "dry-run"
     ran = resolve_names(passes)
+    by_proposal = {item.candidate_id: item for item in proposals}
 
     cuts: list[dict] = []
     apply_warnings: list[str] = []
@@ -147,8 +190,14 @@ def analyze(
             cuts = result.cuts
             apply_warnings = result.warnings
             by_candidate = {item.id: item for item in candidates}
+            for cut in cuts:
+                proposal = by_proposal[cut["candidate_id"]]
+                cut["engine"] = proposal.engine
+                cut["engine_source"] = proposal.engine_source
+                cut["decision_type"] = proposal.decision_type
             for deletion in deletions:
                 candidate = by_candidate[deletion.candidate_id]
+                proposal = by_proposal[deletion.candidate_id]
                 taste.append(
                     feedback_event(
                         event="accept",
@@ -161,6 +210,7 @@ def analyze(
                             "timeline_start_seconds": seconds(deletion.start),
                             "timeline_end_seconds": seconds(deletion.end),
                             "source": "person" if accept else "auto",
+                            "engine": f"{proposal.engine}/{proposal.engine_source}",
                         },
                     )
                 )
@@ -174,6 +224,8 @@ def analyze(
         "markdown": None,
         "html": None,
         "taste": None,
+        "words": None,
+        "applied_words": None,
     }
     if out_dir is not None:
         paths = output_paths(source, Path(out_dir))
@@ -192,6 +244,16 @@ def analyze(
         files["taste"] = str(paths["taste"])
         if html:
             files["html"] = str(paths["html"])
+        if signal_report.words:
+            write_words(paths["words"], document, signal_report)
+            files["words"] = str(paths["words"])
+            if out_applied is not None:
+                applied = parse_fcpxml(out_applied)
+                applied_words = words_for_document(
+                    applied, project=project, transcribe="cached", cache_dir=signal_cache
+                )
+                write_words(paths["applied_words"], applied, applied_words)
+                files["applied_words"] = str(paths["applied_words"])
 
     payload = build_payload(
         document=document,
@@ -200,7 +262,7 @@ def analyze(
         mode=mode,
         source_name=str(source),
         source_hash=hashlib.blake2b(source_bytes, digest_size=16).hexdigest(),
-        transcript_name=str(transcript_path) if transcript_path else None,
+        transcript_name=transcript_name,
         cue_count=len(cues),
         candidates=candidates,
         proposals=proposals,
@@ -214,7 +276,14 @@ def analyze(
         apply_warnings=[*learn_warnings, *apply_warnings],
         shadow=not bool(cuts),
         applied=bool(cuts),
+        signals=signal_report.to_state(),
         learned=learned,
+        decision_usage=ledger.to_dict(),
+        routing={
+            name: row
+            for name, row in routing_table().items()
+            if name in {item.decision_type for item in proposals}
+        },
     )
     if source.read_bytes() != source_bytes:
         raise ConductorError("refusing to finish: the source FCPXML changed during the run")
@@ -241,7 +310,8 @@ def analyze(
         out_markdown=out_md,
         out_html=out_html,
         out_taste=out_taste,
-        warnings=[*learn_warnings, *apply_warnings],
+        warnings=[*signal_report.warnings, *learn_warnings, *ledger.warnings, *apply_warnings],
+        ledger=ledger,
     )
 
 
@@ -255,6 +325,8 @@ def output_paths(source: Path, out_dir: Path) -> dict[str, Path]:
         "md": out_dir / f"{stem}.conductor.md",
         "html": out_dir / f"{stem}.conductor.html",
         "taste": out_dir / f"{stem}.taste.json",
+        "words": out_dir / f"{stem}.words.json",
+        "applied_words": out_dir / f"{stem}.conductor.applied.words.json",
     }
 
 

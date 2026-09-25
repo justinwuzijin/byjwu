@@ -1219,9 +1219,20 @@ def _check_ask(ask: Ask, seen: set[str]) -> None:
         raise ConductorError(f"{ask.id}: an Opus decision needs options or a schema")
 
 
+_STAMP_RE = re.compile(r" v\d+(?: marked)? \(byjwu\)$")
+
+
 def _content(state: Mapping[str, Any]) -> dict:
-    """The part of a candidate that decides its answer: no id, no position."""
-    return {key: value for key, value in state.items() if key not in _POSITIONAL}
+    """The part of a candidate that decides its answer: no id, no position.
+
+    A byjwu version suffix on the project name is not an editorial change, so
+    round 2 still hits the cache for a region the previous round already judged.
+    """
+    row = {key: value for key, value in state.items() if key not in _POSITIONAL}
+    sequence = row.get("sequence")
+    if isinstance(sequence, str):
+        row["sequence"] = _STAMP_RE.sub("", sequence)
+    return row
 
 
 def _cacheable(item: Verdict | Decision) -> dict:

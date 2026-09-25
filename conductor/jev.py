@@ -357,8 +357,10 @@ def policy(candidate: Mapping[str, Any], taste: Mapping[str, Any] | None = None)
             return "remove", 0.91, 0.14
         return "mark_review", 0.61, 0.42
     if kind == "long_static":
-        wps = signals.get("words_per_second")
-        if wps is None or float(wps) < 0.15:
+        dialogue = _no_dialogue(signals)
+        if dialogue is None:
+            return "mark_review", 0.62, 0.48
+        if dialogue:
             return "tighten", 0.73, 0.33
         return "mark_review", 0.57, 0.49
     if kind == "filler_pause":
@@ -380,6 +382,17 @@ def _distribution(winner: str, mass: float) -> dict[str, float]:
     drift = round(1.0 - sum(rounded.values()), 4)
     rounded[winner] = round(rounded[winner] + drift, 4)
     return {action: rounded[action] for action in ACTIONS}
+
+
+def _no_dialogue(signals: Mapping[str, Any]) -> bool | None:
+    """Whether a clip has no speech.
+
+    ``None`` means unknown. A missing ``words_per_second`` is a missing
+    transcript, not silence, so it must not become an automatic cut.
+    """
+    if "words_per_second" not in signals or signals.get("words_per_second") is None:
+        return None
+    return float(signals["words_per_second"]) < 0.15
 
 
 def _clamp(value: float) -> float:

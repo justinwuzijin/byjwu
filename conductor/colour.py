@@ -95,7 +95,7 @@ def _has_role(clip: Clip) -> bool:
         if node is element:
             continue
         tag = local(node.tag)
-        if tag in {"audio-role-source", "video-role-source"} and node.get("role"):
+        if tag in {"audio-role-source", "video-role-source", "audio-channel-source"} and node.get("role"):
             return True
         if tag == "audio" and (node.get("role") or node.get("audioRole")):
             return True

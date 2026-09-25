@@ -153,6 +153,10 @@ def deletions_for(
             continue
         if proposal.raw_action not in {"tighten", "remove"}:
             continue
+        if _unknown_dialogue(candidate):
+            continue
+        if _blocked_by_other_pass(candidate, proposals, candidates_by_id):
+            continue
         chosen.append(_deletion(candidate, proposal.raw_action, hold))
     if not chosen:
         raise ConductorError(
@@ -160,6 +164,53 @@ def deletions_for(
             "auto-applied; pass --accept with candidate ids to cut a review call."
         )
     return chosen
+
+
+def _unknown_dialogue(candidate: Candidate) -> bool:
+    """A clip with no transcript. It may be reviewed. It is not silence."""
+    signals = candidate.signals or {}
+    return "words_per_second" in signals and signals.get("words_per_second") is None
+
+
+#: A sequence-wide placeholder, not a flag on the range a cut would remove.
+_DOES_NOT_BLOCK = frozenset({"colour_unseen"})
+
+
+def _blocked_by_other_pass(
+    candidate: Candidate,
+    proposals: list[Proposal],
+    candidates_by_id: dict[str, Candidate],
+) -> bool:
+    """True when another pass has a review or escalate on this range.
+
+    ``colour_unseen`` hangs on the first clip to say the picture was not
+    decoded. It is not a reason to leave a silence or a flash in place.
+    A colour role or aspect flag, an escalate, or a pacing hold is.
+    """
+    for proposal in proposals:
+        if proposal.disposition not in {"review", "escalate"}:
+            continue
+        other = candidates_by_id.get(proposal.candidate_id)
+        if other is None or other.id == candidate.id or other.kind in _DOES_NOT_BLOCK:
+            continue
+        if other.pass_name == candidate.pass_name or other.sequence != candidate.sequence:
+            continue
+        if not _review_blocks_cut(other, proposal):
+            continue
+        if other.timeline_start < candidate.timeline_end and candidate.timeline_start < other.timeline_end:
+            return True
+    return False
+
+
+def _review_blocks_cut(other: Candidate, proposal: Proposal) -> bool:
+    """Colour flags, escalates, and long holds block an automatic cut.
+
+    A dialogue review on a nearby pause does not. That pass is already
+    review-only, and the mechanical silence gate still applies beside it.
+    """
+    if proposal.disposition == "escalate":
+        return True
+    return other.pass_name == "colour" or other.kind == "long_static"
 
 
 def _accepted(candidate_id, proposals, candidates, hold: Fraction) -> Deletion:
@@ -225,7 +276,7 @@ def _proposal(candidate: Candidate, verdict: Verdict, gates: Gates, taste: Taste
             creative=is_creative(candidate.pass_name or "mechanical"),
             gates=kind_gates,
         )
-        if disposition == "auto" and verdict.source == "rules":
+        if disposition == "auto" and (verdict.source == "rules" or candidate.kind == "long_static"):
             action, disposition = "mark_review", "review"
         rule = verdict.rule or {}
         if rule.get("applies") and verdict.source == "logic" and not rule.get("vetoed"):

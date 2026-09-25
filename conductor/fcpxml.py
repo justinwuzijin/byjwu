@@ -16,6 +16,8 @@ are parsed and flagged, not dropped.
 
 from __future__ import annotations
 
+import re
+import uuid
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from fractions import Fraction
@@ -191,6 +193,27 @@ def parse_xml(text: str, source: Path | None = None) -> Document:
     except ET.ParseError as exc:
         raise ConductorError(f"FCPXML did not parse: {exc}") from exc
     return _document(root, ET.ElementTree(root), source)
+
+
+_STAMP_RE = re.compile(r" v\d+(?: marked)? \(byjwu\)$")
+
+
+def stamp_projects(tree: ET.ElementTree, *, version: int, marked: bool) -> None:
+    """Give each project a fresh uid and a byjwu version name.
+
+    Applied files are ``<name> v<N> (byjwu)``. Marked files are
+    ``<name> v<N> marked (byjwu)``. A name that already carries a byjwu
+    version is restamped from the original title.
+    """
+    if version < 1:
+        raise ConductorError("output version must be at least 1")
+    label = f"v{version} marked (byjwu)" if marked else f"v{version} (byjwu)"
+    for elem in tree.getroot().iter():
+        if local(elem.tag) != "project":
+            continue
+        base = _STAMP_RE.sub("", elem.get("name") or "Untitled")
+        elem.set("name", f"{base} {label}")
+        elem.set("uid", str(uuid.uuid4()).upper())
 
 
 def write_document(tree: ET.ElementTree, path: Path) -> None:
@@ -369,7 +392,7 @@ def _clip(
     child_index = 0
     for child in elem:
         tag = local(child.tag)
-        if tag in {"audio-role-source", "video-role-source"} and child.get("role"):
+        if tag in {"audio-role-source", "video-role-source", "audio-channel-source"} and child.get("role"):
             roles.append(child.get("role") or "")
         elif tag == "marker":
             markers.append(_marker(child))

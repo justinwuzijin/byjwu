@@ -13,6 +13,7 @@ from .ingest import DEFAULT_BRIEF, ingest
 from .iterate import format_report, iterate
 from .passes import PASSES, collect
 from .room import room_run, watch
+from .router import format_usage
 from .run import Report, analyze
 from .taste import feedback_event, load_taste, write_taste
 
@@ -119,6 +120,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"cut-conductor: {exc}", file=sys.stderr)
         return 2
     _print_report(report)
+    for warning in report.warnings:
+        print(f"  warning {warning}", file=sys.stderr)
     return 0
 
 
@@ -152,7 +155,7 @@ def _add_analyze(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--live",
         action="store_true",
-        help="call Jev. Requires OPENROUTER_API_KEY or TYPESAFE_API_KEY. Off by default.",
+        help="call live engines: Jev (OPENROUTER_API_KEY or TYPESAFE_API_KEY) for linear calls, Claude Opus (ANTHROPIC_API_KEY) for creative calls. Off by default.",
     )
     parser.add_argument("--html", action="store_true", help="also write a single-file HTML report")
     _add_signals(parser)
@@ -182,7 +185,7 @@ def _add_ingest(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--live",
         action="store_true",
-        help="call Jev. Requires OPENROUTER_API_KEY or TYPESAFE_API_KEY. Off by default.",
+        help="call live engines: Jev (OPENROUTER_API_KEY or TYPESAFE_API_KEY) for linear calls, Claude Opus (ANTHROPIC_API_KEY) for creative calls. Off by default.",
     )
     parser.add_argument("--html", action="store_true", help="also write a single-file HTML report")
     parser.add_argument(
@@ -234,7 +237,7 @@ def _add_iterate(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--live",
         action="store_true",
-        help="call Jev. Requires OPENROUTER_API_KEY or TYPESAFE_API_KEY. Off by default.",
+        help="call live engines: Jev (OPENROUTER_API_KEY or TYPESAFE_API_KEY) for linear calls, Claude Opus (ANTHROPIC_API_KEY) for creative calls. Off by default.",
     )
     parser.add_argument("--html", action="store_true", help="also write a single-file HTML report each round")
     parser.add_argument("--max-rounds", type=int, default=5, help="stop after this many rounds (default: 5)")
@@ -479,6 +482,9 @@ def _print_report(report: Report, starter: Path | None = None) -> None:
         f"{report.marker_count} markers added, {changes} ranked changes, "
         f"{report.cuts_applied} cuts written"
     )
+    usage = report.payload.get("decision_usage")
+    if usage:
+        print(f"  decisions {format_usage(usage)}")
     if starter is not None:
         print(f"  starter {starter}")
     if report.out_fcpxml:

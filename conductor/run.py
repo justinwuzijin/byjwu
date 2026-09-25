@@ -22,6 +22,7 @@ from .markers import apply_markers
 from .metrics import measure
 from .passes import collect, resolve_names
 from .report import build_payload, dumps, render_html, render_markdown
+from .router import Ledger, Router, routing_table
 from .signals import gather
 from .taste import Taste, feedback_event, load_taste, write_taste
 from .timeutil import seconds
@@ -42,6 +43,7 @@ class Report:
     out_html: Path | None = None
     out_taste: Path | None = None
     warnings: list[str] = field(default_factory=list)
+    ledger: Ledger | None = None
 
     @property
     def candidates(self):
@@ -75,6 +77,7 @@ def analyze(
     global_taste_path: str | Path | None = None,
     feedback_path: str | Path | None = None,
     learn_from: str | Path | None = None,
+    router: Router | None = None,
 ) -> Report:
     """Run the named passes and write a shadow proposal.
 
@@ -91,6 +94,10 @@ def analyze(
     is the editor's re-export. The diff is appended to the project taste
     before this run judges. ``feedback_path`` is a notes file from a room
     bot. ``global_taste_path`` is read-only.
+
+    ``router`` shares a decision cache and engine health across calls; its
+    ``live`` wins over ``live``. Without one, a router is opened and closed
+    here. The payload's ``decision_usage`` counts this call only.
     """
     source = Path(fcpxml_path)
     source_bytes = source.read_bytes()
@@ -139,10 +146,21 @@ def analyze(
     bound, bind_warnings = bind_pending(taste, candidates)
     learn_warnings.extend(bind_warnings)
     learned.extend(bound)
-    use_live = bool(live) and not dry_run_forced()
-    proposals, receipts = judge(candidates, brief, live=use_live, taste=taste)
+    owned = router is None
+    if router is None:
+        router = Router(live=bool(live) and not dry_run_forced())
+    ledger = Ledger()
+    try:
+        proposals, receipts = judge(
+            candidates, brief, live=router.live, taste=taste, router=router, ledger=ledger
+        )
+    finally:
+        if owned:
+            router.close()
+    use_live = router.live
     mode = "live" if use_live else "dry-run"
     ran = resolve_names(passes)
+    by_proposal = {item.candidate_id: item for item in proposals}
 
     cuts: list[dict] = []
     apply_warnings: list[str] = []
@@ -172,8 +190,14 @@ def analyze(
             cuts = result.cuts
             apply_warnings = result.warnings
             by_candidate = {item.id: item for item in candidates}
+            for cut in cuts:
+                proposal = by_proposal[cut["candidate_id"]]
+                cut["engine"] = proposal.engine
+                cut["engine_source"] = proposal.engine_source
+                cut["decision_type"] = proposal.decision_type
             for deletion in deletions:
                 candidate = by_candidate[deletion.candidate_id]
+                proposal = by_proposal[deletion.candidate_id]
                 taste.append(
                     feedback_event(
                         event="accept",
@@ -186,6 +210,7 @@ def analyze(
                             "timeline_start_seconds": seconds(deletion.start),
                             "timeline_end_seconds": seconds(deletion.end),
                             "source": "person" if accept else "auto",
+                            "engine": f"{proposal.engine}/{proposal.engine_source}",
                         },
                     )
                 )
@@ -253,6 +278,12 @@ def analyze(
         applied=bool(cuts),
         signals=signal_report.to_state(),
         learned=learned,
+        decision_usage=ledger.to_dict(),
+        routing={
+            name: row
+            for name, row in routing_table().items()
+            if name in {item.decision_type for item in proposals}
+        },
     )
     if source.read_bytes() != source_bytes:
         raise ConductorError("refusing to finish: the source FCPXML changed during the run")
@@ -279,7 +310,8 @@ def analyze(
         out_markdown=out_md,
         out_html=out_html,
         out_taste=out_taste,
-        warnings=[*signal_report.warnings, *learn_warnings, *apply_warnings],
+        warnings=[*signal_report.warnings, *learn_warnings, *ledger.warnings, *apply_warnings],
+        ledger=ledger,
     )
 
 

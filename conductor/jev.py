@@ -23,6 +23,7 @@ Jev still does not write. Questions are a choice plus a risk noul.
 from __future__ import annotations
 
 import os
+import re
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -43,6 +44,16 @@ _RETRY_STATUS = frozenset({408, 429, 500, 502, 503, 504})
 _TIMEOUT = 60.0
 
 ACTIONS = ("keep", "tighten", "remove", "mark_review", "escalate")
+
+ACTION_CRITERIA = {
+    "keep": "Leave the timeline alone. The moment earns its length.",
+    "tighten": "Trim the dead air or filler but keep the surrounding thought.",
+    "remove": "Lift this region out. It does not earn its time.",
+    "mark_review": "A human should look. The signal is real but the call is not safe to trust.",
+    "escalate": "Stop and discuss. The moment may be load-bearing, or the risk is high.",
+}
+
+_XAI = re.compile(r"grok|x-ai|\bxai\b|x\.ai", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -69,6 +80,28 @@ def dry_run_forced(environ: Mapping[str, str] | None = None) -> bool:
     return env.get("CONDUCTOR_DRY_RUN", "").strip().lower() in {"1", "true", "yes"}
 
 
+def refuse_xai(model: str, url: str) -> None:
+    """No Grok or xAI model is allowed anywhere in the decision path."""
+    for value in (model, url):
+        if _XAI.search(value or ""):
+            raise ConductorError(
+                f"refusing {value!r}: Grok/xAI models are not allowed in the decision path"
+            )
+
+
+def has_key(environ: Mapping[str, str] | None = None) -> bool:
+    """True when the provider ``resolve_endpoint`` would pick has a key."""
+    env = os.environ if environ is None else environ
+    provider = env.get("CONDUCTOR_JEV_PROVIDER", "").strip().lower()
+    openrouter = bool(env.get("OPENROUTER_API_KEY", "").strip())
+    typesafe = bool(env.get("TYPESAFE_API_KEY", "").strip())
+    if provider == "typesafe":
+        return typesafe
+    if provider == "openrouter":
+        return openrouter
+    return openrouter or typesafe
+
+
 def resolve_endpoint(environ: Mapping[str, str] | None = None) -> Endpoint:
     """Pick a host from the environment. Raises when a live call has no key."""
     env = os.environ if environ is None else environ
@@ -86,6 +119,7 @@ def resolve_endpoint(environ: Mapping[str, str] | None = None) -> Endpoint:
             )
         model = env.get("CONDUCTOR_JEV_MODEL", "").strip() or TYPESAFE_MODEL
         url = env.get("CONDUCTOR_TYPESAFE_URL", "").strip() or TYPESAFE_URL
+        refuse_xai(model, url)
         return Endpoint(
             provider="typesafe",
             url=url,
@@ -102,6 +136,7 @@ def resolve_endpoint(environ: Mapping[str, str] | None = None) -> Endpoint:
         )
     model = env.get("CONDUCTOR_JEV_MODEL", "").strip() or OPENROUTER_MODEL
     url = env.get("CONDUCTOR_OPENROUTER_URL", "").strip() or OPENROUTER_URL
+    refuse_xai(model, url)
     return Endpoint(
         provider="openrouter",
         url=url,
@@ -256,7 +291,7 @@ def _mock_batch(
         candidate = by_id.get(candidate_id)
         if candidate is None:
             raise ConductorError(f"mock judge has no candidate {candidate_id!r} in state")
-        action, confidence, risk = _policy(candidate, state.get("taste") or {})
+        action, confidence, risk = policy(candidate, state.get("taste") or {})
         if kind == "action" and spec.get("type") == "choice":
             answers[key] = Answer(action, confidence, _distribution(action, confidence))
         elif kind == "risk" and spec.get("type") == "noul":
@@ -278,13 +313,16 @@ def _split_key(key: str) -> tuple[str, str]:
     raise ConductorError(f"unexpected question key {key!r}")
 
 
-def _policy(candidate: Mapping[str, Any], taste: Mapping[str, Any] | None = None) -> tuple[str, float, float]:
+def policy(candidate: Mapping[str, Any], taste: Mapping[str, Any] | None = None) -> tuple[str, float, float]:
     """Return ``(action, confidence, risk)`` from heuristic signals.
 
     Strong, unambiguous signals get a high confidence and a low risk. Ambiguous
     ones land on ``mark_review``. The numbers are fixed so a dry-run is the
     same on every machine. Taste prefs nudge a few of those numbers; the
     default prefs are a no-op. This is a stand-in, not a trained model.
+
+    It is also the deterministic rule set the router falls back to when live
+    Jev is unavailable, with the confidence discounted.
     """
     kind = candidate.get("kind")
     signals = candidate.get("signals") or {}

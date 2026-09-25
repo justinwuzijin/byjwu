@@ -40,7 +40,9 @@ A drop that carries music goes through an assembler before the loop, when one is
 | yes | assembler with `--style` (default `byjustinwu`), then iterate its FCPXML | `assemble+iterate` |
 | no | the usual path; a warning says the music was not placed | `ingest+iterate` or `iterate` |
 
-room-run looks for `conductor.assemble.assemble`, or a callable passed to `conductor.room.register_assembler`. It passes only the keywords the callable's signature names, from: `media`, `fcpxml`, `music`, `style`, `brief`, `out_dir` (`<run>/assemble/`), `live`, `transcript_path`, `taste_path`, `durations_path`. The callable returns the FCPXML it wrote, as a path, a mapping, or an object with `fcpxml`, `out_fcpxml`, `timeline`, or `path`. The drop is still only read, and the summary still names the file to open.
+room-run looks for `conductor.assemble.assemble`, or a callable passed to `conductor.room.register_assembler`. It passes only the keywords the callable's signature names, from: `media`, `fcpxml`, `music`, `style`, `brief`, `out_dir` (`<run>/assemble/`), `live`, `transcript_path`, `taste_path`, `durations_path`, `router`. The callable returns the FCPXML it wrote, as a path, a mapping, or an object with `fcpxml`, `out_fcpxml`, `timeline`, or `path`. The drop is still only read, and the summary still names the file to open.
+
+`router` is the `conductor.router.Router` the whole run shares. An assembler makes its calls with `router.decide([Ask(...)])`: linear ones (take comparison, cut gates, subtitle breaks) go to Jev, creative ones (story, key moments, music, type, montage) go to Claude Opus 5.5, with the same fallbacks, cache, and counter as the passes. `room.json` has `decision_usage` for the assembler and the loop together, and `room.md` has a `Decisions:` line.
 
 ## Failures the bot can paste
 

@@ -278,6 +278,16 @@ def _add_iterate(parser: argparse.ArgumentParser) -> None:
         type=float,
         help="stop when spine joins per minute are at or under this",
     )
+    parser.add_argument(
+        "--graphics",
+        action="store_true",
+        help="render subtitles, distorted titles, and the rectangle layer onto the output FCPXML",
+    )
+    parser.add_argument(
+        "--style",
+        help="style profile for graphics (default: byjustinwu). The stage also runs when that profile enables it",
+    )
+    parser.add_argument("--beats", help="JSON list of music beat times, in seconds, for the rectangle layer")
     _add_signals(parser)
 
 
@@ -334,8 +344,14 @@ def _add_room(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--max-rounds", type=int, default=5, help="stop after this many rounds (default: 5)")
     parser.add_argument(
         "--style",
-        help="assembly style when the drop has music and an assembler is installed (default: byjustinwu)",
+        help="assembly and graphics style (default: byjustinwu). Graphics also run when that profile enables them",
     )
+    parser.add_argument(
+        "--graphics",
+        action="store_true",
+        help="render subtitles, distorted titles, and the rectangle layer onto the output FCPXML",
+    )
+    parser.add_argument("--beats", help="JSON list of music beat times, in seconds, for the rectangle layer")
     parser.add_argument(
         "--live",
         action="store_true",
@@ -376,6 +392,8 @@ def _room(args) -> int:
         durations=args.durations,
         max_rounds=args.max_rounds,
         style=args.style,
+        graphics=True if args.graphics else None,
+        beats=args.beats,
     )
     print(result.markdown, end="" if result.markdown.endswith("\n") else "\n")
     return 0
@@ -399,6 +417,8 @@ def _watch_room(args) -> int:
             durations=args.durations,
             max_rounds=args.max_rounds,
             style=args.style,
+            graphics=True if args.graphics else None,
+            beats=args.beats,
             stable_seconds=args.stable_seconds,
             poll_seconds=args.poll_seconds,
             on_event=_show,
@@ -444,6 +464,9 @@ def _iterate(args) -> int:
         global_taste_path=args.global_taste,
         feedback_path=args.feedback,
         learn_from=args.learn_from,
+        graphics=True if args.graphics else None,
+        style=args.style,
+        beats=args.beats,
     )
     print(format_report(result))
     for warning in result.warnings:

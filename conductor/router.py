@@ -21,6 +21,8 @@ take_compare       jev     Which of two takes is better on objective signals?
 cut_gate           jev     Does this cut point meet the cut rules?
 pacing_violation   jev     Which of these candidates breaks the pacing target?
 subtitle_break     jev     Where does this subtitle line break, by the rules?
+subtitle_timing    jev     How long does this subtitle stay up, by the rules?
+subtitle_partial   jev     Is a word an edit cut part way through still shown?
 audio_check        jev     Is this breath, room tone, or clipped word a fault?
 covered_gap        jev     Does this gap under connected clips need a person?
 rhythm_shift       jev     Does this jump in average shot length need a look?
@@ -32,6 +34,8 @@ story_structure    opus    What order and shape does the story take?
 key_moments        opus    Which moments carry the video?
 music              opus    Which track, and where does it sit and breathe?
 typography         opus    How is on-screen text set and treated?
+title_placement    opus    Which section titles go on screen, and where?
+title_treatment    opus    Which text-distortion treatment does this title use?
 visual_treatment   opus    What grade, look, or effect does this shot want?
 montage            opus    Which shots make the montage, in what order?
 broll_selection    opus    Which coverage plays over this line?
@@ -170,6 +174,10 @@ DECISION_TYPES: dict[str, DecisionType] = {
               _LINEAR + "One pick among N against a numeric pacing target."),
         _type("subtitle_break", JEV, "Where does this subtitle line break, by the rules?",
               _LINEAR + "Line-length and phrase-boundary rules over listed break points."),
+        _type("subtitle_timing", JEV, "How long does this subtitle stay up, by the rules?",
+              _LINEAR + "Minimum and maximum on-screen time, flashes, and gaps, against the profile."),
+        _type("subtitle_partial", JEV, "Is a word an edit cut part way through still shown?",
+              _LINEAR + "The heard share of the word against the profile's keep threshold."),
         _type("audio_check", JEV, "Is this breath, room tone, or clipped word a fault?",
               _LINEAR + "Audio faults are defined by level and duration rules."),
         _type("covered_gap", JEV, "Does this gap under connected clips need a person?",
@@ -192,6 +200,10 @@ DECISION_TYPES: dict[str, DecisionType] = {
               _CREATIVE + "Music choice and placement are feel."),
         _type("typography", OPUS, "How is on-screen text set and treated?",
               _CREATIVE + "Type and on-screen treatment are design."),
+        _type("title_placement", OPUS, "Which section titles go on screen, and where?",
+              _CREATIVE + "Which sections earn a title card is a taste call."),
+        _type("title_treatment", OPUS, "Which text-distortion treatment does this title use?",
+              _CREATIVE + "Glitch, split, warp, or a plain fade is a look."),
         _type("visual_treatment", OPUS, "What grade, look, or effect does this shot want?",
               _CREATIVE + "Grade and effects are a look."),
         _type("montage", OPUS, "Which shots make the montage, in what order?",

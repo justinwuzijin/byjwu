@@ -89,8 +89,13 @@ def test_ranked_report_keeps_creative_calls_in_review(tmp_path):
         "c0007",
     ]
     assert {row["pass"] for row in review} >= {"dialogue", "pacing", "mechanical", "colour"}
-    assert report.payload["receipts"][0]["state"]["taste"]["prefs"]["target_pace"] == "measured"
-    action = report.payload["receipts"][0]["questions"]["c0001_action"]
+    jev_receipt, opus_receipt = report.payload["receipts"]
+    assert jev_receipt["engine"] == "jev" and opus_receipt["engine"] == "opus"
+    assert jev_receipt["state"]["taste"]["prefs"]["target_pace"] == "measured"
+    assert "c0001_action" not in jev_receipt["questions"]
+    assert [item["id"] for item in opus_receipt["state"]["items"]] == ["c0001"]
+    assert colour["engine"] == "opus" and colour["decision_type"] == "colour_unseen"
+    action = jev_receipt["questions"]["c0002_action"]
     assert set(action["criteria"]) == {
         "keep",
         "tighten",

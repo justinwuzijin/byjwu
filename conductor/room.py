@@ -11,6 +11,11 @@ goes to an assembler first when one is available (``register_assembler``, or
 The FCPXML it returns is iterated. Without an assembler the run falls back to
 the flow above and says so in the summary.
 
+One :class:`conductor.router.Router` serves the whole run. The assembler gets
+it as ``router`` when its signature takes that keyword, so its linear calls
+reach Jev and its creative calls reach Opus through the same cache and
+fallbacks as the passes. ``room.json`` has the combined ``decision_usage``.
+
 Each run writes a new timestamped folder under ``--out-root`` (default
 ``~/Desktop/byjwu-out``). ``room.md`` is the chat text. ``room.json`` is the
 same summary. The shadow FCPXML from the last round is always on disk; the
@@ -44,8 +49,10 @@ from .fcpxml import Document, parse_fcpxml
 from .folders import DROP_OUT, drop_folder
 from .ingest import DEFAULT_BRIEF, VIDEO_EXTENSIONS
 from .iterate import IterateResult, iterate
+from .jev import dry_run_forced
 from .metrics import measure
 from .report import dumps
+from .router import Ledger, Router, format_usage
 from .timeutil import clock
 
 PROTOCOL = "cut-conductor.room-run"
@@ -165,7 +172,9 @@ def room_run(
         _refuse_inside(source, root)
     fingerprint = _fingerprint(source)
     dest = _allocate(root, _stem(given), now or _now())
+    router: Router | None = None
     try:
+        router = Router(live=bool(live) and not dry_run_forced())
         prepared = _prepare(
             given,
             source,
@@ -176,21 +185,24 @@ def room_run(
         )
         if prepared.fcpxml is not None:
             _inspect_timeline(prepared)
-        _route_music(prepared, dest, brief=brief, style=style, live=live, taste=taste)
+        _route_music(
+            prepared, dest, brief=brief, style=style, live=router.live, taste=taste, router=router
+        )
         result = _run_iterate(
             prepared,
             dest,
             brief=brief,
-            live=live,
+            live=router.live,
             taste=taste,
             max_rounds=max_rounds,
+            router=router,
         )
         if _fingerprint(source) != fingerprint:
             raise ConductorError(
                 "The drop changed while byjwu was reading it. "
                 "The original was not written by byjwu. Drop it again once the copy has finished."
             )
-        summary = _summarize(prepared, result, dest)
+        summary = _summarize(prepared, result, dest, router)
         _write_success(dest, summary)
         return summary
     except ConductorError as exc:
@@ -203,6 +215,9 @@ def room_run(
         friendly = ConductorError(_unexpected(exc))
         _write_failure(dest, given, friendly)
         raise friendly from exc
+    finally:
+        if router is not None:
+            router.close()
 
 
 def watch(
@@ -674,6 +689,7 @@ def _run_iterate(
     live: bool,
     taste: str | Path | None,
     max_rounds: int,
+    router: Router | None = None,
 ) -> IterateResult:
     text = (brief if brief is not None else DEFAULT_BRIEF).strip() or DEFAULT_BRIEF
     shared = dict(
@@ -683,6 +699,7 @@ def _run_iterate(
         taste_path=taste,
         live=live,
         max_rounds=max_rounds,
+        router=router,
     )
     try:
         if prepared.assembled is not None:
@@ -728,6 +745,7 @@ def _route_music(
     style: str | None,
     live: bool,
     taste: str | Path | None,
+    router: Router | None = None,
 ) -> None:
     if not prepared.music:
         return
@@ -753,6 +771,7 @@ def _route_music(
         style=chosen,
         live=live,
         taste=taste,
+        router=router,
     )
     try:
         returned = assembler(**_accepted(assembler, kwargs))
@@ -781,6 +800,7 @@ def _assemble_kwargs(
     style: str,
     live: bool,
     taste: str | Path | None,
+    router: Router | None = None,
 ) -> dict:
     return {
         "media": prepared.media,
@@ -793,6 +813,7 @@ def _assemble_kwargs(
         "transcript_path": prepared.transcript,
         "taste_path": taste,
         "durations_path": prepared.durations,
+        "router": router,
     }
 
 
@@ -836,7 +857,9 @@ def _timeline_music(document: Document, root: Path) -> list[Path]:
     return found
 
 
-def _summarize(prepared: Prepared, result: IterateResult, dest: Path) -> RoomRun:
+def _summarize(
+    prepared: Prepared, result: IterateResult, dest: Path, router: Router | None = None
+) -> RoomRun:
     if not result.rounds:
         raise ConductorError("The run finished without a round, so there is no file to open in Final Cut.")
     last = result.rounds[-1]
@@ -891,7 +914,12 @@ def _summarize(prepared: Prepared, result: IterateResult, dest: Path) -> RoomRun
         "assembled_fcpxml": str(prepared.assembled) if prepared.assembled else None,
         "music": [str(path) for path in prepared.music],
         "media_note": prepared.media_note,
-        "warnings": [*prepared.warnings, *result.warnings],
+        "decision_usage": _usage(result, router),
+        "warnings": list(
+            dict.fromkeys(
+                [*prepared.warnings, *result.warnings, *(router.ledger.warnings if router else [])]
+            )
+        ),
     }
     markdown = _markdown(payload)
     return RoomRun(True, dest.resolve(), markdown, payload, open_path)
@@ -910,6 +938,7 @@ def _markdown(payload: dict) -> str:
         f"Duration: {duration['before']} → {duration['after']}",
         f"Stop: {payload['stop_reason']}",
         f"Signals: {payload['signals_label']}",
+        f"Decisions: {format_usage(payload['decision_usage']) or 'none'}",
         "",
         "## Cuts applied",
         "",
@@ -940,6 +969,16 @@ def _markdown(payload: dict) -> str:
             lines.append(f"- {warning}")
     lines.append("")
     return "\n".join(lines)
+
+
+def _usage(result: IterateResult, router: Router | None) -> dict:
+    """Iterate's rounds plus anything the assembler asked the router directly."""
+    total = Ledger()
+    if router is not None:
+        total.merge(router.ledger)
+    if result.ledger is not None:
+        total.merge(result.ledger)
+    return total.to_dict()
 
 
 def _flag_line(item: dict) -> str:

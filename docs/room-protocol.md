@@ -97,7 +97,7 @@ Configured targets: `--target-seconds` with `--tolerance` (default 1 second, a s
 
 Silence is the sum of `silence_gap` candidates (explicit gaps and holes of at least 1.25s). It is not a waveform. Average shot length and cuts per minute are spine arithmetic: a cut is the join between two non-gap clips.
 
-`iterate.json` at the output root is `protocol` `cut-conductor.iterate`, `protocol_version` 1. Bots post `stop_reason`, `needs_human`, `human_reasons`, `applied`, and `rounds`. Each round still has its own `*.conductor.json` (`cut-conductor.room`). `room-run` adds `room.json` (`cut-conductor.room-run`) as the chat summary that points at those files. Do not invent another schema.
+`iterate.json` at the output root is `protocol` `cut-conductor.iterate`, `protocol_version` 1. Bots post `stop_reason`, `needs_human`, `human_reasons`, `applied`, and `rounds`. `decision_usage` is the call counter summed over the rounds. Each row in `rounds` has its own. One router serves every round, so a region that did not change is answered from the cache and costs no call. Each round still has its own `*.conductor.json` (`cut-conductor.room`). `room-run` adds `room.json` (`cut-conductor.room-run`) as the chat summary that points at those files. Do not invent another schema.
 
 `needs_human` is true when the last round's escalate count is above zero, or `stop_reason` is `max-rounds`. A `metrics` or `no-progress` stop with no escalate is the bot finishing. Review rows are marked and left for later. The loop does not `--accept` them.
 
@@ -181,9 +181,32 @@ A pass is a named slice. Omit `--pass` and the room runs `mechanical`, then `dia
 
 Candidate ids (`c0001`, …) are assigned after the passes that actually ran, in timeline order. An id from a dialogue-only report is not the same id in a four-pass report. Bots treat ids as valid for that JSON only.
 
+## Who decides
+
+`conductor.router` sends each candidate to one engine by its decision type. Linear, logical calls go to Jev. Open-ended creative calls go to Claude Opus 5.5. The list and the reason for each entry are `router.DECISION_TYPES`. No Grok or xAI model is in the decision path. Bots in this room run the commands and relay the payload. They do not make the call themselves.
+
+| pass | kinds | engine |
+|---|---|---|
+| `mechanical` | `silence_gap`, `short_clip` | Jev |
+| `dialogue` | `filler_pause` | Jev (still review-only; the pass is creative) |
+| `pacing` | `long_static` | Jev (still review-only) |
+| `colour` | `colour_role`, `colour_aspect` | Jev (still review-only) |
+| `colour` | `colour_unseen` (exposure, skin, look) | Opus |
+| `story`, `broll` | anything a generator emits | Opus, unless a type is registered |
+| `audio` | anything a generator emits | Jev, unless a type is registered |
+
+When an engine is not there:
+
+- Jev unavailable (no key, HTTP failure, or an unusable answer): the deterministic rules answer, at 0.85× confidence. `engine_source` is `rules`, and the marker note says `engine=jev/rules`. A rules row is never `auto`, whatever the gates or taste priors say, so `iterate` stops with `no-progress` rather than cutting on rules.
+- Opus unavailable (no key, HTTP failure, refusal, or an answer that fails the schema): the row is a `review` with raw action `mark_review` and confidence 0. `engine_source` is `unavailable`. Nothing creative is applied.
+
+The first failed request marks that engine down for the rest of the run, including later `iterate` rounds. Each of these cases is a warning in the payload (`decision_usage.warnings`) and on stderr.
+
+The assembly engine asks the same router with `Router.decide([Ask(...)])`. A linear ask gives options and a deterministic `rule`. A creative ask gives options or a JSON schema. The returned `Decision` has `engine`, `source`, `value`, `confidence`, `why`, and `needs_review`.
+
 ## Confidence gates
 
-Jev returns a raw action, a confidence, and a risk (the probability that acting would damage the story). `conductor.gates.route` decides the disposition. Thresholds live in taste under `gates`, not in prompt text.
+The engine returns a raw action, a confidence, and a risk (the probability that acting would damage the story). `conductor.gates.route` decides the disposition. Thresholds live in taste under `gates`, not in prompt text. The engine and the gate are separate: a confident Jev call on a creative pass is still review.
 
 | disposition | default rule | what a bot may do |
 |---|---|---|
@@ -426,8 +449,14 @@ Who appends what:
 | `changes[].taste_reason` | why the prior moved, or null |
 | `learned[]` | events folded in from `--learn-from` or `--feedback` this run. A standing rule has `record` `rule` and is not a log row |
 | `kept[]` | candidates judged `keep` |
-| `cuts[]` | ranges actually removed, present only on apply |
-| `receipts[]` | state, questions, and answers for that batch |
+| `changes[].engine` | `jev` or `opus`: the engine the call was routed to |
+| `changes[].engine_source` | `live`, `mock` (dry-run), `rules` (Jev fallback), or `unavailable` (Opus fallback) |
+| `changes[].decision_type`, `changes[].engine_why` | the classification entry and its reason |
+| `changes[].engine_model`, `changes[].rationale`, `changes[].cached` | the model that answered, Opus's one-line note, and whether the answer came from the run cache |
+| `cuts[]` | ranges actually removed, present only on apply. Each names the `engine` that made the call |
+| `decision_usage` | the call counter: per engine `calls`, `live_calls`, `mock_calls`, `failed_calls`, `items`, `cache_hits`, `fallback_items`, `unavailable_items`, tokens, `provider_cost_usd`, `estimated_cost_usd`, `status`, `down_reason`. `totals` sums them |
+| `routing` | the decision types this run used, with engine and reason |
+| `receipts[]` | per batch: `engine`, `source`, the state, the questions (or the schema), and the answers |
 
 `changes` is ordered eligible first (confidence × (1 − risk), highest first), then review, then escalate (least confident first). A bot does not re-sort that list. Calibration of live confidence is unproven; the order is the contract, not a claim that 0.9 means 90%.
 

@@ -1,11 +1,23 @@
 # byjwu
 
-byjwu turns raw footage and music into a Final Cut Pro FCPXML that feels like a [@byjustinwu](https://www.youtube.com/@byjustinwu) video. Jev makes the logical calls, Claude Opus 5.5 makes the taste calls, and a Grok Bot room runs it.
+byjwu edits [@byjustinwu](https://www.youtube.com/@byjustinwu) videos: raw footage and music go in, and a Final Cut Pro FCPXML comes out.
 
-1. Drop files in the Grok Bot room or `~/Desktop/byjwu-in`.
-2. Get an FCPXML in `~/Desktop/byjwu-out`.
-3. Open it in Final Cut.
+## How it works
 
-Technical docs: [docs/technical.md](docs/technical.md).
+```text
+footage, music, or an FCPXML
+        ↓
+Grok Bot room  →  engine (conductor)  ←  Jev + Claude Opus 5.5
+        ↓
+FCPXML  →  Final Cut Pro
+```
+
+- **In:** footage, music, or an FCPXML, dropped in the Grok Bot room or `~/Desktop/byjwu-in`.
+- **Room:** the Grok bots coordinate: Cut Conductor, Pacing, Style, Type & Subs, and Colour.
+- **Decisions:** Jev makes the logical calls. Claude Opus 5.5 makes the taste calls.
+- **Engine:** `conductor` builds the edit, then marks it or applies the safe cuts.
+- **Out:** an FCPXML in `~/Desktop/byjwu-out`, opened in Final Cut.
+
+Details are in [docs/](docs/technical.md).
 
 built at a grok bot design build night in los angeles 09/22/26

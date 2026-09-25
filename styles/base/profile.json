@@ -1,0 +1,195 @@
+{
+  "schema": "jevid.style",
+  "schema_version": 1,
+  "name": "base",
+  "version": "1.0.0",
+  "provisional": false,
+  "description": "Neutral engine defaults. Every other profile extends this one, so a profile only lists what differs.",
+  "provenance": {
+    "source": "engine defaults",
+    "study": null,
+    "updated": "2026-09-25"
+  },
+  "assumptions": [],
+  "format": {
+    "width": 1920,
+    "height": 1080,
+    "frame_rate": 24,
+    "follow_footage": true
+  },
+  "structure": {
+    "target_seconds": 300,
+    "tolerance_seconds": 5,
+    "order": ["intro", "title_card", "talking", "montage", "talking", "outro", "end_card"],
+    "sections": {
+      "intro": {"share": 0.08, "min_seconds": 3, "max_seconds": 20},
+      "talking": {"share": 0.72, "min_seconds": 5, "max_seconds": null},
+      "montage": {"share": 0.12, "min_seconds": 3, "max_seconds": 30},
+      "outro": {"share": 0.05, "min_seconds": 0, "max_seconds": 20}
+    },
+    "title_card": {"seconds": 2.5, "bars": 2, "text_sources": ["brief", "clip_name"]},
+    "end_card": {"seconds": 3.0, "bars": 2, "text": "Thanks for watching"},
+    "broll_chunk_seconds": 2.5,
+    "speech_merge_gap_seconds": 0.35,
+    "speech_handle_seconds": 0.12,
+    "min_speech_seconds": 0.6,
+    "keep_threshold": 0.5,
+    "intro_flash_share": 0.4
+  },
+  "pacing": {
+    "tolerance": 0.25,
+    "intro": {
+      "asl_seconds": 2.0,
+      "shot_length": {"median": 1.8, "p10": 0.9, "p90": 3.5},
+      "cut_on_beat": "prefer",
+      "broll_cover": 0.0
+    },
+    "talking": {
+      "asl_seconds": 5.0,
+      "shot_length": {"median": 4.5, "p10": 2.0, "p90": 9.0},
+      "cut_on_beat": "off",
+      "broll_cover": 0.2
+    },
+    "montage": {
+      "asl_seconds": 1.5,
+      "shot_length": {"median": 1.4, "p10": 0.7, "p90": 2.6},
+      "cut_on_beat": "always",
+      "broll_cover": 0.0
+    },
+    "outro": {
+      "asl_seconds": 4.0,
+      "shot_length": {"median": 3.5, "p10": 1.5, "p90": 7.0},
+      "cut_on_beat": "prefer",
+      "broll_cover": 0.0
+    }
+  },
+  "cuts": {
+    "beat_snap_tolerance_seconds": 0.15,
+    "min_shot_seconds": 0.5,
+    "j_cut": {"probability": 0.2, "lead_seconds": 0.3},
+    "l_cut": {"probability": 0.15, "tail_seconds": 0.4},
+    "punch_in": {"enabled": false, "scale": 1.1, "every": 2},
+    "cutaway": {"min_seconds": 1.2, "max_seconds": 3.0},
+    "broll_nat_sound_db": -20
+  },
+  "music": {
+    "role": "music",
+    "bed_db": -10,
+    "floor_db": -96,
+    "fade_in": {"seconds": 1.0, "curve": "easeIn"},
+    "fade_out": {"seconds": 2.0, "curve": "easeOut"},
+    "duck": {
+      "enabled": true,
+      "depth_db": -12,
+      "attack_seconds": 0.3,
+      "release_seconds": 0.5,
+      "merge_gap_seconds": 0.8,
+      "curve": "ease"
+    },
+    "song_change": {"transition": "crossfade", "crossfade_seconds": 1.0, "at": "section_boundary"},
+    "sections": {
+      "intro": {"bed_db": -8, "duck": true},
+      "title_card": {"bed_db": -6, "duck": false},
+      "talking": {"bed_db": -10, "duck": true},
+      "montage": {"bed_db": -4, "duck": false},
+      "outro": {"bed_db": -8, "duck": true},
+      "end_card": {"bed_db": -6, "duck": false}
+    },
+    "beats": {"detect": true, "min_bpm": 70, "max_bpm": 180, "fallback_bpm": null, "beats_per_bar": 4},
+    "start_on_downbeat": false
+  },
+  "typography": {
+    "family": "SF Pro",
+    "title": {
+      "font": "SF Pro Display",
+      "face": "Bold",
+      "size": 0.1,
+      "position": [0.0, 0.0],
+      "case": "upper",
+      "tracking": 0.0,
+      "color": "#FFFFFF",
+      "alignment": "center",
+      "line_spacing": 0,
+      "stroke": null,
+      "shadow": null,
+      "lane": 2,
+      "treatments": ["none"]
+    },
+    "subtitle": {
+      "enabled": true,
+      "font": "SF Pro Text",
+      "face": "Semibold",
+      "size": 0.045,
+      "position": [0.0, -0.37],
+      "case": "as_is",
+      "tracking": 0.0,
+      "color": "#FFFFFF",
+      "alignment": "center",
+      "line_spacing": 0,
+      "stroke": {"color": "#000000", "width": 2},
+      "shadow": {"color": "#000000B3", "distance": 4, "angle": 315, "blur": 6},
+      "max_chars_per_line": 36,
+      "max_lines": 2,
+      "min_seconds": 0.8,
+      "max_seconds": 4.0,
+      "lane": 3,
+      "emphasis": {"rate": 0.0, "treatments": []}
+    }
+  },
+  "text_treatments": {
+    "none": {"description": "Static text. No transform."}
+  },
+  "background": {
+    "enabled": false,
+    "placement": "under",
+    "lane": -3,
+    "sections": {
+      "intro": false,
+      "title_card": true,
+      "talking": false,
+      "montage": false,
+      "outro": false,
+      "end_card": true
+    },
+    "aroll_inset": {"intro": 1.0, "talking": 1.0, "montage": 1.0, "outro": 1.0},
+    "change": {"every": "section", "max_seconds": 12},
+    "render_scale": 1.0,
+    "layout": {
+      "mode": "grid",
+      "grid": {"columns": 6, "rows": 4, "merge_probability": 0.35, "fill": 0.5},
+      "random": {"count": [4, 8]},
+      "size_ratios": [[1, 1], [2, 1], [1, 2], [16, 9]],
+      "size_range": [0.1, 0.4],
+      "gutter": 0.01,
+      "margin": 0.03
+    },
+    "contortion": {
+      "stretch": [0.8, 1.25],
+      "shear_degrees": [0, 0],
+      "slices": [0, 0],
+      "slice_shift": 0.0,
+      "smear": 0.0,
+      "mirror": 0.0
+    },
+    "motion": {
+      "drift": 0.0,
+      "pulse": 0.0,
+      "pulse_on_beat": false,
+      "floating": 0,
+      "floating_size": [0.08, 0.2],
+      "rotation_degrees": [0, 0]
+    },
+    "opacity": 1.0,
+    "base_color": "#101014",
+    "palette": ["#101014", "#F2F2F7", "#8E8E93"],
+    "art": {"folder": null, "procedural": "interference", "seed": 1}
+  },
+  "metrics": {
+    "subtitle_coverage_min": 0.85,
+    "on_beat_min": 0.8,
+    "fade_tolerance_seconds": 0.1,
+    "duck_tolerance_db": 1.0,
+    "background_coverage_min": 0.0,
+    "font_compliance_min": 1.0
+  }
+}

@@ -97,7 +97,7 @@ python -m conductor room-run ~/Desktop/byjwu-in/cut.fcpxml \
 
 The same command takes a `.fcpxml`, a `.fcpxmld` bundle, a `.zip` of either, or a folder of clips. It detects which, and it does not modify the drop. Dry-run is the default. `--live` is how a bot calls Jev. An SRT or WebVTT sitting next to the timeline is picked up; `--transcript` overrides that. A `durations.json` in a clip folder is picked up the same way.
 
-When the drop also carries music (`.mp3`, `.wav`, `.aif`, `.m4a`, and similar), room-run hands it to a style assembler first (`--style`, default `byjustinwu`) if one is installed, then runs the loop on what it built. Without one, the clips are handled as above and the summary says the music was not placed.
+When the drop also carries music (`.mp3`, `.wav`, `.aif`, `.m4a`, and similar), room-run hands it to `conductor.assemble.assemble` (`--style`, default `byjustinwu`), then runs the loop on the FCPXML it wrote. Creative calls go through the shared router to Claude Opus 5.5. The style profile is data under `styles/`; `byjustinwu` is provisional until the style study lands. See [style-profile.md](style-profile.md).
 
 Each run writes a new folder, `~/Desktop/byjwu-out/<name>-<timestamp>/`, so repeating it is safe. `room.md` in that folder is the chat summary (input kind, duration before and after, cuts with timecodes, rows flagged for the editor, stop reason, which signals were available, and the file to open). `room.json` is the same summary. The shadow FCPXML is always there.
 
@@ -328,7 +328,7 @@ In progress:
 - **Media signals.** Quiet audio inside a clip, local transcripts, and word timings are read when the bot machine can open the media (see the [room protocol](room-protocol.md#media-signals)). Picture signals are not built: the `colour` pass still has an honest placeholder where exposure and skin would need the picture.
 - **Taste learning.** Per-kind priors already shift later confidence from rejections, accepts, and editor re-exports. They do not train a model, and they do not loosen mechanical auto-apply unless a rule opts in. Learning from Justin's published videos belongs to the style profile below.
 - **Room run and watcher.** `room-run` and `room-run --watch` are built. With the launchd example in [room-run.md](room-run.md), an operator keeps the `~/Desktop/byjwu-in` inbox running. The editor still does not run a command. Still FCPXML out, still no plugin.
-- **Style-driven assembly.** Build the sequence from raw footage and music according to the style profile. Today ingest is filename order, and a brief does not reorder clips.
+- **Style-driven assembly.** `python -m conductor assemble` and room-run's music path build the sequence from raw footage and music according to the style profile. Ingest without music is still filename order.
 - **Jev/Opus decision router.** Built: bounded, logical calls go to Jev, and open-ended creative and taste calls go to Opus 5.5 (see [The decision router](#the-decision-router)). The Opus decision types beyond the colour placeholder wait on style-driven assembly and future passes to ask them.
 - **byjustinwu style profile.** Typography, pacing, colour, SF Pro subtitles, the rectangle background layer, and music fades and ducking, learned from his YouTube videos. The Style bot owns it.
 

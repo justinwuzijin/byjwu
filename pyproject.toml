@@ -16,7 +16,8 @@ dependencies = [
 
 [project.optional-dependencies]
 otio = ["opentimelineio>=0.17"]
-dev = ["pytest>=8", "pytest-asyncio>=0.23"]
+dev = ["pytest>=8", "pytest-asyncio>=0.23", "lxml>=5"]
+yaml = ["pyyaml>=6"]
 
 [project.scripts]
 cutmcp = "cutmcp.server:main"
@@ -24,6 +25,9 @@ cut-conductor = "conductor.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["cutmcp*", "conductor*"]
+
+[tool.setuptools.package-data]
+conductor = ["dtd/*.dtd"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

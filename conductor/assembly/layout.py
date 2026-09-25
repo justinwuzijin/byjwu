@@ -139,6 +139,7 @@ class Layout:
         self.min_shot = self._f(profile.get("cuts.min_shot_seconds"))
         self.snap_tol = self._f(float(profile.get("cuts.beat_snap_tolerance_seconds")) * adjustments.snap_scale)
         self.used: set[str] = set()
+        self.montage_src: dict[int, Fraction] = {}
         self.cutaways: list[Item] = []
         self._media: dict[str, Media] = {}
 
@@ -230,23 +231,33 @@ class Layout:
 
     def _montage(self, section: Section, units: list[Unit]) -> None:
         mode = self.profile.pacing("montage")["cut_on_beat"]
-        if self.keypoints and mode != "off":
-            self._montage_on_grid(section, units, mode)
-            return
         draws = self._draws("montage", section.index)
         floor = self._f(
             float(self.profile.pacing("montage")["asl_seconds"])
             * (1.0 - float(self.profile.get("pacing.tolerance")))
         )
+        window = self._musical_window()
         for unit in units:
             if self.t - section.start >= section.budget - self.min_shot:
                 break
+            src = max(unit.start, self.montage_src.get(unit.footage_index, unit.start))
+            file_end = unit.footage.clip.duration
+            room = file_end - src
+            if src >= unit.end - self.frame or room < floor:
+                continue
             self._music_check(self.t, self.min_shot)
             drawn = next(draws)
-            if drawn < floor and unit.duration >= floor:
+            if drawn < floor:
                 drawn = floor
-            end, on_beat = self._cut_point(drawn, mode, unit.duration)
-            self._place_visual(unit, section, end - self.t, on_beat, mode, "montage shot")
+            drawn = min(drawn, room)
+            end, on_beat = self._cut_point(drawn, mode, room, window=window)
+            length = end - self.t
+            self._place_visual(
+                unit, section, length, on_beat, mode, "montage shot",
+                extend=max(Fraction(0), (src + length) - unit.end),
+                src_in=src,
+            )
+            self.montage_src[unit.footage_index] = src + length
 
     def _montage_on_grid(self, section: Section, units: list[Unit], mode: str) -> None:
         """Shot lengths from the keypoint grid. They sum to the section budget."""
@@ -351,11 +362,21 @@ class Layout:
         self.t += duration
 
     def _place_visual(
-        self, unit: Unit, section: Section, length: Fraction, on_beat: bool | None, mode: str, what: str
+        self,
+        unit: Unit,
+        section: Section,
+        length: Fraction,
+        on_beat: bool | None,
+        mode: str,
+        what: str,
+        extend: Fraction = Fraction(0),
+        src_in: Fraction | None = None,
     ) -> None:
         clip = unit.footage.clip
-        duration = max(self.frame, self._q(min(length, unit.duration)))
-        duration = min(duration, self._q(clip.duration - unit.start))
+        src = unit.start if src_in is None else src_in
+        cap = (unit.end - src) + max(Fraction(0), extend)
+        duration = max(self.frame, self._q(min(length, cap)))
+        duration = min(duration, self._q(clip.duration - src))
         item = Item(
             kind="clip",
             lane=0,
@@ -364,7 +385,7 @@ class Layout:
             section=section.kind,
             name=clip.stem,
             media=self._clip_media(unit),
-            start=unit.start,
+            start=src,
             role="effects",
             volume_db=float(self.profile.get("cuts.broll_nat_sound_db")) if clip.has_audio else None,
             tags={
@@ -447,9 +468,9 @@ class Layout:
                 continue
             end = start + length
             on_beat = None
-            if mode != "off" and (self.keypoints or self.beats):
-                window = float(snap_window(frame_seconds=float(self.frame)))
-                words = self._host_words(host)
+            if self.beats:
+                window = float(self._musical_window())
+                words = []
                 lo_start, hi_start = host.offset, host.end - low
                 snapped_start = self._snap_visual(start, window, lo=lo_start, hi=hi_start, words=words)
                 if snapped_start is not None:
@@ -683,15 +704,31 @@ class Layout:
             budgets[card] = float(self.profile.get(f"structure.{card}.seconds"))
         return budgets
 
-    def _cut_point(self, target: Fraction, mode: str, max_len: Fraction) -> tuple[Fraction, bool | None]:
+    def _musical_window(self) -> Fraction:
+        """Half a beat, so the nearest beat is always inside the window."""
+        if len(self.beats) > 1:
+            return max(self.snap_tol, self._period() / 2)
+        return self.snap_tol
+
+    def _handle_after(self, unit: Unit) -> Fraction:
+        """Unused source after this chunk, before the next chunk or the file end."""
+        later = [
+            other.start
+            for other in self.units
+            if other.footage_index == unit.footage_index and other.start >= unit.end - self.frame
+        ]
+        limit = min(later) if later else unit.footage.clip.duration
+        return max(Fraction(0), limit - unit.end)
+
+    def _cut_point(
+        self, target: Fraction, mode: str, max_len: Fraction, window: Fraction | None = None
+    ) -> tuple[Fraction, bool | None]:
         lo = self.t + self.min_shot
         hi = self.t + max(self.min_shot, max_len)
         ideal = self.t + target
         if mode != "off" and self.beats:
-            if mode == "always":
-                beat = self._nearest(self.beats, ideal, None, lo=lo, hi=hi)
-            else:
-                beat = self._nearest(self.beats, ideal, self.snap_tol, lo=lo, hi=hi)
+            reach = None if mode == "always" else (window if window is not None else self.snap_tol)
+            beat = self._nearest(self.beats, ideal, reach, lo=lo, hi=hi)
             if beat is not None:
                 return beat, True
             return self._q(min(max(ideal, lo), hi)), False

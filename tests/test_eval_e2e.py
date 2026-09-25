@@ -37,6 +37,7 @@ def test_synthetic_room_run_matches_the_style(tmp_path):
     info = generate(shoot)
     assert info["clips"] >= 8
     assert (shoot / "bed_120bpm.wav").is_file()
+    assert (shoot / "bed_96bpm.wav").is_file()
     assert not any(path.suffix == ".mp4" and path.stat().st_size > 5_000_000 for path in shoot.glob("*.mp4"))
 
     from conductor.room import room_run
@@ -52,4 +53,5 @@ def test_synthetic_room_run_matches_the_style(tmp_path):
     (result.out_dir / "style-score.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     assert report["lint"]["passed"], report["lint"]["hard"]
     assert report["critic"]["passed"], report["critic"]
-    assert report["overall"] >= 80, report["dimensions"]
+    assert report["overall"] >= 88, report["dimensions"]
+    assert min(report["dimensions"].values()) >= 80, report["dimensions"]

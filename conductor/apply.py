@@ -21,6 +21,7 @@ from fractions import Fraction
 from .errors import ConductorError
 from .fcpxml import CLIP_TAGS, Document, local
 from .timeutil import format_time, parse_time
+from .timing import has_time_map, kept_media, local_window, sequence_fps
 
 _TIMED = frozenset({"marker", "keyword", "chapter-marker"})
 
@@ -82,7 +83,7 @@ def _ripple(sequence, deletions: list[Deletion]) -> list[str]:
             pieces.append(clip.element)
             continue
         for start, end in kept:
-            piece, dropped = _piece(clip.element, clip, start, end, deletions)
+            piece, dropped = _piece(clip.element, clip, start, end, deletions, sequence)
             warnings.extend(dropped)
             pieces.append(piece)
     for child in list(spine):
@@ -95,10 +96,20 @@ def _ripple(sequence, deletions: list[Deletion]) -> list[str]:
     return warnings
 
 
-def _piece(element, clip, start: Fraction, end: Fraction, deletions: list[Deletion]):
+def _piece(element, clip, start: Fraction, end: Fraction, deletions: list[Deletion], sequence):
     local_start = start - clip.timeline_start
-    source_start = clip.start + local_start
-    source_end = source_start + (end - start)
+    local_end = end - clip.timeline_start
+    if element is None:
+        source_start = clip.start + local_start
+        source_end = source_start + (end - start)
+    else:
+        fps = sequence_fps(sequence.frame_duration)
+        source_start, source_end = local_window(element, local_start, local_end, fps)
+    source_lo, source_hi = (
+        (source_start, source_end)
+        if source_start <= source_end
+        else (source_end, source_start)
+    )
     piece = copy.deepcopy(element)
     for child in list(piece):
         piece.remove(child)
@@ -106,12 +117,15 @@ def _piece(element, clip, start: Fraction, end: Fraction, deletions: list[Deleti
     for child in list(element):
         tag = local(child.tag)
         if tag in CLIP_TAGS:
-            placed = _place_connected(child, local_start, end - start, clip.name, warnings)
+            if _component(local(element.tag), child):
+                piece.append(copy.deepcopy(child))
+                continue
+            placed = _place_connected(child, source_lo, source_hi, clip.name, warnings)
             if placed is not None:
                 piece.append(placed)
             continue
         if tag in _TIMED:
-            placed = _place_timed(child, source_start, source_end)
+            placed = _place_timed(child, source_lo, source_hi)
             if placed is not None:
                 piece.append(placed)
             continue
@@ -120,24 +134,34 @@ def _piece(element, clip, start: Fraction, end: Fraction, deletions: list[Deleti
     piece.set("offset", format_time(offset))
     piece.set("start", format_time(source_start))
     piece.set("duration", format_time(end - start))
+    if element is not None and element.get("audioStart") is not None and not has_time_map(element):
+        audio_start, audio_end = kept_media(
+            element, local_start, local_end, sequence_fps(sequence.frame_duration), audio=True
+        )
+        piece.set("audioStart", format_time(audio_start))
+        if element.get("audioDuration") is not None:
+            piece.set("audioDuration", format_time(abs(audio_end - audio_start)))
     return piece, warnings
 
 
-def _place_connected(child, local_start: Fraction, piece_duration: Fraction, clip_name: str, warnings: list[str]):
+def _component(parent_kind: str, child: ET.Element) -> bool:
+    """A lane-less ``<audio>`` / ``<video>`` inside a ``clip`` is its media, not a connected item."""
+    return child.get("lane") is None and parent_kind in {"clip", "sync-clip"}
+
+
+def _place_connected(child, window_start: Fraction, window_end: Fraction, clip_name: str, warnings: list[str]):
+    """``offset`` is on the parent's own clock, so a kept piece leaves it where it is."""
     offset = parse_time(child.get("offset"), Fraction(0))
     duration = parse_time(child.get("duration"), Fraction(0))
-    local_end = local_start + piece_duration
-    if offset + duration <= local_start or offset >= local_end:
+    if offset + duration <= window_start or offset >= window_end:
         return None
-    if offset < local_start or offset + duration > local_end:
+    if offset < window_start or offset + duration > window_end:
         warnings.append(
             f"dropped connected clip {child.get('name') or local(child.tag)!r} "
             f"on {clip_name!r}; it crossed a cut"
         )
         return None
-    placed = copy.deepcopy(child)
-    placed.set("offset", format_time(offset - local_start))
-    return placed
+    return copy.deepcopy(child)
 
 
 def _place_timed(child, source_start: Fraction, source_end: Fraction):

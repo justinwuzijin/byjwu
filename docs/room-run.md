@@ -23,7 +23,7 @@ Accepted inputs:
 
 The drop is only read. Each run creates `~/Desktop/byjwu-out/<name>-<YYYYMMDD-HHMMSS>/`. Running it again creates another folder.
 
-`room.md` is the chat text: input kind, flow, duration before and after, cuts with timecodes, rows flagged for the editor, stop reason, signals (`transcript`, `media`, `music`, or `none`), and the absolute path to open in Final Cut. `room.json` is the same object (`protocol` `cut-conductor.room-run`). Paste `room.md`. Do not re-sort the flagged list; it follows the round report. Cut timecodes are positions on the timeline before that cut. Flagged times are positions on the file to open.
+`room.md` is the chat text: input kind, flow, duration before and after, cuts with timecodes, rows flagged for the editor, stop reason, signals (`transcript`, `media`, `music`, `audio` when ffmpeg read the clips, `words` when a local transcript ran, or `none`), an `Audio and words:` line with the media-signal summary, and the absolute path to open in Final Cut. `room.json` is the same object (`protocol` `cut-conductor.room-run`). It also carries `media_signals` (the last round's `signals` summary and skip reasons) and `words` (the words file for the FCPXML to open, or null). `room-run` runs media signals with the `auto` defaults; see [Media signals](room-protocol.md#media-signals). Paste `room.md`. Do not re-sort the flagged list; it follows the round report. Cut timecodes are positions on the timeline before that cut. Flagged times are positions on the file to open.
 
 A shadow FCPXML is always written. The path in the summary is the timeline to import (the last round's cut when that round cut something, otherwise the shadow, which already includes earlier cuts and the markers).
 

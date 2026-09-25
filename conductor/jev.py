@@ -354,6 +354,8 @@ def policy(candidate: Mapping[str, Any], taste: Mapping[str, Any] | None = None)
     if kind == "filler_pause":
         if signals.get("pure_filler"):
             return "tighten", 0.84, 0.18
+        if signals.get("restart"):
+            return "tighten", 0.72, 0.33
         if signals.get("adjacent_filler"):
             return "tighten", 0.71, 0.31
         return "mark_review", 0.60, 0.46

@@ -57,6 +57,8 @@ class Proposal:
     eligible: bool
     marker_name: str | None
     marker_note: str | None
+    confidence_raw: float = 0.0
+    taste_reason: str | None = None
     engine: str = "jev"
     engine_source: str = "mock"
     decision_type: str = ""
@@ -105,7 +107,8 @@ def judge(
     finally:
         if owned:
             router.close()
-    return [_proposal(item, verdicts[item.id], gates) for item in candidates], receipts
+    proposals = [_proposal(item, verdicts[item.id], gates, taste) for item in candidates]
+    return proposals, receipts
 
 
 def deletions_for(
@@ -187,19 +190,29 @@ def _deletion(candidate: Candidate, action: str, hold: Fraction) -> Deletion:
     )
 
 
-def _proposal(candidate: Candidate, verdict: Verdict, gates: Gates) -> Proposal:
+def _proposal(candidate: Candidate, verdict: Verdict, gates: Gates, taste: Taste) -> Proposal:
     raw = verdict.action
-    confidence = float(verdict.confidence)
     risk = float(verdict.risk)
     if verdict.source == "unavailable":
+        confidence = confidence_raw = float(verdict.confidence)
+        taste_reason = None
         action, disposition = "mark_review", "review"
     else:
+        adjustment = taste.adjust(candidate.kind, candidate.signals, float(verdict.confidence), gates)
+        confidence = adjustment.confidence
+        confidence_raw = adjustment.confidence_raw
+        taste_reason = adjustment.reason
+        kind_gates = Gates(
+            auto_confidence=adjustment.auto_confidence,
+            review_confidence=gates.review_confidence,
+            auto_risk_max=gates.auto_risk_max,
+        )
         action, disposition = route(
             raw,
             confidence,
             risk,
             creative=is_creative(candidate.pass_name or "mechanical"),
-            gates=gates,
+            gates=kind_gates,
         )
     human = disposition in {"review", "escalate"}
     name = None
@@ -209,7 +222,17 @@ def _proposal(candidate: Candidate, verdict: Verdict, gates: Gates) -> Proposal:
             f"CC {ACTION_TITLE[action]} · {candidate.label} @ "
             f"{short_clock(candidate.timeline_start)}"
         )
-        note = _note(candidate, raw, action, disposition, confidence, risk, verdict)
+        note = _note(
+            candidate,
+            raw,
+            action,
+            disposition,
+            confidence,
+            risk,
+            confidence_raw=confidence_raw,
+            taste_reason=taste_reason,
+            verdict=verdict,
+        )
     return Proposal(
         candidate_id=candidate.id,
         raw_action=raw,
@@ -223,6 +246,8 @@ def _proposal(candidate: Candidate, verdict: Verdict, gates: Gates) -> Proposal:
         eligible=disposition == "auto",
         marker_name=name,
         marker_note=note,
+        confidence_raw=confidence_raw,
+        taste_reason=taste_reason,
         engine=verdict.engine,
         engine_source=verdict.source,
         decision_type=verdict.decision_type,
@@ -241,6 +266,9 @@ def _note(
     disposition: str,
     confidence: float,
     risk: float,
+    *,
+    confidence_raw: float,
+    taste_reason: str | None,
     verdict: Verdict,
 ) -> str:
     from .timeutil import clock
@@ -262,6 +290,10 @@ def _note(
         f"decision={verdict.decision_type}",
         f"routed={_trim(verdict.why, 120)}",
     ]
+    if abs(confidence_raw - confidence) > 1e-9:
+        parts.append(f"confidence_raw={confidence_raw:.2f}")
+    if taste_reason:
+        parts.append(f"taste={_trim(taste_reason.replace('|', '/'), 180)}")
     if verdict.rationale:
         parts.append(f"{verdict.engine}_says={_trim(verdict.rationale, 160)}")
     if verdict.detail:

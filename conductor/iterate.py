@@ -84,6 +84,9 @@ def iterate(
     max_silence_seconds: float | None = None,
     min_shot_seconds: float | None = None,
     max_cuts_per_minute: float | None = None,
+    global_taste_path: str | Path | None = None,
+    feedback_path: str | Path | None = None,
+    learn_from: str | Path | None = None,
     router: Router | None = None,
 ) -> IterateResult:
     """Run the unattended mechanical loop. Dry-run unless ``live`` is set."""
@@ -159,6 +162,8 @@ def iterate(
             targets=targets,
             taste=taste,
             max_rounds=max_rounds,
+            feedback_path=feedback_path,
+            learn_from=learn_from,
             analyze_args={
                 "transcript_path": transcript_path,
                 "brief": brief.strip(),
@@ -166,6 +171,7 @@ def iterate(
                 "html": html,
                 "passes": passes,
                 "min_confidence": min_confidence,
+                "global_taste_path": global_taste_path,
             },
         )
     finally:
@@ -224,6 +230,8 @@ def _rounds(
     targets: Targets,
     taste,
     max_rounds: int,
+    feedback_path,
+    learn_from,
     analyze_args: dict,
 ) -> tuple[str, list[str]]:
     reason = "max-rounds"
@@ -239,6 +247,8 @@ def _rounds(
             allow_empty_apply=True,
             skip_apply=(targets.clear if targets.configured() else None),
             router=router,
+            feedback_path=feedback_path if number == 1 else None,
+            learn_from=learn_from if number == 1 else None,
             **analyze_args,
         )
         if report.ledger is not None:
@@ -257,6 +267,7 @@ def _rounds(
             "cuts": cuts,
             "metrics": metrics,
             "mode": report.mode,
+            "learned": report.payload.get("learned") or [],
             "decision_usage": report.payload.get("decision_usage") or {},
             "next": str(report.out_applied or report.out_fcpxml or staged),
         }

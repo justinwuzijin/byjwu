@@ -16,6 +16,7 @@ from .apply import apply_edits
 from .decide import deletions_for, judge
 from .errors import ConductorError
 from .fcpxml import Document, parse_fcpxml, write_document
+from .feedback import bind_pending, diff_fcpxml, ingest_notes
 from .jev import dry_run_forced
 from .markers import apply_markers
 from .metrics import measure
@@ -68,6 +69,9 @@ def analyze(
     apply_passes: list[str] | None = None,
     allow_empty_apply: bool = False,
     skip_apply: Callable[[dict], bool] | None = None,
+    global_taste_path: str | Path | None = None,
+    feedback_path: str | Path | None = None,
+    learn_from: str | Path | None = None,
     router: Router | None = None,
 ) -> Report:
     """Run the named passes and write a shadow proposal.
@@ -81,6 +85,11 @@ def analyze(
     skips the cut file when the gate matches nothing. ``skip_apply`` sees the
     pre-cut metrics and can decline the cut.
 
+    ``learn_from`` is the previous conductor shadow FCPXML. ``fcpxml_path``
+    is the editor's re-export. The diff is appended to the project taste
+    before this run judges. ``feedback_path`` is a notes file from a room
+    bot. ``global_taste_path`` is read-only.
+
     ``router`` shares a decision cache and engine health across calls; its
     ``live`` wins over ``live``. Without one, a router is opened and closed
     here. The payload's ``decision_usage`` counts this call only.
@@ -90,13 +99,28 @@ def analyze(
     document = parse_fcpxml(source)
     sequences = _select(document, project)
     cues = load_transcript(transcript_path) if transcript_path else []
-    taste = load_taste(taste_path)
+    taste = load_taste(taste_path, global_path=global_taste_path)
+    learned: list[dict] = []
+    learn_warnings: list[str] = []
+    if learn_from:
+        events, diff_warnings = diff_fcpxml(learn_from, source)
+        learn_warnings.extend(diff_warnings)
+        for event in events:
+            if taste.append(event):
+                learned.append(event)
+    if feedback_path:
+        noted, note_warnings = ingest_notes(taste, feedback_path)
+        learn_warnings.extend(note_warnings)
+        learned.extend(noted)
     candidates = collect(
         sequences,
         cues,
         transcript_present=transcript_path is not None,
         requested=passes,
     )
+    bound, bind_warnings = bind_pending(taste, candidates)
+    learn_warnings.extend(bind_warnings)
+    learned.extend(bound)
     owned = router is None
     if router is None:
         router = Router(live=bool(live) and not dry_run_forced())
@@ -160,6 +184,7 @@ def analyze(
                             "kind": candidate.kind,
                             "timeline_start_seconds": seconds(deletion.start),
                             "timeline_end_seconds": seconds(deletion.end),
+                            "source": "person" if accept else "auto",
                             "engine": f"{proposal.engine}/{proposal.engine_source}",
                         },
                     )
@@ -211,9 +236,10 @@ def analyze(
         taste=taste.to_state(),
         gates=taste.gates.to_dict(),
         cuts=cuts,
-        apply_warnings=apply_warnings,
+        apply_warnings=[*learn_warnings, *apply_warnings],
         shadow=not bool(cuts),
         applied=bool(cuts),
+        learned=learned,
         decision_usage=ledger.to_dict(),
         routing={
             name: row
@@ -246,7 +272,7 @@ def analyze(
         out_markdown=out_md,
         out_html=out_html,
         out_taste=out_taste,
-        warnings=[*ledger.warnings, *apply_warnings],
+        warnings=[*learn_warnings, *ledger.warnings, *apply_warnings],
         ledger=ledger,
     )
 

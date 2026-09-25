@@ -24,6 +24,25 @@ FCPXML goes in and FCPXML comes out. `~/Desktop/byjwu-in` and `~/Desktop/byjwu-o
 
 A folder of clips becomes a starter sequence first (filename order, absolute `file://` paths), then the same loop. An export is iterated as it stands. Source clips and the file he dropped are only read.
 
+## What changes in the FCPXML
+
+The short version is in the [README](../README.md). This is the same behaviour, with the file names the code writes.
+
+The run folder is `~/Desktop/byjwu-out/<name>-<YYYYMMDD-HHMMSS>/`. A clip folder also writes `starter.fcpxml` there. Each round is `vN/`:
+
+- `timeline.fcpxml` is a byte copy of the timeline that round reads.
+- `timeline.conductor.fcpxml` is the marked copy. `apply_markers` adds `<marker>` elements and refuses the write if a clip's offset, start, duration, ref, or roles change, or if an existing marker's start, value, note, or completed flag changes. The file is still re-serialized, so whitespace and the XML declaration can differ from the export.
+- `timeline.conductor.applied.fcpxml` is written only when at least one deletion is applied. It is a fresh parse of that round's timeline, then the deletions, with no proposal markers added.
+- `timeline.conductor.md`, `timeline.conductor.json`, and `timeline.taste.json` are the round report. `room.md` and `room.json` are the chat summary. `iterate.json` is the stop record. `timeline.words.json` appears when word timings were read.
+
+Marker `start` is the clip's source time (the same clock as the clip's `start`), at the candidate's timeline position, clamped inside the clip and nudged one frame if that time is already used. `duration` is one sequence frame. The value is `CC {tighten|remove|review|escalate} · {label} @ {timecode}`. The note begins `Cut Conductor shadow proposal. No edit was applied.` Review and escalate set `completed="0"` (a to-do). An `auto` disposition omits `completed` (a standard marker). `keep` writes nothing. FCPXML has no marker colour attribute; `color=` is text inside the note.
+
+`iterate` auto-applies only the mechanical pass, at `--min-confidence` 0.80, and only rows whose disposition is `auto` (confidence at least 0.80, risk at most 0.35, and not a rules fallback). A `remove` lifts the candidate range. A `tighten` on a whole clip lifts everything after `hold_seconds` (default 4). The ripple rewrites spine `offset` values after the cut, and `start` / `duration` (and `audioStart` / `audioDuration` when those attributes exist and the clip has no time map) on a split piece. Sequence `duration` shrinks by the removed time. Connected items and secondary storylines keep their offsets. Coverage under a laned item is punched out of a wholesale removal. A connected item that crosses a cut is dropped and named in the warnings. A non-clip spine item (a transition) aborts the ripple. Audio volume keyframes are not authored. Colour does not grade pixels.
+
+Graphics (`conductor/graphics`) stay off unless `--graphics` is set or the style profile sets `graphics.enabled` (the shipped `byjustinwu` profile leaves it false). The stage then writes onto the file the summary names, on a free lane, and does not change existing clip timing. Subtitles and `none` / `scale_warp` titles are Basic Title elements. Other title treatments are alpha movies in `<stem>.assets/`. Rectangles are Shapes generators with transform keyframes, Gaussian blur, and Hue/Saturation. A second pass leaves a timeline that already has a `byjwu ` asset.
+
+A logic-first decision mode is not on this branch. Measured rules such as uncovered black and dead air cutting by default, with models only able to veto, are still in progress.
+
 ## Who decides what
 
 | Piece | Decides | Does not |

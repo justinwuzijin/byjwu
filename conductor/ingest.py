@@ -311,6 +311,9 @@ def ingest(
     accept: list[str] | None = None,
     min_confidence: float | None = None,
     probe: ProbeFn | None = None,
+    signals: str = "auto",
+    transcribe: str = "auto",
+    signal_cache: str | Path | None = None,
 ) -> IngestResult:
     """Inventory ``media_dir``, write a starter FCPXML, and run ``analyze`` on it.
 
@@ -343,6 +346,9 @@ def ingest(
         apply=apply,
         accept=accept,
         min_confidence=min_confidence,
+        signals=signals,
+        transcribe=transcribe,
+        signal_cache=signal_cache,
     )
     info = _payload(found, starter, sequence_name)
     _attach(report, info)

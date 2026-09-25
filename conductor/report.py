@@ -43,6 +43,7 @@ def build_payload(
     apply_warnings: list[str],
     shadow: bool,
     applied: bool,
+    signals: dict | None = None,
 ) -> dict:
     by_id = {item.id: item for item in candidates}
     proposal_by_id = {item.candidate_id: item for item in proposals}
@@ -88,6 +89,15 @@ def build_payload(
         "markers_added": markers_added,
         "cuts": cuts,
         "apply_warnings": apply_warnings,
+        "signals": signals
+        or {
+            "audio": "skipped",
+            "transcript": "skipped",
+            "summary": "",
+            "reasons": [],
+            "clips": [],
+            "unreachable": [],
+        },
         "receipts": receipts,
     }
 
@@ -104,6 +114,7 @@ def render_markdown(payload: dict) -> str:
         f"- Brief: {payload['brief']}",
         f"- Markers added this run: {payload['markers_added']}",
         f"- Cuts written: {len(payload['cuts'])}",
+        f"- Signals: {payload.get('signals', {}).get('summary') or 'not recorded'}",
         "",
         "## Eligible to apply",
         "",

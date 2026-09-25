@@ -51,6 +51,7 @@ class IterateResult:
     starter: Path | None = None
     out_json: Path | None = None
     source: Path | None = None
+    signals_summary: str = ""
 
 
 def iterate(
@@ -76,6 +77,9 @@ def iterate(
     max_silence_seconds: float | None = None,
     min_shot_seconds: float | None = None,
     max_cuts_per_minute: float | None = None,
+    signals: str = "auto",
+    transcribe: str = "auto",
+    signal_cache: str | Path | None = None,
 ) -> IterateResult:
     """Run the unattended mechanical loop. Dry-run unless ``live`` is set."""
     if bool(fcpxml) == bool(media):
@@ -153,6 +157,9 @@ def iterate(
             apply_passes=list(MECHANICAL),
             allow_empty_apply=True,
             skip_apply=(targets.clear if targets.configured() else None),
+            signals=signals,
+            transcribe=transcribe,
+            signal_cache=signal_cache,
         )
         metrics = _metrics(report)
         cuts = _cuts(report, number)
@@ -169,6 +176,7 @@ def iterate(
             "metrics": metrics,
             "mode": report.mode,
             "next": str(report.out_applied or report.out_fcpxml or staged),
+            "signals": _signal_summary(report),
         }
         rounds.append(row)
         applied.extend(cuts)
@@ -198,6 +206,7 @@ def iterate(
         warnings=warnings,
         starter=starter,
         source=Path(fcpxml) if fcpxml else starter,
+        signals_summary=(rounds[-1].get("signals") or {}).get("summary", "") if rounds else "",
     )
     payload = {
         "protocol": PROTOCOL,
@@ -217,6 +226,7 @@ def iterate(
         "applied": applied,
         "rounds": rounds,
         "warnings": warnings,
+        "signals": rounds[-1].get("signals") if rounds else None,
     }
     out_json = destination / "iterate.json"
     out_json.write_text(dumps(payload), encoding="utf-8")
@@ -243,6 +253,8 @@ def format_report(result: IterateResult) -> str:
             f"{metrics['cuts_per_minute']:>8.2f}  "
             f"{applied}"
         )
+    if result.signals_summary:
+        lines.append(f"signals  {result.signals_summary}")
     if result.cleared:
         lines.append("clear  " + ", ".join(result.cleared))
     lines.append("human  " + (", ".join(result.human_reasons) if result.human_reasons else "none"))
@@ -251,6 +263,19 @@ def format_report(result: IterateResult) -> str:
     if result.out_json is not None:
         lines.append(f"json  {result.out_json}")
     return "\n".join(lines)
+
+
+def _signal_summary(report: Report) -> dict:
+    raw = report.payload.get("signals") or {}
+    return {
+        "audio": raw.get("audio"),
+        "transcript": raw.get("transcript"),
+        "whisper_tool": raw.get("whisper_tool"),
+        "summary": raw.get("summary") or "",
+        "reasons": list(raw.get("reasons") or []),
+        "unreachable": list(raw.get("unreachable") or []),
+        "cache_hits": dict(raw.get("cache_hits") or {}),
+    }
 
 
 def _human(reason: str, rounds: list[dict]) -> list[str]:

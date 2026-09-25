@@ -89,13 +89,70 @@ Stop after the round, on the first reason that holds:
 
 Configured targets: `--target-seconds` with `--tolerance` (default 1 second, a symmetric window), `--max-escalate`, `--max-review`, `--max-silence-seconds`, `--min-shot-seconds`, `--max-cuts-per-minute`.
 
-Silence is the sum of `silence_gap` candidates (explicit gaps and holes of at least 1.25s). It is not a waveform. Average shot length and cuts per minute are spine arithmetic: a cut is the join between two non-gap clips.
+`metrics.silence_seconds` is still structural: explicit gaps and holes of at least 1.25s. It is not a waveform. Average shot length and cuts per minute are spine arithmetic: a cut is the join between two non-gap clips.
+
+Dead air measured inside a clip is separate. When media signals run, that quiet range is also a `silence_gap` candidate (`signals.audio` true) and `iterate` may auto-apply it under the same mechanical gate. The measurement itself is on `signals` in the round JSON, not added again into `silence_seconds`.
 
 `iterate.json` at the output root is `protocol` `cut-conductor.iterate`, `protocol_version` 1. Bots post `stop_reason`, `needs_human`, `human_reasons`, `applied`, and `rounds`. Each round still has its own `*.conductor.json` (`cut-conductor.room`). Do not invent a third schema.
 
 `needs_human` is true when the last round's escalate count is above zero, or `stop_reason` is `max-rounds`. A `metrics` or `no-progress` stop with no escalate is the bot finishing. Review rows are marked and left for later. The loop does not `--accept` them.
 
-The transcript stays on the clock of the file you passed. After a ripple, later dialogue times can drift. Mechanical silence and short clips do not use the transcript, so the unattended loop still converges. A bot that cares about filler after a cut should rebuild the SRT on the new sequence clock before the next dialogue pass.
+The transcript stays on the clock of the file you passed. After a ripple, later dialogue times can drift. Mechanical silence and short clips do not use the transcript, so the unattended loop still converges. A bot that cares about filler after a cut should rebuild the SRT on the new sequence clock before the next dialogue pass. A transcript built from the media (below) is remapped from source time every round, and the words are cached, so that drift does not apply to it.
+
+## Media signals
+
+The bot machine may read the audio of files the FCPXML already points at (`media-rep src="file://..."`). This is off when the file is not on that machine, when ffmpeg is not installed, or when the bot passes `--signals off`. A missing file does not fail the run. Dry-run with no media and no API key still writes markers from the XML alone.
+
+Defaults are `--signals auto` and `--transcribe auto`. The same flags exist on `analyze`, `iterate`, and `ingest`. `auto` runs the stage when the tool and the file are both present, and records a skip otherwise. `on` does the same and adds a warning when the stage did not run. Nothing in this stage contacts the network, and it does not download a model.
+
+What it measures, when it runs:
+
+| signal | tool | what the room sees |
+|---|---|---|
+| Silence inside a clip | ffmpeg `silencedetect` (noise floor −40 dB, at least 0.30s recorded) | Ranges of at least 1.25s on a spine item become `silence_gap` with `signals.audio` true. `iterate` may auto-apply those under the existing mechanical gate. Connected clips are measured and listed, and are not cut. |
+| Loudness and true peak | ffmpeg `ebur128` | `integrated_lufs`, `true_peak_db`, and `clipping` (true peak at or above −0.1 dBFS) on each heard range in `signals.clips`. Not a cut. |
+| Words | faster-whisper or whisper.cpp, only if a model is already on disk | Cues on the sequence clock, fed to the dialogue and pacing passes. Filler, pauses of at least 0.80s, and a short restart stay review. |
+
+An SRT or WebVTT passed with `--transcript` wins. Local transcription does not run beside it, and it does not run when `--transcribe off`.
+
+Time mapping uses each item's `start`, `offset`, and `duration`, a `conform-rate` with `scaleEnabled="1"` (one source frame becomes one sequence frame), a `timeMap` when one is present (smooth curves are sampled linearly at the time points), and `ref-clip` compounds including a compound inside a compound. `audioStart` / `audioDuration` is the slip used for what is heard. A cut rewrites the picture `start` with the same map, so a conformed trim does not jump to the wrong frame.
+
+Cache is one file per media path, keyed by path, size, and mtime, under `CONDUCTOR_CACHE` or `~/.cache/conductor`. A later round slices that file instead of transcribing again. `--signal-cache` overrides the directory for one command.
+
+The round report (`*.conductor.json`, `signals`) and `iterate.json` (`signals.summary` on the loop and on each round) are what the bot should quote. `signals.audio` is `used` or `skipped`. `signals.transcript` is `file`, `whisper`, or `skipped`. `signals.reasons` says why a stage did not run. `signals.unreachable` lists `file://` URLs that were not on disk.
+
+### What the operator installs
+
+This is for the machine the bot runs on. The person who drops a folder in `~/Desktop/jevid-in` does not install these.
+
+ffmpeg (silence, loudness, and the wav extract a local transcript needs):
+
+```bash
+brew install ffmpeg
+```
+
+Local transcript, one of the two. The model has to already be on disk. A cut does not download it.
+
+whisper.cpp:
+
+```bash
+brew install whisper-cpp
+# ggml model from a previous download, for example ggml-base.en.bin
+export CONDUCTOR_WHISPER_MODEL="$HOME/models/ggml-base.en.bin"
+```
+
+The binary is `whisper-cli` (some installs name it `whisper-cpp`).
+
+faster-whisper:
+
+```bash
+pip install faster-whisper
+# download once, outside a cut, then leave the cache in place:
+# python -c "from faster_whisper import WhisperModel; WhisperModel('base')"
+export CONDUCTOR_WHISPER_MODEL=base
+```
+
+`CONDUCTOR_WHISPER_MODEL` may also be a CTranslate2 model directory. If it is unset, a model already present under the Hugging Face hub cache (`models--Systran--faster-whisper-*`) is used. If neither a tool nor a model is on disk, transcription is skipped and the reason is on `signals`.
 
 ## Roles
 
@@ -298,6 +355,7 @@ The next analyze/apply that points `--taste` at the updated file puts those even
 | `shadow`, `applied` | shadow is always true for a successful run; `applied` is true only after a cut file was written |
 | `brief`, `passes`, `gates`, `taste` | what this run was asked |
 | `source.blake2b` | hash of the FCPXML that was read (the export, or the starter from ingest) |
+| `signals` | whether audio and a local transcript ran. `summary` is the sentence to post. `audio` is `used` or `skipped`. `transcript` is `file`, `whisper`, or `skipped`. `unreachable` lists `file://` URLs that were not on disk. See Media signals. |
 | `ingest` | only when the run started from a folder: starter path, clip paths, durations. Absent on an export-only analyze |
 | `changes[]` | ranked rows: `section` is `eligible`, `review`, or `escalate` |
 | `changes[].candidate_id` | the id for `--accept` |

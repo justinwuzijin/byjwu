@@ -21,6 +21,7 @@ from fractions import Fraction
 from .errors import ConductorError
 from .fcpxml import CLIP_TAGS, Document, local
 from .timeutil import format_time, parse_time
+from .timing import has_time_map, kept_media, rewrite_time_map, sequence_fps
 
 _TIMED = frozenset({"marker", "keyword", "chapter-marker"})
 
@@ -82,7 +83,7 @@ def _ripple(sequence, deletions: list[Deletion]) -> list[str]:
             pieces.append(clip.element)
             continue
         for start, end in kept:
-            piece, dropped = _piece(clip.element, clip, start, end, deletions)
+            piece, dropped = _piece(clip.element, clip, start, end, deletions, sequence)
             warnings.extend(dropped)
             pieces.append(piece)
     for child in list(spine):
@@ -95,10 +96,22 @@ def _ripple(sequence, deletions: list[Deletion]) -> list[str]:
     return warnings
 
 
-def _piece(element, clip, start: Fraction, end: Fraction, deletions: list[Deletion]):
+def _piece(element, clip, start: Fraction, end: Fraction, deletions: list[Deletion], sequence):
     local_start = start - clip.timeline_start
-    source_start = clip.start + local_start
-    source_end = source_start + (end - start)
+    local_end = end - clip.timeline_start
+    if element is None:
+        source_start = clip.start + local_start
+        source_end = source_start + (end - start)
+    else:
+        fps = sequence_fps(sequence.frame_duration)
+        source_start, source_end = kept_media(
+            element, local_start, local_end, fps, audio=False
+        )
+    source_lo, source_hi = (
+        (source_start, source_end)
+        if source_start <= source_end
+        else (source_end, source_start)
+    )
     piece = copy.deepcopy(element)
     for child in list(piece):
         piece.remove(child)
@@ -111,7 +124,7 @@ def _piece(element, clip, start: Fraction, end: Fraction, deletions: list[Deleti
                 piece.append(placed)
             continue
         if tag in _TIMED:
-            placed = _place_timed(child, source_start, source_end)
+            placed = _place_timed(child, source_lo, source_hi)
             if placed is not None:
                 piece.append(placed)
             continue
@@ -120,6 +133,15 @@ def _piece(element, clip, start: Fraction, end: Fraction, deletions: list[Deleti
     piece.set("offset", format_time(offset))
     piece.set("start", format_time(source_start))
     piece.set("duration", format_time(end - start))
+    if element is not None and element.get("audioStart") is not None and not has_time_map(element):
+        audio_start, audio_end = kept_media(
+            element, local_start, local_end, sequence_fps(sequence.frame_duration), audio=True
+        )
+        piece.set("audioStart", format_time(audio_start))
+        if element.get("audioDuration") is not None:
+            piece.set("audioDuration", format_time(abs(audio_end - audio_start)))
+    if has_time_map(piece):
+        rewrite_time_map(piece, local_start, local_end)
     return piece, warnings
 
 

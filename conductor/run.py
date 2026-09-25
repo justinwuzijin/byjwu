@@ -21,6 +21,7 @@ from .markers import apply_markers
 from .metrics import measure
 from .passes import collect, resolve_names
 from .report import build_payload, dumps, render_html, render_markdown
+from .signals import gather
 from .taste import Taste, feedback_event, load_taste, write_taste
 from .timeutil import seconds
 from .transcript import load_transcript
@@ -66,6 +67,9 @@ def analyze(
     apply_passes: list[str] | None = None,
     allow_empty_apply: bool = False,
     skip_apply: Callable[[dict], bool] | None = None,
+    signals: str = "auto",
+    transcribe: str = "auto",
+    signal_cache: str | Path | None = None,
 ) -> Report:
     """Run the named passes and write a shadow proposal.
 
@@ -82,13 +86,33 @@ def analyze(
     source_bytes = source.read_bytes()
     document = parse_fcpxml(source)
     sequences = _select(document, project)
-    cues = load_transcript(transcript_path) if transcript_path else []
+    signal_report = gather(
+        document,
+        sequences,
+        signals=signals,
+        transcribe=transcribe,
+        cache_dir=signal_cache,
+        transcript_supplied=transcript_path is not None,
+    )
+    if transcript_path:
+        cues = load_transcript(transcript_path)
+        transcript_present = True
+        transcript_name: str | None = str(transcript_path)
+    else:
+        cues = list(signal_report.cues)
+        transcript_present = signal_report.transcript == "whisper"
+        transcript_name = (
+            f"local:{signal_report.whisper_tool or 'whisper'}"
+            if transcript_present
+            else None
+        )
     taste = load_taste(taste_path)
     candidates = collect(
         sequences,
         cues,
-        transcript_present=transcript_path is not None,
+        transcript_present=transcript_present,
         requested=passes,
+        audio_silences=signal_report.silences,
     )
     use_live = bool(live) and not dry_run_forced()
     proposals, receipts = judge(candidates, brief, live=use_live, taste=taste)
@@ -175,7 +199,7 @@ def analyze(
         mode=mode,
         source_name=str(source),
         source_hash=hashlib.blake2b(source_bytes, digest_size=16).hexdigest(),
-        transcript_name=str(transcript_path) if transcript_path else None,
+        transcript_name=transcript_name,
         cue_count=len(cues),
         candidates=candidates,
         proposals=proposals,
@@ -189,6 +213,7 @@ def analyze(
         apply_warnings=apply_warnings,
         shadow=not bool(cuts),
         applied=bool(cuts),
+        signals=signal_report.to_state(),
     )
     if source.read_bytes() != source_bytes:
         raise ConductorError("refusing to finish: the source FCPXML changed during the run")
@@ -215,7 +240,7 @@ def analyze(
         out_markdown=out_md,
         out_html=out_html,
         out_taste=out_taste,
-        warnings=apply_warnings,
+        warnings=[*signal_report.warnings, *apply_warnings],
     )
 
 

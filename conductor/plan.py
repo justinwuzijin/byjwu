@@ -228,7 +228,7 @@ def _clip(document: Document, clip: Clip, *, spine: bool) -> PlanClip:
         timeline_end=start + clip.duration,
         source_start=clip.start if clip.ref else None,
         source_end=(clip.start + clip.duration) if clip.ref else None,
-        asset_id=clip.ref,
+        asset_id=clip.ref if asset is not None else None,
         asset_src=src,
         text=text,
         lane=clip.lane,
@@ -236,7 +236,7 @@ def _clip(document: Document, clip: Clip, *, spine: bool) -> PlanClip:
         fade_in=_fade(clip, "in"),
         fade_out=_fade(clip, "out"),
         position=_position(clip),
-        intended_gap=_intended(clip),
+        intended_gap=_intended(clip) or (not spine and (clip.kind or "") == "video"),
         element=clip.element,
     )
 
@@ -296,6 +296,39 @@ def _fade(clip: Clip, which: str) -> Fraction:
                 from .timeutil import parse_time
 
                 return parse_time(amount, Fraction(0))
+    ramp = _volume_ramp(element, which)
+    if ramp > 0:
+        return ramp
+    return Fraction(0)
+
+
+def _volume_ramp(element, which: str) -> Fraction:
+    """Head or tail of an ``adjust-volume`` ramp that starts or ends at silence.
+
+    The assembly engine writes music fades as keyframes, not fade handles.
+    A ramp that leaves or reaches about -96 dB counts as that fade.
+    """
+    from .timeutil import parse_time
+
+    keys: list[tuple[Fraction, float]] = []
+    for child in element:
+        if local(child.tag) != "adjust-volume":
+            continue
+        for node in child.iter():
+            if local(node.tag) != "keyframe" or not node.get("time") or not node.get("value"):
+                continue
+            raw = str(node.get("value")).lower().replace("db", "").strip()
+            try:
+                keys.append((parse_time(node.get("time"), Fraction(0)), float(raw)))
+            except ValueError:
+                continue
+    if len(keys) < 2:
+        return Fraction(0)
+    keys.sort(key=lambda item: item[0])
+    if which == "in" and keys[0][1] <= -90:
+        return max(Fraction(0), keys[1][0] - keys[0][0])
+    if which == "out" and keys[-1][1] <= -90:
+        return max(Fraction(0), keys[-1][0] - keys[-2][0])
     return Fraction(0)
 
 

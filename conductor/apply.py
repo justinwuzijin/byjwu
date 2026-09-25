@@ -77,9 +77,8 @@ def apply_edits(document: Document, deletions: list[Deletion]) -> ApplyResult:
         planned.append((sequence, kept))
         adjusted.extend(kept)
     if not adjusted:
-        raise ConductorError(
-            "refusing to remove a clip that still has connected items on it"
-        )
+        warnings.append("refusing to remove a clip that still has connected items on it")
+        return ApplyResult(cuts=[], warnings=warnings, deletions=[])
     for sequence, kept in planned:
         if kept:
             warnings.extend(_ripple(sequence, kept))

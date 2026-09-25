@@ -261,6 +261,8 @@ def _rectangles(sequence, cards, profile, beats, destination, assets, ids, resou
         result.notes.append("The rectangle layer had no window to cover, so none was rendered.")
         return
     lane = _free_lane(sequence, positive=layer.placement == "over")
+    step = 1 if layer.placement == "over" else -1
+    used_lanes = _used_lanes(sequence)
     if beats is None and layer.beat_sync:
         result.notes.append(
             "No music beat grid was available, so the rectangle layer did not cut to a beat. "
@@ -288,10 +290,14 @@ def _rectangles(sequence, cards, profile, beats, destination, assets, ids, resou
                 overlap_end = min(dies, clip.timeline_end)
                 if overlap_end <= overlap_start or clip.element is None:
                     continue
+                while lane in used_lanes:
+                    lane += step
                 _shape_clip(
                     clip, sequence, shapes, blur_id, hue_id, lane,
                     overlap_start, overlap_end - overlap_start, rect, born, layer, width, height,
                 )
+                used_lanes.add(lane)
+                lane += step
                 placed += 1
         result.rectangles.append(
             {"sequence": sequence.name, "start_seconds": float(start), "shapes": placed, "seed": seed}
@@ -477,6 +483,11 @@ def _shape_clip(clip, sequence, shapes, blur_id, hue_id, lane, start, duration, 
     node = ET.Element("video")
     node.set("ref", shapes)
     node.set("lane", str(lane))
+    frame = sequence.frame_duration
+    start = _on_grid(start, frame)
+    duration = _on_grid(duration, frame)
+    if duration < frame * 2:
+        return
     node.set("offset", format_time(_offset(clip, sequence, start)))
     node.set("name", "byjwu rectangles")
     node.set("start", "3600s")
@@ -534,6 +545,13 @@ def _connected_asset(
     _insert_anchor(clip.element, node)
 
 
+def _on_grid(value, frame: Fraction) -> Fraction:
+    if frame <= 0:
+        return Fraction(value)
+    amount = value if isinstance(value, Fraction) else Fraction(str(value))
+    return frame * int(round(float(amount / frame)))
+
+
 def _offset(clip, sequence, timeline_pos: Fraction) -> Fraction:
     local_pos = timeline_pos - clip.timeline_start
     if local_pos < 0:
@@ -568,8 +586,8 @@ def _review_marker(sequence, card: TitleCard, profile: GraphicsProfile) -> None:
     clip.element.append(marker)
 
 
-def _free_lane(sequence, *, positive: bool) -> int:
-    used = set()
+def _used_lanes(sequence) -> set[int]:
+    used: set[int] = set()
     for clip in sequence.spine:
         if clip.element is None:
             continue
@@ -577,6 +595,11 @@ def _free_lane(sequence, *, positive: bool) -> int:
             raw = child.get("lane")
             if raw and raw.lstrip("-").isdigit():
                 used.add(int(raw))
+    return used
+
+
+def _free_lane(sequence, *, positive: bool) -> int:
+    used = _used_lanes(sequence)
     lane = 1 if positive else -1
     while lane in used:
         lane += 1 if positive else -1

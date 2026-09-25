@@ -13,7 +13,18 @@ from public descriptions. No code was copied.
   clip, and a dissolve only where the removed source is long enough. The
   behaviour was reimplemented; the auto-editor source was not copied.
 - **Mosaic** — silence and filler as a counter-example (do not cut every
-  inter-word gap; ambiguous fillers stay proposals).
+  inter-word gap; ambiguous fillers stay proposals). Montage BPM bands
+  (shorter shots in higher-energy sections) informed the keypoint montage
+  durations. Ideas only.
+
+Music-structure cut snapping (`conductor/assembly/snap.py`) is a clean-room
+reimplementation of public descriptions. No code was copied.
+
+- **CutClaw** (GVCLab/CutClaw) — keypoints and an AV-harmony check (visual
+  cuts near musical events). The repository has no licence, so it was not
+  read and no code was copied.
+- **Cardboard** — beat sync from percussion / onset energy.
+- **Mosaic** — montage shot length follows the local BPM band and energy.
 
 Ideas reimplemented in this repo. No code was copied from the projects below.
 The licence rule is in the research note: only MIT, BSD, ISC, or Unlicense

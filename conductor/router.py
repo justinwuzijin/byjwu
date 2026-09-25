@@ -46,6 +46,7 @@ retake_pick        opus    Which existing complete take should be kept?
 retake_veto        opus    Should this retake cut be kept instead?
 filler_approve     opus    Is this ambiguous filler safe to cut?
 timeline_critic    opus    Approve, flag a span, or veto one cut on the edit plan?
+music_offset       opus    Which offered music in-point should the cut use?
 =================  ======  ==================================================
 
 Unknown kinds fall back to the pass default (``story`` and ``broll`` are
@@ -248,6 +249,13 @@ DECISION_TYPES: dict[str, DecisionType] = {
             _CREATIVE
             + "Pacing, clip selection, visual-script fit, and story arc are a read of the plan. "
             "The critic cannot add clips.",
+        ),
+        _type(
+            "music_offset",
+            OPUS,
+            "Which of the offered music in-points should this cut use?",
+            _CREATIVE
+            + "The model may veto among the offsets logic already ranked. It cannot invent a time.",
         ),
     )
 }

@@ -25,8 +25,18 @@ from dataclasses import dataclass, field
 from fractions import Fraction
 
 from ..style import CUT_SECTIONS, StyleProfile
+from .beats import BeatGrid
 from .media import Material, Song
 from .select import Decision, Unit, _interleave
+from .snap import (
+    Keypoint,
+    WordSpan,
+    keypoints_from_grid,
+    montage_durations,
+    section_energy,
+    snap_time,
+    snap_window,
+)
 from .timeline import Item, Media, Note, Section, Timeline, Transform
 
 SECTION_LABELS = {
@@ -112,6 +122,9 @@ class Layout:
         self.t = Fraction(0)
         self.beats: list[Fraction] = []
         self.downbeats: list[Fraction] = []
+        self.keypoints: list[Keypoint] = []
+        self.beat_grid: BeatGrid | None = None
+        self.music_source_start: Fraction | None = None
         self.segments: list[MusicSegment] = []
         self.song_cursor = -1
         self.warnings: list[str] = []
@@ -209,6 +222,9 @@ class Layout:
 
     def _montage(self, section: Section, units: list[Unit]) -> None:
         mode = self.profile.pacing("montage")["cut_on_beat"]
+        if self.keypoints and mode != "off":
+            self._montage_on_grid(section, units, mode)
+            return
         draws = self._draws("montage", section.index)
         for unit in units:
             if self.t - section.start >= section.budget - self.min_shot:
@@ -216,6 +232,30 @@ class Layout:
             self._music_check(self.t, self.min_shot)
             end, on_beat = self._cut_point(next(draws), mode, unit.duration)
             self._place_visual(unit, section, end - self.t, on_beat, mode, "montage shot")
+
+    def _montage_on_grid(self, section: Section, units: list[Unit], mode: str) -> None:
+        """Shot lengths from the keypoint grid. They sum to the section budget."""
+        energy = section_energy(self.beat_grid, float(section.start), float(section.start + section.budget))
+        lengths = montage_durations(
+            float(section.budget),
+            self.keypoints,
+            start=float(section.start),
+            energy=energy,
+            min_shot=float(self.min_shot),
+        )
+        remaining = section.budget
+        pairs = list(zip(units, lengths))
+        for index, (unit, length) in enumerate(pairs):
+            if remaining <= self.frame:
+                break
+            self._music_check(self.t, self.min_shot)
+            if index == len(pairs) - 1:
+                duration = remaining
+            else:
+                duration = min(self._q(self._f(length)), remaining)
+            before = self.t
+            self._place_visual(unit, section, duration, True, mode, "montage shot on a music keypoint")
+            remaining -= self.t - before
 
     def _card(self, section: Section) -> None:
         kind = section.kind
@@ -361,12 +401,23 @@ class Layout:
                 continue
             end = start + length
             on_beat = None
-            if mode != "off" and self.beats:
-                snapped_start = self._nearest(self.beats, start, self.snap_tol, lo=host.offset, hi=host.end - low)
+            if mode != "off" and (self.keypoints or self.beats):
+                window = float(snap_window(frame_seconds=float(self.frame)))
+                words = self._host_words(host)
+                lo_start, hi_start = host.offset, host.end - low
+                snapped_start = self._snap_visual(start, window, lo=lo_start, hi=hi_start, words=words)
                 if snapped_start is not None:
                     start = snapped_start
                 end = start + length
-                snapped_end = self._nearest(self.beats, end, self.snap_tol, lo=start + low, hi=min(start + unit.duration, host.end))
+                limit = min(start + unit.duration, host.end)
+                snapped_end = self._snap_visual(
+                    end,
+                    window,
+                    lo=start + low,
+                    hi=limit,
+                    words=words,
+                    accept=lambda moment, unit=unit, start=start: self._source_free(unit, start, moment),
+                )
                 if snapped_end is not None:
                     end = snapped_end
                 on_beat = snapped_start is not None and snapped_end is not None
@@ -445,7 +496,9 @@ class Layout:
         if self.song_cursor >= len(songs):
             self.warnings.append(f"ran out of music; {song.name} is reused from {float(at):.1f}s.")
         source_start = Fraction(0)
-        if self.profile.get("music.start_on_downbeat") and song.beats and song.beats.downbeats:
+        if self.music_source_start is not None:
+            source_start = self._q(self.music_source_start)
+        elif self.profile.get("music.start_on_downbeat") and song.beats and song.beats.downbeats:
             source_start = self._q(Fraction(str(song.beats.downbeats[0])))
         fade_in = self._f(self.profile.get("music.fade_in.seconds"))
         if transition == "crossfade":
@@ -474,6 +527,18 @@ class Layout:
                 t = Fraction(str(value))
                 if t >= source_start:
                     self.downbeats.append(self._q(at + t - source_start))
+            self.beat_grid = song.beats
+            self.keypoints = [point for point in self.keypoints if point.time < float(at)]
+            self.keypoints.extend(
+                Keypoint(
+                    float(self._q(at + self._f(point.time) - source_start)),
+                    point.type,
+                    point.intensity,
+                    point.score,
+                )
+                for point in keypoints_from_grid(song.beats)
+                if self._f(point.time) >= source_start
+            )
 
     def _music_check(self, t: Fraction, upcoming: Fraction, boundary: bool = False) -> None:
         if not self.segments:
@@ -594,6 +659,58 @@ class Layout:
             value = rng.lognormvariate(math.log(median), sigma)
             value = min(max(value, p10 / 2), p90 * 1.5) * factor
             yield self._f(round(value, 4))
+
+    def _snap_visual(self, t: Fraction, window: float, *, lo: Fraction, hi: Fraction, words: list[WordSpan], accept=None):
+        """Highest-scoring keypoint in the window, or None when nothing legal is in range."""
+        if self.keypoints:
+            moved = snap_time(
+                float(t),
+                self.keypoints,
+                window=window,
+                lo=float(lo),
+                hi=float(hi),
+                words=words,
+                accept=accept,
+            )
+            if any(abs(point.time - moved) <= 1e-4 for point in self.keypoints):
+                return self._q(self._f(moved))
+            return None
+        return self._nearest(self.beats, t, self._f(window), lo=lo, hi=hi)
+
+    def _host_words(self, host: Item) -> list[WordSpan]:
+        unit = next((item for item in self.units if item.id == host.tags.get("unit")), None)
+        if unit is None:
+            return []
+        words: list[WordSpan] = []
+        for cue in unit.cues:
+            tokens = str(cue.text).split()
+            if not tokens or cue.end <= cue.start:
+                continue
+            step = (cue.end - cue.start) / len(tokens)
+            for index, _token in enumerate(tokens):
+                src_start = cue.start + step * index
+                src_end = cue.start + step * (index + 1)
+                words.append(
+                    WordSpan(
+                        float(host.offset + (src_start - host.start)),
+                        float(host.offset + (src_end - host.start)),
+                    )
+                )
+        return words
+
+    def _source_free(self, unit: Unit, timeline_start: Fraction, timeline_end: Fraction) -> bool:
+        """The cutaway's source range must not overlap another use of the same media."""
+        src_start = float(unit.start)
+        src_end = src_start + (float(timeline_end) - float(timeline_start))
+        key = str(unit.footage.clip.path)
+        for item in [*self.timeline.spine, *self.cutaways]:
+            if item.media is None or item.media.key != key:
+                continue
+            other_start = float(item.start)
+            other_end = other_start + float(item.duration)
+            if src_start < other_end and other_start < src_end:
+                return False
+        return True
 
     def _nearest(
         self,

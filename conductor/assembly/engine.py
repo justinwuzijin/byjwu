@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from fractions import Fraction
 from pathlib import Path
 
 from .. import __version__
@@ -31,6 +32,7 @@ from ..validate import validate_fcpxml
 from .dress import dress, timeline_beats
 from .layout import Adjustments, Layout
 from .media import Material, SignalProvider, assert_unchanged, gather
+from .snap import choose_music_offset
 from .metrics import StyleTargets, measure
 from .render import render
 from .select import Decision, build_units, estimate_budgets, heuristics, select
@@ -201,6 +203,10 @@ def assemble(
         adjustments=adjustments,
         name=title,
     )
+    if material.songs and material.songs[0].beats and profile.get("music.start_on_downbeat"):
+        choice = choose_music_offset(material.songs[0].beats, [], router=router, brief=brief)
+        if choice is not None:
+            layout.music_source_start = Fraction(str(choice.source_start))
     timeline = layout.run()
     warnings.extend(layout.warnings)
     if not timeline.spine:

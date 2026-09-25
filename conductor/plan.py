@@ -119,6 +119,8 @@ class EditPlan:
     cut_edges: list[Fraction] = field(default_factory=list)
     #: When set, a music bed is required to cover the picture.
     expects_music: bool = False
+    #: Music keypoint times (seconds). Empty skips the AV-harmony lint.
+    keypoints: list[float] = field(default_factory=list)
 
     def spine(self) -> list[PlanClip]:
         return [clip for clip in self.clips if clip.role == SPINE]

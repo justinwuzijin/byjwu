@@ -1,6 +1,6 @@
-# byjwu, an all-in-one Final Cut Pro XML editor
+# byjwu, an assistant editor for Final Cut Pro
 
-byjwu is an all-in-one Final Cut Pro XML (FCPXML) editor. You give it raw footage and music, or an existing Final Cut export, and it hands back an edited FCPXML you open in Final Cut Pro. The work in that file covers cuts, pacing, beat-matched B-roll, music and ducking, subtitles and on-screen text, and colour notes. It is built to organize a [@byjustinwu](https://www.youtube.com/@byjustinwu) video.
+byjwu is an assistant editor for Final Cut Pro. It takes care of single tasks, such as tightening a section, beat-matching B-roll, adding subtitles in your existing style, ducking music, and colour notes. It can also edit an entire video from end to end, from raw footage and music to a finished FCPXML you open in Final Cut Pro. It is built to organize a [@byjustinwu](https://www.youtube.com/@byjustinwu) video.
 
 ## How it works
 
